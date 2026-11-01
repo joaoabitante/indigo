@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Índigo
+GenericName=Emulador de consoles
+GenericName[en]=Multi-console emulator
+Comment=Emulador de consoles clássicos (SNES, NES, Game Boy, Mega Drive, PlayStation e outros)
+Comment[en]=Classic console emulator (SNES, NES, Game Boy, Mega Drive, PlayStation and more)
+Exec=indigo %f
+TryExec=indigo
+Icon=net.abitante.indigo
+Terminal=false
+Categories=Game;Emulator;
+Keywords=emulador;emulator;snes;nes;gameboy;gba;megadrive;playstation;
+StartupWMClass=net.abitante.indigo
+MimeType=application/x-snes-rom;application/x-nes-rom;application/x-gameboy-rom;application/x-gameboy-color-rom;application/x-gba-rom;application/x-genesis-rom;application/x-sms-rom;application/x-gamegear-rom;application/x-cue;

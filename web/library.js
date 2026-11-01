@@ -4,6 +4,8 @@
 // Versão 3: os saves de cartucho saíram do localStorage (limite de ~5 MB, gravação que podia falhar calada)
 // e vieram para cá, com histórico de versões anteriores de cada save.
 
+import { safeImg } from './safe.js';
+
 const DB_NAME = 'indigo';
 const META = 'meta', DATA = 'data', STATES = 'states', SAVES = 'saves', HIST = 'savehist', OLD = 'roms';
 const HIST_MAX = 12;              // versões guardadas por save
@@ -92,6 +94,7 @@ export const library = {
     const existing = await this.meta(meta.id).catch(() => null);
     const rec = Object.assign({ added: Date.now(), lastPlayed: 0, cover: null }, existing || {}, meta);
     delete rec.data;
+    rec.cover = safeImg(rec.cover);
     const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     await tx([META, DATA], 'readwrite', t => { t.objectStore(META).put(rec); t.objectStore(DATA).put(buf, rec.id); });
     return !existing;
@@ -104,6 +107,7 @@ export const library = {
       if (!rec) return;
       Object.assign(rec, patch);
       delete rec.data;
+      if ('cover' in patch) rec.cover = safeImg(rec.cover);
       s.put(rec);
     });
   },
@@ -125,7 +129,7 @@ export const library = {
 
   // ---------------- save states (por jogo e por espaço)
   async putState(id, slot, state, thumb) {
-    const rec = { key: `${id}#${slot}`, id, slot, at: Date.now(), thumb: thumb || null, state };
+    const rec = { key: `${id}#${slot}`, id, slot, at: Date.now(), thumb: safeImg(thumb), state };
     await tx([STATES], 'readwrite', t => { t.objectStore(STATES).put(rec); });
     return rec.at;
   },
@@ -185,7 +189,7 @@ export const library = {
   },
   async putHistory(rec) { await tx([HIST], 'readwrite', t => { t.objectStore(HIST).put(Object.assign({}, rec, { data: toBuf(rec.data) })); }); },
   async allStates() { return (await tx([STATES], 'readonly', t => wrap(t.objectStore(STATES).getAll()))) || []; },
-  async putStateRecord(rec) { await tx([STATES], 'readwrite', t => { t.objectStore(STATES).put(rec); }); },
+  async putStateRecord(rec) { rec = Object.assign({}, rec, { thumb: safeImg(rec.thumb) }); await tx([STATES], 'readwrite', t => { t.objectStore(STATES).put(rec); }); },
   async renameState(id, slot, name) {
     await tx([STATES], 'readwrite', async t => {
       const s = t.objectStore(STATES), rec = await wrap(s.get(`${id}#${slot}`));

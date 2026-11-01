@@ -7,6 +7,7 @@
 #include <map>
 
 #include "core/backup.h"
+#include "core/safe.h"
 #include "core/zip.h"
 #include "files.h"
 #include "platform.h"
@@ -21,12 +22,8 @@ double mtimeMs(const std::string& path) {
   return files::modified(path, t) ? static_cast<double>(t / 1000000) : 0.0;
 }
 
-// nome de arquivo seguro (sem barras nem caracteres proibidos no Windows)
-std::string safeName(std::string n) {
-  for (char& c : n) if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|') c = '_';
-  while (!n.empty() && (n.back() == ' ' || n.back() == '.')) n.pop_back();
-  return n.empty() ? "jogo" : n;
-}
+// nome de arquivo seguro (sem pastas, "..", controles nem caracteres proibidos no Windows): src/core/safe.h
+std::string safeName(const std::string& n) { return safeFileName(n); }
 
 std::string histPath(const std::string& dataDir, const std::string& key, long long sec) {
   return dataDir + "saves/historico/" + key + "." + std::to_string(sec) + ".sav";
@@ -49,7 +46,7 @@ double saveAt(const std::string& dataDir, const std::string& romKey) {
   const std::string sav = dataDir + "saves/" + romKey + ".sav";
   std::vector<uint8_t> b;
   if (files::read(sav + ".at", b) && !b.empty()) {
-    const double v = std::atof(std::string(b.begin(), b.end()).c_str());
+    const double v = safeMs(std::atof(std::string(b.begin(), b.end()).c_str()));
     if (v > 0) return v;
   }
   return mtimeMs(sav);
@@ -64,13 +61,13 @@ void setSaveAt(const std::string& dataDir, const std::string& romKey, double atM
 
 bool loadRom(const std::string& path, std::vector<uint8_t>& bytes, std::string& key) {
   if (!files::read(path, bytes)) return false;
-  key = platform::displayName(path);
+  key = safeName(platform::displayName(path));  // a chave vira nome de arquivo em saves/
   if (zip::isZip(bytes)) {
     std::string inner, err;
     std::vector<uint8_t> data;
     if (!zip::extractRom(bytes, inner, data, err)) return false;
     bytes.swap(data);
-    key = inner;
+    key = safeName(inner);
   }
   return true;
 }

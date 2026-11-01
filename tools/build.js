@@ -36,7 +36,19 @@ const head = (title) => `<!doctype html>
 <meta name="robots" content="index, follow">
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}img{max-width:100%}</style>
 `;
-const full = (body) => head() + body.replace(/(<\/style>\s*)/, '$1</head>\n<body>\n') + '\n</body>\n</html>\n';
+// Política de segurança (CSP): só roda o script embutido desta página (pelo hash), o Web Worker e o
+// AudioWorklet criados por ela (blob:); imagens só da própria página, data: e blob:; rede só para o próprio site.
+// Uma capa ou nome malicioso vindo de um backup não consegue rodar script nem mandar dados para fora.
+const csp = (body) => {
+  const hashes = [...body.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map(m => `'sha256-${crypto.createHash('sha256').update(m[1]).digest('base64')}'`);
+  return [`default-src 'self'`, `script-src ${hashes.join(' ')} blob:`, `worker-src blob:`,
+    `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`, `font-src https://fonts.gstatic.com`,
+    `img-src 'self' data: blob:`, `media-src 'self' blob:`, `connect-src 'self'`,
+    `object-src 'none'`, `base-uri 'none'`, `form-action 'self'`].join('; ');
+};
+const full = (body) => head().replace('<meta charset="utf-8">', () => `<meta charset="utf-8">\n<meta http-equiv="Content-Security-Policy" content="${csp(body)}">`)
+  + body.replace(/(<\/style>\s*)/, '$1</head>\n<body>\n') + '\n</body>\n</html>\n';
 
 fs.mkdirSync('dist', { recursive: true });
 

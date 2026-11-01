@@ -21,6 +21,17 @@ std::string displayName(const std::string& path);
 // (lá o jogo vem pela linha de comando).
 std::string takePendingRom();
 
+// pasta dos dados (saves, estados, BIOS, capas, biblioteca), terminada em '/'. Windows, Android e macOS: a pasta
+// de preferências do SDL (%APPDATA%\Indigo\Indigo\ no Windows). Linux: $XDG_DATA_HOME/indigo/ (padrão
+// ~/.local/share/indigo/); no modo portátil (arquivo "indigo-portatil" ao lado do executável), <pasta do executável>/dados/.
+// Cria a pasta se faltar; vazio = não deu para achar nem criar.
+std::string dataDir();
+
+// pasta das configurações (opções, controles, pastas de jogos, PIN da nuvem), terminada em '/'. Linux:
+// $XDG_CONFIG_HOME/indigo/ (padrão ~/.config/indigo/), ou a mesma de dataDir() no modo portátil. Nos outros
+// sistemas, a mesma de dataDir() (como sempre foi).
+std::string configDir();
+
 // vibração curta (botões da tela)
 void haptic();
 

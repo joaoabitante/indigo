@@ -174,6 +174,8 @@ bool ChdDisc::readMap(std::string* err) {
   const uint16_t mapCrc = uint16_t(be16(mh + 10));
   const int lengthBits = mh[12], selfBits = mh[13], parentBits = mh[14];
   if (lengthBits > 24 || selfBits > 32 || parentBits > 32) return fail(err, "mapa do .chd inválido");
+  // o tamanho do mapa vem do cabeçalho: confere com o arquivo antes de reservar a memória
+  if (mapOff_ + 16 > fileSize_ || mapBytes > fileSize_ - mapOff_ - 16) return fail(err, "mapa do .chd cortado");
   std::vector<uint8_t> cm(mapBytes);
   if (!readFile(mapOff_ + 16, cm.data(), cm.size())) return fail(err, "mapa do .chd cortado");
   chd::BitReader br(cm.data(), cm.size());

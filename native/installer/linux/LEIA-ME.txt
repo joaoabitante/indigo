@@ -1,0 +1,42 @@
+ÍNDIGO PARA LINUX - versão @VERSAO@ (x86_64; PC e Steam Deck)
+Consoles: SNES, NES, Game Boy, Game Boy Color, Game Boy Advance, Master System, Game Gear, Neo Geo Pocket,
+Mega Drive, 32X, Sega CD, PC Engine (e CD), Neo Geo (e CD), Capcom CPS1/CPS2, PlayStation, 3DO (experimental),
+Atari 2600/7800/Lynx, MSX, ColecoVision, SG-1000, WonderSwan, Vectrex, Virtual Boy e Pokémon Mini.
+
+Como usar
+- Descompacte o .tar.gz numa pasta e abra o programa "indigo" (dois cliques ou ./indigo no terminal).
+  Para abrir um jogo direto: ./indigo caminho/do/jogo.sfc
+- Arraste um jogo para a janela ou aperte Ctrl+O. A tela inicial mostra "Continuar" e a biblioteca de jogos.
+- Atalho no menu de aplicativos: rode ./instalar-atalho.sh uma vez (só para você, sem administrador).
+  Para tirar o atalho: ./instalar-atalho.sh --remover
+
+Onde ficam os dados
+- Saves, estados, capas e BIOS: ~/.local/share/indigo/ (ou $XDG_DATA_HOME/indigo/)
+- Opções, controles, pastas de jogos e PIN da nuvem: ~/.config/indigo/ (ou $XDG_CONFIG_HOME/indigo/)
+- Modo portátil (pendrive, cartão SD): crie um arquivo vazio chamado "indigo-portatil" ao lado do programa
+  (touch indigo-portatil). Tudo passa a ficar na pasta "dados", ao lado do programa. Sem esse arquivo o
+  Índigo nunca escreve na pasta do programa.
+- Para usar a BIOS de um console, abra o arquivo da BIOS no Índigo uma vez: ele é copiado para a pasta de dados.
+
+Steam Deck
+- No Modo Desktop, descompacte em ~/Applications/Indigo (ou no cartão SD), depois no Steam:
+  "Adicionar um jogo não Steam" > Procurar > escolha o arquivo "indigo". Volte ao Modo de Jogo e abra por ali.
+- Os botões do Deck funcionam como um controle: Start abre os Ajustes, Select + Start abre o menu do jogo,
+  Select + R salva estado e Select + L carrega.
+
+Requisitos
+- Linux de 64 bits (x86_64) com glibc 2.38 ou mais nova (Ubuntu 24.04, Fedora 39, Debian 13, Linux Mint 22,
+  SteamOS e Arch atualizados, ou mais novos), com X11 ou Wayland e som por PipeWire, PulseAudio ou ALSA.
+- O SDL3 vem junto (pasta lib); não precisa instalar nada.
+
+Nuvem dos saves
+- Nesta primeira versão para Linux a nuvem dos saves ainda não funciona (o backup .indigo funciona).
+
+Teclado
+- Setas: direcional    X: A    Z: B    A / S: L / R    Enter: Start    Backspace: Select
+- Espaço (segurar): acelerar 4x    F5: salvar estado    F8: carregar estado    1 a 9: escolher o espaço
+- Esc: menu    P: pausar    Ctrl+R: reiniciar    F11 ou Alt+Enter: tela cheia
+
+Licença
+- O Índigo é software livre (GNU GPL versão 3, veja LICENCA.txt). Ele não traz jogos nem BIOS: use cópias dos
+  seus. Créditos de terceiros em TERCEIROS.txt; a licença do SDL3 (zlib) está em lib/LICENCA-SDL3.txt.

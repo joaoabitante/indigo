@@ -1,7 +1,7 @@
 // Transferência temporária de cartucho + save entre aparelhos (ex.: PC → Xbox), por código de 6 dígitos.
 // Também leva a estante inteira (kind: 'shelf'): o arquivo de backup .indigo, em partes, pelo mesmo caminho.
 // Os arquivos ficam no Vercel Blob só durante a transferência: são apagados quando o outro aparelho
-// confirma o recebimento, ou em até 1 hora. O acesso a esta rota é protegido pela Autenticação do Vercel.
+// confirma o recebimento, ou em até 1 hora. O acesso a esta rota exige o PIN da nuvem (api/_auth.js).
 //
 //   POST   ?action=start                 → { code }
 //   POST   ?action=chunk&code=&part=     corpo binário (até 3,5 MB)
@@ -12,7 +12,7 @@
 //   DELETE ?code=                        apaga a transferência
 
 import { put, list, del } from '@vercel/blob';
-import { requirePin, pinConfigured } from './_auth.js';
+import { requirePin } from './_auth.js';
 
 const MAX_CHUNK = 3.5 * 1024 * 1024;
 const MAX_PARTS = 400;           // 400 × 3 MB = 1,2 GB (estante inteira)
@@ -53,7 +53,7 @@ function storageReady() { return !!(process.env.BLOB_STORE_ID || process.env.BLO
 export async function GET(request) {
   const url = new URL(request.url);
   const action = url.searchParams.get('action');
-  if (action === 'ping') return json({ ok: true, storage: storageReady(), pin: pinConfigured() });
+  if (action === 'ping') return json({ ok: true, storage: storageReady(), pin: true });
   const denied = await requirePin(request); if (denied) return denied;
   if (action === 'auth') return json({ ok: true });
   if (!storageReady()) return fail('Armazenamento de transferências não configurado no Vercel.', 503);

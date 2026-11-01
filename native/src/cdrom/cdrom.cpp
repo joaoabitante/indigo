@@ -117,13 +117,29 @@ private:
   std::vector<FileTrack> ft_;
 };
 
+// mm:ss:ff de um CD: minutos até 99, segundos até 59 e quadros até 74 (fora disso o .cue está errado)
 bool parseMsf(const std::string& s, uint32_t& out) {
-  int m, sec, f;
+  long m, sec, f;
   char c1, c2;
   std::istringstream in(s);
   if (!(in >> m >> c1 >> sec >> c2 >> f) || c1 != ':' || c2 != ':') return false;
+  if (m < 0 || m > 99 || sec < 0 || sec > 59 || f < 0 || f > 74) return false;
   out = uint32_t((m * 60 + sec) * 75 + f);
   return true;
+}
+
+// arquivo citado no .cue: só na pasta do .cue ou abaixo dela (sem caminho absoluto nem "..")
+bool cueNameSafe(const std::string& n) {
+  if (n.empty() || n[0] == '/' || n[0] == '\\' || (n.size() >= 2 && n[1] == ':')) return false;
+  size_t a = 0;
+  while (a <= n.size()) {
+    const size_t b = n.find_first_of("/\\", a);
+    const std::string part = n.substr(a, b == std::string::npos ? std::string::npos : b - a);
+    if (part == "..") return false;
+    if (b == std::string::npos) break;
+    a = b + 1;
+  }
+  return n.find('\0') == std::string::npos;
 }
 
 std::unique_ptr<Disc> openCue(const std::string& path, std::string* err) {
@@ -151,6 +167,7 @@ std::unique_ptr<Disc> openCue(const std::string& path, std::string* err) {
     for (size_t i = 0; i < cur.size(); i++) {
       Pending& p = cur[i];
       if (p.idx1 == UINT32_MAX) { if (err) *err = "faixa sem INDEX 01 no .cue"; return false; }
+      if (p.idx0 != UINT32_MAX && p.idx0 > p.idx1) { if (err) *err = "INDEX 00 depois do INDEX 01 no .cue"; return false; }
       shift += p.cmdPregap;
       const uint32_t idx0 = p.idx0 == UINT32_MAX ? p.idx1 : p.idx0;
       p.t.start = base + shift + p.idx1;
@@ -186,10 +203,13 @@ std::unique_ptr<Disc> openCue(const std::string& path, std::string* err) {
       if (q1 != std::string::npos && q2 > q1) fname = rest.substr(q1 + 1, q2 - q1 - 1);
       else { std::istringstream r(rest); r >> fname; }
       // .cue costuma vir com o nome do .bin sem pasta; caminhos com barra invertida do Windows também
+      // (com caminho absoluto ou "..", vale só o nome do arquivo, procurado na pasta do .cue)
       const size_t sl = fname.find_last_of("/\\");
-      std::string full = dirOf(path) + fname;
+      const std::string leaf = sl == std::string::npos ? fname : fname.substr(sl + 1);
+      const bool safe = cueNameSafe(fname);
       uint64_t sz = 0;
-      if (!d->addFile(full, sz) && !(sl != std::string::npos && d->addFile(dirOf(path) + fname.substr(sl + 1), sz))) {
+      if (!(safe && d->addFile(dirOf(path) + fname, sz)) &&
+          !(sl != std::string::npos && cueNameSafe(leaf) && d->addFile(dirOf(path) + leaf, sz))) {
         if (err) *err = "não achou o arquivo " + fname + " citado no .cue";
         return nullptr;
       }
@@ -197,6 +217,7 @@ std::unique_ptr<Disc> openCue(const std::string& path, std::string* err) {
       fileBytes = sz;
     } else if (cmd == "track") {
       if (fileIdx < 0) { if (err) *err = "TRACK antes de FILE no .cue"; return nullptr; }
+      if (d->tr().size() + cur.size() >= 99) { if (err) *err = "mais de 99 faixas no .cue"; return nullptr; }
       int n = 0;
       std::string mode;
       ls >> n >> mode;

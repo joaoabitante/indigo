@@ -31,6 +31,7 @@
 
 #include "core/core.h"
 #include "core/backup.h"
+#include "core/safe.h"
 #include "cloud.h"
 #include "core/zip.h"
 #include "files.h"
@@ -45,6 +46,9 @@
 #include "tdo/tdo.h"
 #include "cdrom/cdrom.h"
 #include "segacd/segacd.h"
+#ifdef INDIGO_WINDOW_ICON
+#include "icon.h"  // gerado pelo CMake no Linux: indigo_icon0 (PNG 256x256)
+#endif
 #include "ui.h"
 #include "text.h"
 #include "video.h"
@@ -240,8 +244,8 @@ public:
     SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON, "1");  // ícone do .exe também na janela e na barra de tarefas
     SDL_SetAppMetadata("Índigo", INDIGO_VERSION, "net.abitante.indigo");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) return fail("Não foi possível iniciar o SDL");
-    char* pref = SDL_GetPrefPath("Indigo", "Indigo");
-    if (pref) { dataDir_ = pref; SDL_free(pref); }
+    dataDir_ = indigo::platform::dataDir();
+    configDir_ = indigo::platform::configDir();
     // alta densidade: o desenho é feito nos pixels reais da tela (texto nítido em 125%/150% no Windows e no
     // celular); a escala da interface vem do sistema (uiMetrics)
     SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
@@ -257,6 +261,13 @@ public:
     }
     if (!SDL_CreateWindowAndRenderer("Índigo", place.w, place.h, flags, &win_, &ren_))
       return fail("Não foi possível abrir a janela");
+#ifdef INDIGO_WINDOW_ICON
+    // Linux: ícone da janela (a barra de tarefas usa o do arquivo .desktop quando ele está instalado)
+    if (SDL_Surface* icon = SDL_LoadPNG_IO(SDL_IOFromConstMem(indigo_icon0, indigo_icon0_size), true)) {
+      SDL_SetWindowIcon(win_, icon);
+      SDL_DestroySurface(icon);
+    }
+#endif
     if (!mobile_) {
       SDL_SetWindowPosition(win_, place.x, place.y);
       if (maximize) SDL_MaximizeWindow(win_);
@@ -403,8 +414,8 @@ public:
     std::vector<uint8_t> rom;
     if (!readFile(path, rom)) { error("Não foi possível ler o arquivo:\n" + path); return; }
     // nome de verdade do arquivo (no Android o seletor devolve "content://..."); é por ele que se acha o
-    // console e se dá nome ao save
-    std::string name = indigo::platform::displayName(path);
+    // console e se dá nome ao save. Vem de outro app no Android: sem pastas nem ".." (src/core/safe.h)
+    std::string name = indigo::safeFileName(indigo::platform::displayName(path));
     const std::string origin = path;  // o que entra na lista de recentes do PC (o próprio .zip, se for um)
     if (indigo::backup::isBackup(rom)) { importBackup(rom); return; }
     {
@@ -539,11 +550,9 @@ public:
       return;
     }
     flushSave();  // se for o mesmo jogo de novo, o save mais recente tem de estar no disco antes de ler
-    // celular: guarda uma cópia (já descompactada) na biblioteca do app, para o jogo aparecer na tela inicial
-    if (mobile_ && path.rfind(dataDir_ + "roms/", 0) != 0) {
-      const std::string lib = dataDir_ + "roms/" + name;
-      if (writeFile(lib, rom)) path = lib;
-    }
+    // celular: a cópia vai para a biblioteca do app (gravada só depois que o núcleo aceitar, lá embaixo)
+    const bool toLibrary = mobile_ && path.rfind(dataDir_ + "roms/", 0) != 0;
+    const std::string lib = dataDir_ + "roms/" + name, beside = withoutExt(toLibrary ? lib : path);
     const std::string base = baseName(name), key = fileName(name);
     std::vector<uint8_t> save;
     const std::string savePath = dataDir_ + "saves/" + key + ".sav";
@@ -552,9 +561,9 @@ public:
     // save do Índigo; depois o nome usado até a versão 0.3 (sem a extensão); por fim um .sav/.ngf ao lado da
     // ROM (vindo de outro emulador). O save é sempre regravado com o nome novo.
     bool haveSave = readFile(savePath, save) || readFile(dataDir_ + "saves/" + base + ".sav", save) ||
-                    readFile(withoutExt(path) + ".sav", save) ||
-                    readFile(withoutExt(path) + ".ngf", save) ||  // .ngf: save de Neo Geo Pocket de outros emuladores
-                    (indigo::ps1::isPsxExe(rom) && (readFile(withoutExt(path) + ".mcr", save) || readFile(withoutExt(path) + ".mcd", save)));
+                    readFile(beside + ".sav", save) ||
+                    readFile(beside + ".ngf", save) ||  // .ngf: save de Neo Geo Pocket de outros emuladores
+                    (indigo::ps1::isPsxExe(rom) && (readFile(beside + ".mcr", save) || readFile(beside + ".mcd", save)));
     std::unique_ptr<Core> core;
     std::vector<uint8_t> bios;
     const bool haveBios = readFile(dataDir_ + "gba_bios.bin", bios) && bios.size() == 0x4000;
@@ -573,12 +582,15 @@ public:
             "Game Gear, SG-1000, Neo Geo Pocket, Pokémon Mini, Atari 2600, MSX, ColecoVision, WonderSwan, Atari 7800, Vectrex, Atari Lynx, Virtual Boy, PC Engine, Mega Drive, 32X, Neo Geo ou arcade Capcom (CPS1/CPS2). CDs: Sega CD, PC Engine CD, Neo Geo CD, PlayStation e 3DO em .cue, .chd ou .iso.");
       return;
     }
+    // celular: guarda uma cópia (já descompactada) na biblioteca do app, para o jogo aparecer na tela inicial.
+    // Só depois que o núcleo aceitou o arquivo (antes disso não se grava nada vindo de outro app)
+    if (toLibrary && writeFile(lib, rom)) path = lib;
     startGame(std::move(core), ident.saveKey, ident.sys, base, key, savePath, haveSave, haveBios, resume, mobile_ ? path : origin);
   }
 
   // abre um CD (.cue/.chd/.iso): o núcleo lê a imagem do arquivo aos poucos, sem carregar o disco na memória
   void openDisc(std::string path, bool resume) {
-    const std::string name = indigo::platform::displayName(path);
+    const std::string name = indigo::safeFileName(indigo::platform::displayName(path));
     const std::string origin = path;
     std::string ext = extOf(name);
     if (path.rfind("content://", 0) == 0) {
@@ -589,10 +601,21 @@ public:
               ".cue. No computador, converta com: chdman createcd -i jogo.cue -o jogo.chd");
         return;
       }
-      const std::string lib = dataDir_ + "roms/" + name;
+      // copia primeiro para um nome provisório; só vira o arquivo da biblioteca se for um CD reconhecido
+      const std::string lib = dataDir_ + "roms/" + name, tmp = dataDir_ + "cd-copiando" + ext;  // fora de roms/ (não aparece na estante)
       status("Copiando o CD para o Índigo...");
       render();
-      if (!copyFileStream(path, lib)) { error("Não foi possível copiar o CD para:\n" + dataDir_ + "roms/"); return; }
+      if (!copyFileStream(path, tmp)) { SDL_RemovePath(tmp.c_str()); error("Não foi possível copiar o CD para:\n" + dataDir_ + "roms/"); return; }
+      std::string err;
+      std::string sys;
+      if (auto disc = indigo::cdrom::open(tmp, &err)) sys = indigo::cdrom::detectSystem(*disc);
+      if (sys.empty()) {
+        SDL_RemovePath(tmp.c_str());
+        error(err.empty() ? "Este CD não é de Sega CD, PC Engine CD, Neo Geo CD, PlayStation nem 3DO." : "Não foi possível abrir o CD: " + err);
+        return;
+      }
+      SDL_RemovePath(lib.c_str());
+      if (!SDL_RenamePath(tmp.c_str(), lib.c_str())) { SDL_RemovePath(tmp.c_str()); error("Não foi possível copiar o CD para:\n" + dataDir_ + "roms/"); return; }
       path = lib;
     }
     std::string err;
@@ -1086,7 +1109,7 @@ private:
     defaultPadMap();
     defaultKeyMap();
     std::vector<uint8_t> b;
-    if (!readFile(dataDir_ + "controles.txt", b)) return;
+    if (!readFile(configDir_ + "controles.txt", b)) return;
     std::string t(b.begin(), b.end()), line;
     bool padTouched[NUM_ACTIONS] = {}, keyTouched[NUM_ACTIONS] = {};
     size_t pos = 0;
@@ -1135,7 +1158,7 @@ private:
     }
     for (int a = 0; a < NUM_ACTIONS; a++)
       for (SDL_Scancode sc : keyMap_[a]) t += std::string("key ") + ACTION_KEYS[a] + "=" + SDL_GetScancodeName(sc) + "\n";
-    writeFile(dataDir_ + "controles.txt", std::vector<uint8_t>(t.begin(), t.end()));
+    writeFile(configDir_ + "controles.txt", std::vector<uint8_t>(t.begin(), t.end()));
   }
 
   // começa a configurar: uma ação de cada vez ("aperte o botão para A")
@@ -1360,7 +1383,7 @@ private:
 
   void loadSettings() {
     std::vector<uint8_t> s;
-    if (readFile(dataDir_ + "opcoes.txt", s) && !s.empty()) {
+    if (readFile(configDir_ + "opcoes.txt", s) && !s.empty()) {
       const std::string t(s.begin(), s.end());
       const int p = std::atoi(t.c_str());
       if (p >= 0 && p < NUM_PALETTES) palette_ = p;
@@ -1401,7 +1424,7 @@ private:
     if (ps1Res_) s += "ps1res=" + std::to_string(ps1Res_) + "\n";
     if (winW_ > 0) s += "janela=" + std::to_string(winX_) + "," + std::to_string(winY_) + "," + std::to_string(winW_) + "," +
                         std::to_string(winH_) + "," + (winMax_ ? "1" : "0") + "\n";
-    writeFile(dataDir_ + "opcoes.txt", std::vector<uint8_t>(s.begin(), s.end()));
+    writeFile(configDir_ + "opcoes.txt", std::vector<uint8_t>(s.begin(), s.end()));
   }
 
   // celular: os jogos copiados para a pasta do app; PC: a lista "recentes.txt" (caminhos dos arquivos)
@@ -1465,7 +1488,7 @@ private:
   // ---------------- nuvem dos saves (a mesma do site, com o mesmo PIN)
   void startCloud() {
     std::vector<uint8_t> b;
-    if (readFile(dataDir_ + "nuvem.txt", b)) {
+    if (readFile(configDir_ + "nuvem.txt", b)) {
       // linha 1: ligada (1/0); linha 2: PIN
       std::string t(b.begin(), b.end());
       const auto nl = t.find('\n');
@@ -1475,8 +1498,11 @@ private:
         while (!cloudPin_.empty() && (cloudPin_.back() == '\n' || cloudPin_.back() == '\r')) cloudPin_.pop_back();
       }
     }
-    const char* env = SDL_getenv("INDIGO_CLOUD_URL");  // testes: servidor local
-    cloud_ = std::make_unique<indigo::cloud::Client>(env && *env ? env : CLOUD_URL);
+    // testes: servidor local. Só https:// (o PIN vai no cabeçalho); http:// só para este computador
+    const char* env = SDL_getenv("INDIGO_CLOUD_URL");
+    const bool envOk = env && *env && indigo::cloudUrlAllowed(env);
+    if (env && *env && !envOk) SDL_Log("INDIGO_CLOUD_URL ignorado (use https://, ou http:// só para localhost/127.0.0.1): %s", env);
+    cloud_ = std::make_unique<indigo::cloud::Client>(envOk ? env : CLOUD_URL);
     cloud_->setPin(cloudPin_);
     cloudState_ = cloudOn_ ? CS_IDLE : CS_OFF;
     if (cloudOn_) cloud_->ping();
@@ -1484,7 +1510,7 @@ private:
 
   void saveCloudSettings() {
     const std::string t = std::string(cloudOn_ ? "1" : "0") + "\n" + cloudPin_ + "\n";
-    writeFile(dataDir_ + "nuvem.txt", std::vector<uint8_t>(t.begin(), t.end()));
+    writeFile(configDir_ + "nuvem.txt", std::vector<uint8_t>(t.begin(), t.end()));
   }
 
   bool cloudUsable() const { return cloud_ && cloudOn_ && cloudState_ != CS_UNAVAILABLE && cloudState_ != CS_OFF; }
@@ -1667,7 +1693,14 @@ private:
   // ---------------- backup (.indigo, o mesmo formato do site)
   void importBackup(const std::vector<uint8_t>& bytes) {
     flushSave();
-    const auto r = indigo::shelf::importBackup(dataDir_, bytes, allLocalRoms());
+    indigo::shelf::ImportResult r;
+    try {
+      r = indigo::shelf::importBackup(dataDir_, bytes, allLocalRoms());
+    } catch (const std::exception& e) {
+      // backup estranho não pode derrubar o app
+      error(std::string("Backup danificado: ") + e.what());
+      return;
+    }
     if (!r.error.empty()) { error(r.error); return; }
     if (!mobile_) for (auto it = r.newPaths.rbegin(); it != r.newPaths.rend(); ++it) addRecent(*it);
     refreshLibrary();
@@ -2022,7 +2055,7 @@ private:
   void loadFolders() {
     folders_.clear();
     std::vector<uint8_t> b;
-    if (!readFile(dataDir_ + "pastas.txt", b)) return;
+    if (!readFile(configDir_ + "pastas.txt", b)) return;
     std::string cur;
     for (uint8_t c : b) { if (c == '\n') { if (!cur.empty()) folders_.push_back(cur); cur.clear(); } else if (c != '\r') cur += static_cast<char>(c); }
     if (!cur.empty()) folders_.push_back(cur);
@@ -2030,7 +2063,7 @@ private:
   void saveFolders() {
     std::string t;
     for (const auto& f : folders_) t += f + "\n";
-    writeFile(dataDir_ + "pastas.txt", std::vector<uint8_t>(t.begin(), t.end()));
+    writeFile(configDir_ + "pastas.txt", std::vector<uint8_t>(t.begin(), t.end()));
   }
   void addFolder(const std::string& dir) {
     if (std::find(folders_.begin(), folders_.end(), dir) == folders_.end()) folders_.push_back(dir);
@@ -2629,7 +2662,7 @@ private:
   std::string audioError_;
   std::vector<SDL_Gamepad*> pads_;
   std::unique_ptr<Core> core_;
-  std::string dataDir_, romBase_, romKey_, savePath_;
+  std::string dataDir_, configDir_, romBase_, romKey_, savePath_;  // configDir_: opções, controles, pastas e PIN (Linux: XDG)
   std::string status_, lastTitle_;
   uint64_t statusUntil_ = 0;
   uint32_t keyboard_ = 0;

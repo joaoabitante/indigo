@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include "core/backup.h"
+#include "core/safe.h"
 #include "platform.h"
 
 namespace indigo::cloud {
@@ -110,7 +111,7 @@ Result Client::execute(const Job& j) {
         if (const backup::Json* a = js.get("saves"); a && a->type == backup::Json::Arr) {
           for (const auto& e : a->a) {
             RemoteSave s;
-            s.key = e.str("key"); s.at = e.num("at"); s.size = static_cast<size_t>(e.num("size"));
+            s.key = e.str("key"); s.at = safeMs(e.num("at")); s.size = safeSize(e.num("size"));
             s.from = e.str("from"); s.name = e.str("name"); s.console = e.str("console");
             if (!s.key.empty() && s.at > 0) res.list.push_back(std::move(s));
           }
@@ -190,7 +191,7 @@ bool Client::latest(const std::string& key, RemoteSave& out, bool& pinError, int
   const backup::Json* v = js.get("versions");
   if (!v || v->type != backup::Json::Arr || v->a.empty()) return false;
   const auto& top = v->a[0];
-  out.key = key; out.at = top.num("at"); out.from = top.str("from"); out.size = static_cast<size_t>(top.num("size"));
+  out.key = key; out.at = safeMs(top.num("at")); out.from = top.str("from"); out.size = safeSize(top.num("size"));
   return out.at > 0;
 }
 

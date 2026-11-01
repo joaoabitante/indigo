@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 
+#include "safe.h"
+
 namespace indigo::zip {
 
 namespace {
@@ -60,6 +62,7 @@ const uint16_t DBASE[30] = {1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129
 const uint8_t DEXT[30] = {0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
 
 constexpr size_t MAX_OUT = 256u * 1024 * 1024;  // nenhuma ROM portátil passa de 64 MB; protege contra "zip bomb"
+constexpr uint64_t MAX_TOTAL = 1024ull * 1024 * 1024;  // soma de todos os arquivos de um pacote
 
 bool block(Bits& b, const Huff& lit, const Huff& dist, std::vector<uint8_t>& out) {
   for (;;) {
@@ -186,11 +189,15 @@ bool readDirectory(const std::vector<uint8_t>& bytes, std::vector<RawEntry>& ent
                        u16(bytes, p + 10), u32(bytes, p + 20), u32(bytes, p + 24), u32(bytes, p + 42), u32(bytes, p + 16)});
     p += 46 + nlen + xlen + clen;
   }
-  return true;
+  // limite do pacote inteiro (além dos 256 MB por arquivo): 1 GB descompactado
+  uint64_t total = 0;
+  for (const auto& e : entries) total += e.size;
+  return total <= MAX_TOTAL;
 }
 
+// sem as pastas (o .zip pode vir com barra invertida do Windows: "..\\..\\x.gb")
 std::string baseName(const std::string& n) {
-  const auto slash = n.find_last_of('/');
+  const auto slash = n.find_last_of("/\\");
   return slash == std::string::npos ? n : n.substr(slash + 1);
 }
 
@@ -201,8 +208,9 @@ int readEntry(const std::vector<uint8_t>& bytes, const RawEntry& e, std::vector<
   const size_t start = lh + 30 + u16(bytes, lh + 26) + u16(bytes, lh + 28);
   if (start > bytes.size() || e.csize > bytes.size() - start) return 1;
   const uint8_t* raw = bytes.data() + start;
-  if (e.method == 0) { data.assign(raw, raw + e.csize); return 0; }
-  if (e.method == 8) return inflate(raw, e.csize, data, e.size) ? 0 : 1;
+  // o tamanho descompactado tem de bater com o do diretório: é ele que conta para o limite do pacote
+  if (e.method == 0) { if (e.csize != e.size) return 1; data.assign(raw, raw + e.csize); return 0; }
+  if (e.method == 8) return inflate(raw, e.csize, data, e.size) && data.size() == e.size ? 0 : 1;
   return 2;
 }
 }  // namespace
@@ -236,7 +244,7 @@ bool extractRom(const std::vector<uint8_t>& bytes, std::string& name, std::vecto
   const int r = readEntry(bytes, *pick, data);
   if (r == 1) { error = "Arquivo .zip danificado."; return false; }
   if (r == 2) { error = "Compressão do .zip não suportada."; return false; }
-  name = baseName(pick->name);
+  name = safeFileName(baseName(pick->name));  // vira o nome do save: nada de pastas nem ".."
   return true;
 }
 

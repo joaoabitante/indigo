@@ -4,8 +4,15 @@
 
 #include <iterator>
 
+#include "core/safe.h"
+
 #ifdef SDL_PLATFORM_ANDROID
 #include <jni.h>
+#endif
+#if defined(SDL_PLATFORM_LINUX) && !defined(SDL_PLATFORM_ANDROID)
+#include <pwd.h>
+#include <unistd.h>
+#define INDIGO_XDG 1
 #endif
 #ifdef _WIN32
 #include <windows.h>
@@ -71,7 +78,7 @@ std::string displayName(const std::string& path) {
       }
       if (res) env->DeleteLocalRef(res);
     });
-    if (!out.empty()) return out;
+    if (!out.empty()) return safeFileName(out);  // o nome vem do outro app: sem pastas nem ".."
   }
 #endif
   return lastPart(path);
@@ -92,6 +99,61 @@ std::string takePendingRom() {
   });
 #endif
   return out;
+}
+
+#ifdef INDIGO_XDG
+namespace {
+// modo portátil: o arquivo "indigo-portatil" ao lado do executável faz tudo ficar em <pasta do executável>/dados/
+// (pendrive, cartão do Steam Deck). Sem ele o Índigo nunca escreve ao lado do executável.
+std::string portableDir() {
+  const char* base = SDL_GetBasePath();  // do SDL, termina em '/'; não liberar
+  if (!base) return "";
+  const std::string dir = base;
+  SDL_PathInfo info{};
+  if (!SDL_GetPathInfo((dir + "indigo-portatil").c_str(), &info)) return "";
+  return dir + "dados/";
+}
+
+// pasta base da especificação XDG: a variável, se for um caminho absoluto; senão ~/<padrão>
+std::string xdgBase(const char* var, const char* fallback) {
+  const char* v = SDL_getenv(var);
+  if (v && v[0] == '/') return v;
+  std::string home;
+  if (const char* h = SDL_getenv("HOME"); h && h[0] == '/') home = h;
+  else if (const passwd* pw = getpwuid(getuid()); pw && pw->pw_dir) home = pw->pw_dir;
+  if (home.empty()) return "";
+  return home + "/" + fallback;
+}
+
+std::string ensureDir(std::string dir) {
+  if (dir.empty()) return "";
+  if (dir.back() != '/') dir += '/';
+  return SDL_CreateDirectory(dir.c_str()) ? dir : "";
+}
+}  // namespace
+#endif
+
+std::string dataDir() {
+#ifdef INDIGO_XDG
+  if (std::string p = ensureDir(portableDir()); !p.empty()) return p;
+  if (std::string base = xdgBase("XDG_DATA_HOME", ".local/share"); !base.empty()) return ensureDir(base + "/indigo");
+  return "";
+#else
+  std::string out;
+  if (char* pref = SDL_GetPrefPath("Indigo", "Indigo")) { out = pref; SDL_free(pref); }
+  return out;
+#endif
+}
+
+std::string configDir() {
+#ifdef INDIGO_XDG
+  if (std::string p = ensureDir(portableDir()); !p.empty()) return p;
+  if (std::string base = xdgBase("XDG_CONFIG_HOME", ".config"); !base.empty())
+    if (std::string dir = ensureDir(base + "/indigo"); !dir.empty()) return dir;
+  return dataDir();
+#else
+  return dataDir();
+#endif
 }
 
 void haptic() {

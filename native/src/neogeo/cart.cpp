@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cstring>
 #include <map>
-#include <regex>
 #include <stdexcept>
 
 #include "../core/zip.h"
@@ -537,13 +536,26 @@ Cart buildFromSet(const std::vector<uint8_t>& data, const ZipIndex& z, const Set
 }
 
 // ------------------------------------------------------------------ pelos sufixos (homebrew e jogos fora da tabela)
+// ".p1", ".c12"...: letra de `kinds` depois do ponto e número no fim do nome (já em minúsculas). Feito à mão,
+// sem std::regex (nome enorme estourava a pilha) e sem exceção (número grande demais = não serve).
+bool suffixPart(const std::string& n, const char* kinds, char& kind, int& num) {
+  if (n.size() > 255) return false;
+  size_t i = n.size();
+  while (i > 0 && n[i - 1] >= '0' && n[i - 1] <= '9') i--;
+  const size_t digits = n.size() - i;
+  if (digits == 0 || digits > 6 || i < 2 || n[i - 2] != '.' || !n[i - 1] || !std::strchr(kinds, n[i - 1])) return false;
+  kind = n[i - 1];
+  num = 0;
+  for (size_t k = i; k < n.size(); k++) num = num * 10 + (n[k] - '0');
+  return true;
+}
+
 Cart buildBySuffix(const std::vector<uint8_t>& data, const ZipIndex& z, const std::string& nome) {
-  static const std::regex re(R"(\.([psmvc])(\d+)$)");
   std::map<char, std::vector<std::pair<int, size_t>>> parts;
   for (size_t i = 0; i < z.entries.size(); i++) {
-    std::smatch m;
-    const std::string n = lower(z.entries[i].name);
-    if (std::regex_search(n, m, re)) parts[m[1].str()[0]].push_back({std::stoi(m[2].str()), i});
+    char k = 0;
+    int num = 0;
+    if (suffixPart(lower(z.entries[i].name), "psmvc", k, num)) parts[k].push_back({num, i});
   }
   if (parts['p'].empty() || (parts['c'].empty() && parts['s'].empty()))
     throw std::runtime_error("Pacote de Neo Geo desconhecido (sem os arquivos .p1/.c1).");
@@ -774,11 +786,12 @@ bool looksLikeNeoGeoZip(const std::vector<uint8_t>& data, const std::string& nom
   for (const auto& s : SET_INFO)
     if (base == s.name) return true;
   bool p = false, c = false;
-  static const std::regex rp(R"(\.p\d+$)"), rc(R"(\.(c|s)\d+$)");
   for (auto& x : e) {
     const std::string n = lower(x.name);
-    if (std::regex_search(n, rp)) p = true;
-    if (std::regex_search(n, rc)) c = true;
+    char k = 0;
+    int num = 0;
+    if (suffixPart(n, "p", k, num)) p = true;
+    if (suffixPart(n, "cs", k, num)) c = true;
   }
   return p && c;
 }

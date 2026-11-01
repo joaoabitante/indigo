@@ -6,7 +6,7 @@
 // Telas: principal, estante, cartucho (continuar, estados, versões do save, remover), nuvem e backup,
 // listas genéricas e confirmação.
 
-const esc = (t) => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+import { esc, imgSrc } from './safe.js';
 
 export class ConsoleMenu {
   constructor(root, api) {
@@ -341,16 +341,16 @@ export class ConsoleMenu {
         const v = this.api.shelfView();
         html = `<div class="cm-title">Estante</div><div class="cm-filter"><b>LB</b> ${v.groups.map(g => `<span class="${g.on ? 'on' : ''}">${esc(g.label)}</span>`).join('')} <b>RB</b><span class="cm-sort"><b>Y</b> ${esc(v.sortLabel)}</span></div>`
           + (this.shelf.length ? `<div class="cm-shelf">` + this.shelf.map((r, i) =>
-          `<div data-i="${i}" class="cm-cart ${i === this.index ? 'cm-on' : ''}">${r.cover ? `<img src="${r.cover}" alt="">` : `<span>${esc(r.name.slice(0, 2).toUpperCase())}</span>`}<b>${esc(r.name)}</b><small>${esc(r.tag || '')}${r.resume ? ' · pode continuar' : ''}</small></div>`).join('') + `</div>`
+          `<div data-i="${i}" class="cm-cart ${i === this.index ? 'cm-on' : ''}">${r.cover ? `<img src="${imgSrc(r.cover)}" alt="">` : `<span>${esc(r.name.slice(0, 2).toUpperCase())}</span>`}<b>${esc(r.name)}</b><small>${esc(r.tag || '')}${r.resume ? ' · pode continuar' : ''}</small></div>`).join('') + `</div>`
           : `<p class="cm-body">Nenhum cartucho deste console.</p>`)
           + legend(`<b>A</b> abrir · ${this.api.canTransfer() ? '<b>X</b> enviar · ' : ''}<b>LB</b>/<b>RB</b> console · <b>Y</b> ordem · <b>B</b> voltar`);
       }
     } else if (this.screen === 'list' || this.screen === 'confirm') {
       const L = this.list;
       if (this.index >= L.items.length) this.index = L.items.length - 1;
-      html = `<div class="cm-head">${L.cover ? `<img src="${L.cover}" alt="">` : ''}<div><div class="cm-title">${esc(L.title)}</div>${L.sub ? `<p class="cm-body">${esc(L.sub)}</p>` : ''}</div></div>`
+      html = `<div class="cm-head">${L.cover ? `<img src="${imgSrc(L.cover)}" alt="">` : ''}<div><div class="cm-title">${esc(L.title)}</div>${L.sub ? `<p class="cm-body">${esc(L.sub)}</p>` : ''}</div></div>`
         + `<ul class="cm-list${this.screen === 'confirm' ? ' cm-confirm' : ''}">` + L.items.map((it, i) =>
-        `<li data-i="${i}" class="${i === this.index ? 'cm-on' : ''}${it.img !== undefined ? ' cm-thumb' : ''}">${it.img !== undefined ? (it.img ? `<img src="${it.img}" alt="">` : '<i></i>') : ''}<span>${esc(it.label)}</span><small>${it.side ? '<b class="cm-arrow" data-side="left">◀</b> ' : ''}${esc(it.hint || '')}${it.side ? ' <b class="cm-arrow" data-side="right">▶</b>' : ''}</small></li>`).join('') + `</ul>`
+        `<li data-i="${i}" class="${i === this.index ? 'cm-on' : ''}${it.img !== undefined ? ' cm-thumb' : ''}">${it.img !== undefined ? (it.img ? `<img src="${imgSrc(it.img)}" alt="">` : '<i></i>') : ''}<span>${esc(it.label)}</span><small>${it.side ? '<b class="cm-arrow" data-side="left">◀</b> ' : ''}${esc(it.hint || '')}${it.side ? ' <b class="cm-arrow" data-side="right">▶</b>' : ''}</small></li>`).join('') + `</ul>`
         + legend('<b>A</b> escolher · <b>B</b> voltar');
     } else if (this.screen === 'keypad') {
       const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', 'OK'];

@@ -107,6 +107,23 @@ if [ ! -f deps/sdl3-win/lib/libSDL3.a ]; then
   cmake --build deps/b-win >/dev/null && cmake --install deps/b-win >/dev/null
 fi
 
+# 3b. SDL3 compartilhado para o app do Linux (vai no pacote em lib/, tools/pacote-linux.sh). Os cabeçalhos do X11,
+# Wayland, PipeWire, PulseAudio e ALSA só servem para compilar: o SDL abre cada um com dlopen ao rodar.
+if [ ! -f deps/sdl3-linux/lib/libSDL3.so.0 ]; then
+  log "compilando SDL3 para Linux"
+  SUDO=""; [ "$(id -u)" -ne 0 ] && SUDO=sudo
+  $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends libx11-dev libxext-dev \
+    libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxfixes-dev libxtst-dev libwayland-dev libxkbcommon-dev \
+    libdecor-0-dev wayland-protocols libegl-dev libgl-dev libgles-dev libasound2-dev libpulse-dev \
+    libpipewire-0.3-dev libdbus-1-dev libudev-dev libusb-1.0-0-dev >/dev/null
+  [ -d deps/SDL ] || git clone -q --depth 1 --branch release-3.4.18 https://github.com/libsdl-org/SDL.git deps/SDL
+  cmake -S deps/SDL -B deps/b-lin -G Ninja -DCMAKE_BUILD_TYPE=Release -DSDL_SHARED=ON -DSDL_STATIC=OFF \
+    -DSDL_TESTS=OFF -DSDL_TEST_LIBRARY=OFF -DSDL_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX="$ENV_DIR/deps/sdl3-linux" \
+    -DCMAKE_C_FLAGS="-O2 -D_FORTIFY_SOURCE=2 -fstack-protector-strong" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,relro,-z,now" >/dev/null
+  cmake --build deps/b-lin >/dev/null && cmake --install deps/b-lin >/dev/null && rm -rf deps/b-lin
+fi
+
 # 4. builds do Índigo: Linux (ferramentas), Windows (app + ferramentas) e sanitizadores (robustez)
 log "compilando o Índigo"
 cmake -S "$REPO/native" -B build-lin -G Ninja -DINDIGO_APP=OFF >/dev/null && cmake --build build-lin >/dev/null
@@ -121,6 +138,7 @@ cat <<INFO
 == pronto
 build Linux:    $ENV_DIR/build-lin
 build Windows:  $ENV_DIR/build-win   (indigo.exe)
+app do Linux:   cmake -S native -B build-app -DCMAKE_PREFIX_PATH=$ENV_DIR/deps/sdl3-linux (tools/pacote-linux.sh)
 sanitizadores:  $ENV_DIR/build-san
 ROMs de teste:  $ENV_DIR/roms
 revalidar:      $REPO/native/tools/validate.sh $ENV_DIR/build-lin $ENV_DIR/roms

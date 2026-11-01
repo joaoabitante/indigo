@@ -1,6 +1,6 @@
 // Cópia de segurança dos saves na nuvem (Vercel Blob), compartilhada entre os aparelhos que abrem este site.
 // Só saves de cartucho: as ROMs nunca sobem. Guarda as 6 versões mais recentes de cada save.
-// O acesso a esta rota é protegido pela Autenticação do Vercel, como o resto do site.
+// O acesso a esta rota exige o PIN da nuvem (api/_auth.js).
 //
 //   GET  ?action=list                         → { saves: [{ key, at, size, from, name, console }] } (só a mais nova de cada)
 //   GET  ?action=versions&key=                → { versions: [{ at, size, from }] }
@@ -86,7 +86,8 @@ export async function POST(request) {
   const key = url.searchParams.get('key');
   if (!validKey(key)) return fail('Chave de save inválida.');
   const at = Number(url.searchParams.get('at'));
-  if (!Number.isFinite(at) || at <= 0) return fail('Data do save inválida.');
+  // data no futuro (mais de 5 min à frente do servidor) passaria na frente de todos os saves verdadeiros
+  if (!Number.isFinite(at) || at <= 0 || at > Date.now() + 5 * 60 * 1000) return fail('Data do save inválida.');
   const body = await request.arrayBuffer();
   if (!body.byteLength || body.byteLength > MAX_SAVE) return fail('Save com tamanho inválido.');
   const folder = ROOT + enc(key) + '/';

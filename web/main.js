@@ -15,6 +15,7 @@ import { Cloud } from './cloud.js';
 import { GamepadInput, ACTIONS, XBOX_NAMES } from './gamepad.js';
 import { transferStatus, sendCartridge, sendShelf, receiveCartridge, cancelTransfer } from './transfer.js';
 import { ConsoleMenu } from './consolemenu.js';
+import { esc, imgSrc } from './safe.js';
 import { initDownloads } from './downloads.js';
 
 const $ = (id) => document.getElementById(id);
@@ -688,7 +689,6 @@ function ago(t) {
   return 'Jogado agora';
 }
 
-function esc(t) { return String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 let shelfCache = [];
 const shelfView = { q: '', sys: 'all', sort: 'recent' };
@@ -727,7 +727,7 @@ async function renderShelf() {
   // continuar: o jogo com o estado automático mais recente (fora o que está aberto)
   const resume = shelfCache.filter(r => canResume(r) && !(r.id === currentId && running)).sort((a, b) => b.autoAt - a.autoAt)[0];
   $('resumeBar').hidden = !resume;
-  if (resume) $('resumeBar').innerHTML = `${resume.cover ? `<img src="${resume.cover}" alt="">` : ''}<span><b>Continuar ${esc(resume.name)}</b><small>Parou ${esc(ago(resume.autoAt).replace('Jogado ', ''))} · ${esc(SYS_NAME[resume.console] || '')}</small></span><button class="btn primary" type="button" data-resume="${esc(resume.id)}">Continuar</button>`;
+  if (resume) $('resumeBar').innerHTML = `${resume.cover ? `<img src="${imgSrc(resume.cover)}" alt="">` : ''}<span><b>Continuar ${esc(resume.name)}</b><small>Parou ${esc(ago(resume.autoAt).replace('Jogado ', ''))} · ${esc(SYS_NAME[resume.console] || '')}</small></span><button class="btn primary" type="button" data-resume="${esc(resume.id)}">Continuar</button>`;
   // filtros só com os consoles que existem na estante
   const fopts = filterOptions();
   if (!fopts.some(o => o.v === shelfView.sys)) shelfView.sys = 'all';
@@ -753,7 +753,7 @@ async function renderShelf() {
     const hasSave = !!r.saveKey && (savedKeys.has(r.saveKey) || load(r.saveKey) !== null);
     const playing = r.id === currentId && running;
     const cover = r.cover
-      ? `<img src="${r.cover}" alt="" width="240" height="160">`
+      ? `<img src="${imgSrc(r.cover)}" alt="" width="240" height="160">`
       : `<span class="nocover">${esc((r.name || '?').slice(0, 2).toUpperCase())}</span>`;
     return `<div class="cart-item" data-id="${esc(r.id)}">
       <button class="cart-fav${r.fav ? ' on' : ''}" type="button" data-fav="${esc(r.id)}" aria-pressed="${r.fav ? 'true' : 'false'}" aria-label="${r.fav ? 'Tirar dos favoritos' : 'Marcar como favorito'}">${r.fav ? '★' : '☆'}</button>
@@ -918,7 +918,7 @@ async function openDetails(id) {
   const hist = await library.saveHistory(key).catch(() => []);
   const states = await library.listStates(id).catch(() => []);
   const isCur = id === currentId && running;
-  const cover = rec.cover ? `<img src="${rec.cover}" alt="">` : `<span class="nocover">${esc((rec.name || '?').slice(0, 2).toUpperCase())}</span>`;
+  const cover = rec.cover ? `<img src="${imgSrc(rec.cover)}" alt="">` : `<span class="nocover">${esc((rec.name || '?').slice(0, 2).toUpperCase())}</span>`;
   dialogOpen(`<div class="dlg-wide">
     <div class="det-top">
       <div class="det-cover">${cover}</div>
@@ -961,7 +961,7 @@ async function openDetails(id) {
     <div id="detCloud"></div>
     <h4>Estados salvos</h4>
     <div class="det-states">${SLOTS.map(n => { const m = states.find(x => x.slot === n); return `<div class="det-state">
-      ${m && m.thumb ? `<img src="${m.thumb}" alt="">` : '<span class="nothumb">vazio</span>'}
+      ${m && m.thumb ? `<img src="${imgSrc(m.thumb)}" alt="">` : '<span class="nothumb">vazio</span>'}
       <span class="note">${m && m.name ? `<b>${esc(m.name)}</b> · ` : ''}Espaço ${n}${m ? ' · ' + fmtDate(m.at) : ''}</span>
       ${m ? `<span><button class="linkbtn" type="button" data-state-load="${n}">Jogar daqui</button> <button class="linkbtn" type="button" data-state-name="${n}">Nomear</button> <button class="linkbtn" type="button" data-state-del="${n}">Apagar</button></span>` : ''}
     </div>`; }).join('')}</div>

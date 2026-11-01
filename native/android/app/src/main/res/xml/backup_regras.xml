@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- backup do Android (até o Android 11): saves e jogos vão, o PIN da nuvem (nuvem.txt, em texto) fica de fora -->
+<full-backup-content>
+    <include domain="file" path="." />
+    <exclude domain="file" path="nuvem.txt" />
+</full-backup-content>

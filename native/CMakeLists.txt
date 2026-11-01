@@ -24,6 +24,21 @@ if(INDIGO_LTO AND CMAKE_BUILD_TYPE STREQUAL "Release")
   endif()
 endif()
 
+# Linux (PC e Steam Deck): proteções do compilador e do link no aplicativo e nos núcleos (desligue com
+# -DINDIGO_HARDENING=OFF). Windows e Android não mudam.
+set(INDIGO_LINUX OFF)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID)
+  set(INDIGO_LINUX ON)
+endif()
+option(INDIGO_HARDENING "Linux: _FORTIFY_SOURCE, stack protector, PIE e RELRO completo" ON)
+if(INDIGO_LINUX AND INDIGO_HARDENING AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  include(CheckPIESupported)
+  check_pie_supported(LANGUAGES CXX)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)  # -fPIE na compilação e -pie no link dos executáveis
+  add_compile_options(-fstack-protector-strong "$<$<NOT:$<CONFIG:Debug>>:-U_FORTIFY_SOURCE;-D_FORTIFY_SOURCE=2>")
+  add_link_options(-Wl,-z,relro,-z,now -Wl,-z,noexecstack)
+endif()
+
 # núcleos (sem dependências externas)
 add_library(indigo_core STATIC
   src/core/registry.cpp
@@ -92,6 +107,8 @@ target_link_libraries(indigo-ziptest PRIVATE indigo_core)
 add_executable(indigo-backuptest tools/backuptest.cpp)
 target_link_libraries(indigo-backuptest PRIVATE indigo_core)
 add_executable(indigo-robustez tools/robustez.cpp)
+add_executable(indigo-t_seguranca tools/t_seguranca.cpp)  # arquivos maliciosos montados no próprio teste
+target_link_libraries(indigo-t_seguranca PRIVATE indigo_core)
 add_executable(indigo-nes6502test tools/nes6502test.cpp)
 add_executable(indigo-nestest tools/nestest.cpp)
 add_executable(indigo-dsp1test tools/dsp1test.cpp)
@@ -150,7 +167,19 @@ if(INDIGO_APP)
   if(WIN32)
     target_link_libraries(indigo PRIVATE winhttp shell32)
   endif()
-  target_link_libraries(indigo PRIVATE indigo_core SDL3::SDL3-static)
+  if(INDIGO_LINUX)
+    # Linux: SDL3 compartilhado, levado no pacote em lib/ ao lado do executável (tools/pacote-linux.sh);
+    # o libstdc++ vai dentro do executável para rodar em distribuições com um gcc mais velho
+    target_link_libraries(indigo PRIVATE indigo_core SDL3::SDL3)
+    target_link_options(indigo PRIVATE -static-libstdc++ -static-libgcc)
+    set_target_properties(indigo PROPERTIES INSTALL_RPATH "$ORIGIN/lib")
+    # ícone da janela (no Windows ele vem do .exe)
+    indigo_embed("${CMAKE_CURRENT_BINARY_DIR}/gen/icon.h" indigo_icon "${CMAKE_CURRENT_LIST_DIR}/res/indigo.png")
+    target_compile_definitions(indigo PRIVATE INDIGO_WINDOW_ICON=1)
+    install(TARGETS indigo RUNTIME DESTINATION .)
+  else()
+    target_link_libraries(indigo PRIVATE indigo_core SDL3::SDL3-static)
+  endif()
   target_compile_definitions(indigo PRIVATE INDIGO_VERSION="${PROJECT_VERSION}")
   if(WIN32)
     # ícone e informações do programa

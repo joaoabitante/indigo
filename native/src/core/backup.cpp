@@ -19,6 +19,7 @@
 #include "../a7800/a7800.h"
 #include "../cps/cps.h"
 #include "../neogeo/neogeo.h"
+#include "safe.h"
 #include "zip.h"
 #include "../lynx/lynx.h"
 #include "../vb/vb.h"
@@ -431,10 +432,15 @@ const char MAGIC[] = "INDIGOB1";
 // referência a um bloco binário depois do JSON
 bool blobRef(const Json& v, size_t base, const std::vector<uint8_t>& bytes, std::vector<uint8_t>& out) {
   if (v.type != Json::Obj || (!v.get("$ab") && !v.get("$ta"))) return false;
+  // posição e tamanho têm de ser inteiros dentro do arquivo (NaN, infinito ou fração = backup danificado)
   const double o = v.num("o", -1), n = v.num("n", -1);
-  if (o < 0 || n < 0 || base + o + n > static_cast<double>(bytes.size())) return false;
-  const size_t from = base + static_cast<size_t>(o);
-  out.assign(bytes.begin() + static_cast<long>(from), bytes.begin() + static_cast<long>(from + static_cast<size_t>(n)));
+  if (base > bytes.size()) return false;
+  const double room = static_cast<double>(bytes.size() - base);
+  if (!wholeIn(o, 0, room) || !wholeIn(n, 0, room)) return false;
+  const size_t oo = static_cast<size_t>(o), nn = static_cast<size_t>(n);
+  if (oo > bytes.size() - base || nn > bytes.size() - base - oo) return false;
+  const size_t from = base + oo;
+  out.assign(bytes.begin() + static_cast<long>(from), bytes.begin() + static_cast<long>(from + nn));
   return true;
 }
 bool isRef(const Json& v) { return v.type == Json::Obj && (v.get("$ab") || v.get("$ta") || v.get("$num")); }
@@ -442,7 +448,7 @@ bool isRef(const Json& v) { return v.type == Json::Obj && (v.get("$ab") || v.get
 SaveRec saveFrom(const Json& r, size_t base, const std::vector<uint8_t>& bytes) {
   SaveRec s;
   s.key = r.str("key");
-  s.at = r.num("at");
+  s.at = safeMs(r.num("at"));
   s.reason = r.str("reason");
   if (const Json* d = r.get("data")) blobRef(*d, base, bytes, s.data);
   return s;

@@ -11,6 +11,13 @@ struct Versão {
 };
 
 inline constexpr Versão VERSOES[] = {
+    {"2.3", "01/11/2026",
+     {"Segurança: arquivos estragados",
+      "ou maliciosos (.zip, .chd, .cue,",
+      "backups) são recusados sem",
+      "fechar o app; o PIN da nuvem",
+      "não vai mais ao backup do Android",
+      "Primeira versão para Linux", nullptr}},
     {"2.2.2", "01/11/2026",
      {"PlayStation mais fiel ao console:",
       "timers, tempos de acesso e",

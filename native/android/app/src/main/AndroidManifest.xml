@@ -18,6 +18,8 @@
     <application android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_regras"
+        android:dataExtractionRules="@xml/backup_regras_12"
         android:theme="@style/AppTheme"
         android:enableOnBackInvokedCallback="false"
         android:hardwareAccelerated="true">
@@ -37,6 +39,8 @@
                 <!-- aparece também nos lançadores de TV e de portáteis (Android TV, Anbernic, Retroid, AYN) -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <!-- sem BROWSABLE: página da internet não abre o Índigo direto (o "Abrir com" e os downloads só
+                 precisam de DEFAULT) -->
             <!-- abrir um jogo vindo do "Abrir com". Os frontends (ES-DE, Daijisho, Beacon) chamam a atividade pelo
                  nome e não dependem desta lista. Só tipos de jogo (ROM, .zip, imagem de CD e arquivo sem tipo
                  conhecido): com "*/*" o Índigo aparecia até para abrir APK, e quem marcava "Sempre" não conseguia
@@ -44,7 +48,6 @@
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="content" />
                 <data android:scheme="file" />
                 <data android:mimeType="application/octet-stream" />

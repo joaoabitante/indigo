@@ -18,7 +18,7 @@ Partes de terceiros incluídas, todas com licença compatível com a GPL-3.0:
 | QSound HLE (superctr e Valley Bell) | `native/src/cps/qsound.*` | BSD-3-Clause |
 | stb_truetype (Sean Barrett) | `native/src/third_party/stb_truetype.h` | domínio público / MIT |
 | Fonte Poppins | `native/res/fonts/` | SIL Open Font License 1.1 (`OFL-Poppins.txt`) |
-| SDL3 (biblioteca usada para compilar) | baixada pelo `setup-env.sh` | zlib |
+| SDL3 (biblioteca usada para compilar; no Linux vai no pacote, em `lib/`) | baixada pelo `setup-env.sh` | zlib |
 | Gradle wrapper | `native/android/gradle/` | Apache-2.0 |
 
 Outros emuladores (Mednafen/Beetle PSX, Genesis Plus GX, PicoDrive, Mesen 2, bsnes, Geolith, NeoCD, MAME e

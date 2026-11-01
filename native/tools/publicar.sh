@@ -39,8 +39,8 @@ grep -rq "indigo-dev" "$tmp/native/android" "$tmp/native/README.md" && { echo "s
 cat > "$tmp/README.md" <<EOF
 # Índigo Nexus
 
-**O ponto de encontro de 50 anos de videogames.** Emulador grátis e de código aberto para **Windows** e
-**Android** (o mesmo código em C++20 + SDL3), do Atari 2600 ao PlayStation, com um emulador que também roda no
+**O ponto de encontro de 50 anos de videogames.** Emulador grátis e de código aberto para **Windows**,
+**Linux** e **Android** (o mesmo código em C++20 + SDL3), do Atari 2600 ao PlayStation, com um emulador que também roda no
 navegador. Site e downloads: **https://indigo.nexus**
 
 Versão $ver. Um projeto do [Autista Empreende](https://autistaempreende.com.br), criado pelo João Abitante com a
@@ -74,6 +74,23 @@ GNU General Public License versão 3 (\`LICENSE\`). Código e dados de terceiros
 \`native/TERCEIROS.md\`. Os nomes dos consoles servem só para indicar compatibilidade e são marcas dos seus donos;
 o Índigo não tem ligação com nenhum fabricante.
 EOF
+
+cat > "$tmp/SECURITY.md" <<'EOF'
+# Segurança
+
+Achou uma falha de segurança no Índigo (app, site ou nuvem dos saves)? Não abra uma issue pública com os detalhes:
+use **Security > Report a vulnerability** neste repositório, que só o mantenedor vê. Diga a versão, o sistema
+(Windows, Linux, Android ou navegador) e como reproduzir.
+
+Recebe correção só a versão mais nova (a de https://indigo.nexus). Cada versão passa pela conferência completa, por
+testes com arquivos estragados de propósito (com AddressSanitizer e UBSan) e pelo teste de segurança `t_seguranca`.
+EOF
+
+# conferência final: nenhuma chave, senha ou e-mail particular pode sair
+if grep -rIlE --exclude=publicar.sh "BEGIN [A-Z ]*PRIVATE KEY|joao\.abitante\.contabeis|storePassword|keyPassword" "$tmp" \
+   || find "$tmp" -type f \( -name '*.keystore' -o -name '*.jks' -o -name '*.pem' -o -name '*.p12' -o -name '.env*' \) | grep -q .; then
+  echo "segredo ou e-mail particular encontrado na cópia pública; nada foi publicado"; exit 1
+fi
 
 # troca o conteúdo do clone pelo novo (mantém só o .git)
 find "$dest" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +

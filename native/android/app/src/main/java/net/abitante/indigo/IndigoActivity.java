@@ -82,15 +82,31 @@ public class IndigoActivity extends SDLActivity {
         try (Cursor c = getContentResolver().query(Uri.parse(uri),
                 new String[] { OpenableColumns.DISPLAY_NAME }, null, null, null)) {
             if (c != null && c.moveToFirst()) {
-                String n = c.getString(0);
-                if (n != null && !n.isEmpty()) return n;
+                String n = safeName(c.getString(0));
+                if (!n.isEmpty()) return n;
             }
         } catch (Exception e) {
             // segue para o nome tirado do próprio endereço
         }
         String s = Uri.decode(uri);
         int i = Math.max(s.lastIndexOf('/'), s.lastIndexOf(':'));
-        return i >= 0 ? s.substring(i + 1) : s;
+        String n = safeName(i >= 0 ? s.substring(i + 1) : s);
+        return n.isEmpty() ? "jogo" : n;
+    }
+
+    // o nome vem de outro app e vira nome de arquivo na pasta do Índigo: sem barras, "..", controles e
+    // caracteres proibidos no Windows, até 200 letras (o C++ confere de novo: src/core/safe.h)
+    static String safeName(String n) {
+        if (n == null) return "";
+        StringBuilder b = new StringBuilder(n.length());
+        for (int k = 0; k < n.length(); k++) {
+            char c = n.charAt(k);
+            b.append(c < 0x20 || c == 0x7F || "/\\:*?\"<>|".indexOf(c) >= 0 ? '_' : c);
+        }
+        String s = b.toString();
+        if (s.length() > 200) s = s.substring(0, 200);
+        while (s.endsWith(".") || s.endsWith(" ")) s = s.substring(0, s.length() - 1);
+        return s;
     }
 
     // vibração curta ao apertar um botão da tela
@@ -100,6 +116,8 @@ public class IndigoActivity extends SDLActivity {
             v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
         });
     }
+
+    private static final long MAX_BODY = 64L * 1024 * 1024;
 
     // requisição HTTP para a nuvem dos saves (chamada fora da linha da interface).
     // Resposta: status (4 bytes, big-endian), tipo do conteúdo + "\n", corpo. Status 0 = erro (corpo = mensagem).
@@ -126,10 +144,19 @@ public class IndigoActivity extends SDLActivity {
             out.write(new byte[] { (byte) (status >> 24), (byte) (status >> 16), (byte) (status >> 8), (byte) status });
             out.write(((type == null ? "" : type) + "\n").getBytes(StandardCharsets.UTF_8));
             if (in != null) {
+                // até 64 MB, como no Windows (src/app/platform.cpp)
                 byte[] buf = new byte[16384];
                 int n;
-                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-                in.close();
+                long total = 0;
+                try {
+                    while ((n = in.read(buf)) > 0) {
+                        total += n;
+                        if (total > MAX_BODY) throw new java.io.IOException("resposta grande demais");
+                        out.write(buf, 0, n);
+                    }
+                } finally {
+                    in.close();
+                }
             }
             return out.toByteArray();
         } catch (Exception e) {

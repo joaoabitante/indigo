@@ -261,6 +261,11 @@ mkdir -p "$TMP/chd"
 if "$B/indigo-t7_chd" "$R/chd" "$TMP/chd" > "$TMP/chdr"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/chdr" | head -5; fi
 grep "RESULTADO" "$TMP/chdr" | sed 's/^/  /'
 
+echo "== Segurança: backup com NaN, .zip com \"..\\\", nomes enormes no Neo Geo, .chd com mapa gigante, .cue fora da pasta, nomes vindos de outro app"
+mkdir -p "$TMP/seg"
+if "$B/indigo-t_seguranca" "$TMP/seg" > "$TMP/segr" 2>&1; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh\|error" "$TMP/segr" | head -5; fi
+grep "RESULTADO" "$TMP/segr" | sed 's/^/  /'
+
 echo "== PC Engine CD: System Cards de teste (SCSI, CD-DA, ADPCM, Arcade Card) e scsitest/okitest iguais ao Mesen 2, som, BIOS, BRAM, save state"
 if "$B/indigo-t7_pcecd" "$R/pcecd" > "$TMP/pcecd"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/pcecd" | head -5; fi
 grep "RESULTADO" "$TMP/pcecd" | sed 's/^/  /'

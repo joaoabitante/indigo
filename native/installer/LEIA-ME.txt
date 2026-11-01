@@ -16,6 +16,13 @@ Licença
 - O Índigo é software livre (GNU GPL versão 3). Ele não traz jogos nem BIOS: use cópias dos seus.
   Créditos de terceiros: veja TERCEIROS.md no código-fonte (github.com/joaoabitante, em breve público).
 
+Novo na 2.3
+- Segurança: arquivos .zip, .chd, .cue e backups .indigo estragados ou maliciosos agora são recusados sem
+  fechar o app nem gravar fora da pasta do Índigo. No Android, o PIN da nuvem não vai mais para o backup do
+  sistema e uma página da internet não consegue mais mandar o app abrir arquivos.
+- Nomes de ROM com : * ? " < > | (Android) passam a usar _ no nome do save; renomeie o save antigo se preciso.
+- Primeira versão para Linux (x86_64), em pacote separado.
+
 Novo na 2.2.2
 - PlayStation: os timers, os tempos de acesso aos registradores e as escritas de 8, 16 e 32 bits agora seguem
   o console (conferidos com os ps1-tests). NASCAR 2001 e Ace Combat 3 testados até a corrida e a missão.

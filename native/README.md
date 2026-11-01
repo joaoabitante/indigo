@@ -76,6 +76,7 @@ Ruby/Sapphire/Emerald, Boktai) vai junto no `.sav`, no mesmo formato da versão 
   para as versões anteriores. O horário de cada save fica em `saves/<jogo>.sav.at`.
 - Teste local da nuvem com o código de verdade do site (`api/cloud.js`) e um depósito na memória:
   `INDIGO_PIN=1234 node native/tools/cloudmock.mjs 8787` e o app com `INDIGO_CLOUD_URL=http://127.0.0.1:8787`.
+  O `INDIGO_CLOUD_URL` só aceita `https://`, ou `http://` para `localhost`/`127.0.0.1` (o PIN vai em cada pedido).
 
 ## Android (celular)
 
@@ -111,6 +112,18 @@ instalador NSIS de 64 bits):
 ```bash
 native/tools/pacote-pc.sh build-win saida/   # Indigo-PC-<versão>.zip e Indigo-<versão>-instalador.exe
 ```
+
+App do Linux (PC x86_64 e Steam Deck), com o SDL3 compartilhado que o `tools/setup-env.sh` compila em
+`deps/sdl3-linux`. No Linux o build liga as proteções do compilador (`_FORTIFY_SOURCE=2`, stack protector, PIE,
+RELRO completo; `-DINDIGO_HARDENING=OFF` desliga) e o pacote leva o SDL3 em `lib/`:
+
+```bash
+cmake -S native -B build-app -G Ninja -DCMAKE_PREFIX_PATH=/caminho/do/sdl3-linux && cmake --build build-app --target indigo
+native/tools/pacote-linux.sh build-app saida/   # Indigo-Linux-<versão>-x86_64.tar.gz
+```
+
+No Linux os dados seguem o XDG: saves, estados e BIOS em `~/.local/share/indigo/`, opções e controles em
+`~/.config/indigo/`. Com um arquivo `indigo-portatil` ao lado do executável, tudo vai para `dados/` ali mesmo.
 
 Só os núcleos e a ferramenta de teste (sem SDL):
 

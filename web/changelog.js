@@ -3,6 +3,16 @@
 export const CHANGELOG = [
   {
     date: '2026-11-01',
+    title: 'App 2.3: revisão de segurança',
+    items: [
+      'Arquivos .zip, .chd, .cue e backups .indigo estragados ou maliciosos agora são recusados sem fechar o app e sem gravar nada fora da pasta do Índigo.',
+      'Android: o PIN da nuvem não vai mais para o backup do sistema, outro app não consegue sobrescrever arquivos do Índigo e páginas da internet não mandam mais o app abrir arquivos.',
+      'Site: capas e miniaturas só aceitam imagens de verdade, a página ganhou proteções do navegador (CSP) e a nuvem recusa saves com data no futuro.',
+    ],
+    tests: 'Teste novo de segurança (77 verificações); revalidação de 1032 comparações iguais e robustez com 0 problemas.',
+  },
+  {
+    date: '2026-11-01',
     title: 'App 2.2.2: PlayStation mais fiel ao console',
     items: [
       'Timers que voltam a 0 no alvo como no console, tempos de acesso aos registradores e escritas de 8, 16 e 32 bits iguais aos testes tirados do aparelho (ps1-tests).',

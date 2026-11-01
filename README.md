@@ -1,10 +1,10 @@
 # Índigo Nexus
 
-**O ponto de encontro de 50 anos de videogames.** Emulador grátis e de código aberto para **Windows** e
-**Android** (o mesmo código em C++20 + SDL3), do Atari 2600 ao PlayStation, com um emulador que também roda no
+**O ponto de encontro de 50 anos de videogames.** Emulador grátis e de código aberto para **Windows**,
+**Linux** e **Android** (o mesmo código em C++20 + SDL3), do Atari 2600 ao PlayStation, com um emulador que também roda no
 navegador. Site e downloads: **https://indigo.nexus**
 
-Versão 2.2.2. Um projeto do [Autista Empreende](https://autistaempreende.com.br), criado pelo João Abitante com a
+Versão 2.3.0. Um projeto do [Autista Empreende](https://autistaempreende.com.br), criado pelo João Abitante com a
 ajuda de inteligência artificial (Claude).
 
 ## Consoles

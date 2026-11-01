@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- backup na nuvem do Google e cópia para outro aparelho (Android 12 em diante): o PIN da nuvem
+     (nuvem.txt, em texto) fica de fora; o resto (saves, jogos, BIOS) continua indo -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="." />
+        <exclude domain="file" path="nuvem.txt" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="." />
+        <exclude domain="file" path="nuvem.txt" />
+    </device-transfer>
+</data-extraction-rules>
