@@ -1,0 +1,238 @@
+# Registro de melhorias do Índigo
+
+Gerado de `web/changelog.js` (o mesmo texto aparece no cartão “Registro” da página).
+
+## 01/11/2026 · App 2.2: 3DO experimental e código livre (GPL-3.0)
+
+- Panasonic 3DO, em fase experimental: abra antes a BIOS do seu console (ex.: panafz10.bin) e depois o jogo em .cue/.bin, .chd ou .iso. Ainda não foi testado com jogos comerciais.
+- Sega CD reescrito do zero. Estados salvos do Sega CD de versões antigas não carregam; o save do jogo continua.
+- O Índigo agora é software livre, com licença GPL-3.0, e traz a lista de créditos de terceiros (TERCEIROS.txt no zip do PC).
+
+**Testes:** 3DO: CPU igual a 596.960 casos dos SingleStepTests, 88 verificações do núcleo; Sega CD: 99 verificações iguais ao Genesis Plus GX (como régua externa); revalidação de 1031 comparações iguais e robustez com 0 problemas.
+
+## 01/11/2026 · App 2.0.1: PlayStation em 2× e 4×
+
+- PlayStation com resolução 2× e 4× (nos Ajustes ou no menu do jogo): a imagem fica nítida em telas grandes. No PC o padrão é 2×; no celular, 1×.
+- CD, DMA e vídeos (MDEC) do PlayStation mais perto do console de verdade, medidos contra resultados de um PlayStation real.
+- SNES: o relógio do SPC7110 volta para a hora do aparelho ao carregar um estado, sem deixar o estado diferente.
+
+**Testes:** ps1-tests contra o console: status do MDEC igual em 777 de 777 leituras, tempos do DMA a 10% do console em 130 de 130, Init do CD em 474 663 x 476 300 ciclos; revalidação de 1030 comparações iguais e robustez com 0 problemas.
+
+## 01/11/2026 · Índigo 2.0: PlayStation e página nova
+
+- A área "Índigo para PC e celular" passa a entregar a versão 2.0, com o PlayStation: 3D, CDs em .cue/.bin, .chd ou .iso, cartão de memória, controle analógico e vibração.
+- O PlayStation precisa da BIOS do seu console, aberta no app uma vez como se fosse um jogo. O Índigo não traz BIOS nem jogos.
+- Página nova do site, com os consoles, os recursos, o plano do projeto e a história do Índigo, um projeto do Autista Empreende.
+- O Índigo para no PlayStation: daqui em diante o trabalho é precisão, compatibilidade, velocidade e recursos novos nos consoles que já existem.
+- No Windows segue só a versão portátil (.zip). O emulador do navegador não muda.
+
+**Testes:** Testes do ps1-tests pela CPU (GTE 1150/1150, SPU, CD, MDEC, DMA) e um disco de teste dando a partida pela BIOS do console, com a imagem igual à do Beetle PSX; revalidação de 1030 comparações iguais e robustez com 0 problemas.
+
+## 31/10/2026 · App 1.9 para baixar: consoles de CD, 32X e interface nova
+
+- A área "Índigo para PC e celular" passa a entregar a versão 1.9, com Sega CD, PC Engine CD (CD-ROM², Super CD-ROM² e Arcade Card), Neo Geo CD e Sega 32X.
+- CDs em .cue/.bin, .chd ou .iso (no celular, use o .chd). Os consoles de CD precisam da BIOS do aparelho, aberta no app uma vez; o 32X não precisa.
+- Interface nova: nítida em qualquer escala do Windows, estante que ocupa a tela toda, janela do tamanho da tela, celular com 3 colunas e controles que não cobrem a imagem.
+- No celular, o Índigo deixa de se oferecer para abrir APK (atrapalhava instalar versões novas).
+- No Windows segue só a versão portátil (.zip). O site em si (o emulador no navegador) não muda.
+
+**Testes:** Leitor de .chd igual ao .cue em 104 imagens; 32X, Sega CD, PC Engine CD e Neo Geo CD comparados com PicoDrive, Genesis Plus GX, Mesen 2 e NeoCD; revalidação de 1024 comparações iguais e robustez com 0 problemas.
+
+## 30/10/2026 · App 1.8 para baixar: Neo Geo e arcades da Capcom
+
+- A área "Índigo para PC e celular" passa a entregar a versão 1.8, com Neo Geo MVS/AES e os arcades Capcom CPS1 e CPS2. O .zip do jogo (o mesmo do MAME) é aberto direto, sem extrair, e aparece na aba ARCADE.
+- O Neo Geo precisa da BIOS do aparelho (neogeo.zip), aberta no app uma vez como se fosse um jogo.
+- O SNES ganha o chip S-DD1 (Star Ocean e Street Fighter Alpha 2).
+- No Windows segue só a versão portátil (.zip). O site em si (o emulador no navegador) não muda.
+
+**Testes:** Neo Geo conferido quadro a quadro contra o Geolith em 25 programas; decifração do CPS2 igual à do MAME; revalidação de 1018 comparações iguais e robustez com 0 problemas.
+
+## 25/10/2026 · App 1.7 para baixar: Mega Drive e PC Engine
+
+- A área "Índigo para PC e celular" passa a entregar a versão 1.7, com Mega Drive / Genesis (controle de 6 botões) e PC Engine / TurboGrafx-16 e SuperGrafx.
+- No Windows segue só a versão portátil (.zip).
+- O site em si (o emulador no navegador) não muda.
+
+**Testes:** Mega Drive conferido contra 1 milhão de casos do 68000 e o Genesis Plus GX; PC Engine contra 640 mil casos do HuC6280 e o Mesen 2; revalidação de 1015 comparações iguais e robustez com 0 problemas.
+
+## 25/10/2026 · Windows: download só da versão portátil
+
+- O instalador .exe saiu da área de downloads: sem assinatura digital, o navegador e o Windows (SmartScreen) barravam o arquivo.
+- No Windows fica a versão portátil (.zip), com o passo a passo para desbloquear o arquivo nas Propriedades e abrir o Índigo sem aviso.
+
+**Testes:** Página gerada de novo: os links do .zip e do .apk apontam para os arquivos da versão 1.6.
+
+## 24/10/2026 · App 1.6 para baixar: 10 consoles novos
+
+- A área "Índigo para PC e celular" passa a entregar a versão 1.6, com Atari 2600, Atari 7800, Atari Lynx, WonderSwan e WonderSwan Color, Virtual Boy (com 3D anaglifo), Pokémon Mini, MSX e MSX2, ColecoVision, SG-1000 e Vectrex.
+- ColecoVision e Vectrex precisam da BIOS do aparelho, aberta no app uma vez como se fosse um jogo.
+- O site em si (o emulador no navegador) não muda.
+
+**Testes:** Cada console novo conferido contra emuladores de referência e ROMs de teste públicas; revalidação de 1012 comparações iguais e teste de robustez com 0 problemas.
+
+## 24/10/2026 · App 1.5 para baixar: portáteis e frontends
+
+- A área "Índigo para PC e celular" passa a entregar a versão 1.5, feita para portáteis: Legion Go, ROG Ally, MSI Claw e Steam Deck (Windows) e Anbernic, Retroid e AYN (Android).
+- O app funciona todo pelo controle (inclusive o analógico nos menus), abre em tela cheia nos PCs de mão e recebe jogos de frontends como ES-DE, Daijisho, Playnite, LaunchBox e Steam.
+- O site em si (o emulador no navegador) não muda.
+
+**Testes:** App revalidado antes de publicar: 1000 comparações iguais à referência e 84 ROMs no teste de robustez, 0 problemas; abertura por frontend testada no Windows.
+
+## 22/10/2026 · App 1.4 para baixar: chips Super FX, DSP-1 e SA-1 do SNES
+
+- A área "Índigo para PC e celular" passa a entregar a versão 1.4 (a 1.3 não chegou ao site; a 1.4 já a inclui).
+- SNES: chip Super FX (Star Fox, Yoshi's Island, Stunt Race FX, Doom), DSP-1 (Super Mario Kart, Pilotwings) e SA-1 (Super Mario RPG, Kirby Super Star).
+- O site em si (o emulador no navegador) não muda: o SNES está só no app.
+
+**Testes:** App revalidado antes de publicar: 1000 comparações iguais à referência e 84 ROMs no teste de robustez, 0 problemas.
+
+## 22/10/2026 · App 1.2 para baixar: SNES no PC e no celular
+
+- A área "Índigo para PC e celular" passa a entregar a versão 1.2: o app agora abre jogos de SNES / Super Famicom (.sfc e .smc), com botões X e Y na tela, no controle e no teclado.
+- A versão 1.2 também traz mais 6 chips de cartucho do NES, com o som extra (MMC5 do Castlevania III, VRC6, VRC7, Namco 163 e Sunsoft 5B).
+- O site em si (o emulador no navegador) não muda: o SNES está só no app.
+
+**Testes:** Página gerada e aberta em navegador automatizado (Windows, Pixel 7, iPhone 13): os três arquivos novos baixam inteiros e a lista de consoles mostra o SNES.
+
+## 22/10/2026 · Baixe o Índigo para PC e celular
+
+- Nova área "Índigo para PC e celular" na página (e o botão "Baixar app" no topo): instalador do Windows, versão portátil em .zip e o app de Android (.apk), na versão 1.1.
+- A página destaca o arquivo certo para o aparelho de quem abre: o APK no Android e o instalador no Windows. No iPhone e no iPad, avisa que o Índigo funciona aqui mesmo no navegador.
+- O app instalado abre sem internet, roda direto no processador, traz o NES e usa a mesma nuvem de saves (com o mesmo PIN) deste site.
+
+**Testes:** Página gerada e aberta em navegador automatizado imitando computador com Windows, Pixel 7 e iPhone 13: o cartão certo aparece destacado e primeiro; os três arquivos baixam inteiros (tamanho e conteúdo iguais aos originais).
+
+## 20/10/2026 · Tela cheia com controle sem cortar as bordas
+
+- Corrigido: na tela cheia do celular com controle, a imagem ia até a borda física da tela, e os cantos arredondados, o recorte da câmera e a barra de gestos cortavam o texto das bordas do jogo (caixas de diálogo, placar). Agora fica uma margem (no mínimo 14 px em cima e embaixo, 24 px nas laterais, ou mais quando o celular avisa que há recorte), mantendo a proporção do console.
+
+**Testes:** Celular emulado deitado com controle simulado: Game Boy em 369×332 (10:9) dentro de 863×360, com margem de 14 px em cima e embaixo.
+
+## 20/10/2026 · Enviar a estante inteira por um código
+
+- Novo botão "Enviar estante" na estante (e "Enviar estante inteira" no menu do controle): junta todos os jogos, saves e estados e gera um código de 6 números.
+- No outro aparelho, "Receber por código" (antes "Receber cartucho") aceita tanto um cartucho quanto a estante inteira. Nada é apagado no aparelho que recebe: quando os dois têm save do mesmo jogo, fica o mais novo e o outro vai para as versões anteriores.
+- A cópia no servidor é apagada assim que o outro aparelho recebe, ou em 1 hora. O PIN da nuvem continua sendo pedido. Limite de 1,2 GB por envio; acima disso, use o Backup em arquivo.
+- Envios grandes ficaram mais robustos: cada parte tenta de novo até 3 vezes se a internet falhar, e o servidor passou a numerar as partes com 3 dígitos e a listar todas (antes, um envio com mais de 100 partes podia misturar a parte 10 com a 100).
+- Celular com controle: a tela cheia sempre mantém a proporção original de cada console (Game Boy 10:9, GBA 3:2…), ocupando a altura toda. A opção de esticar não vale mais nesse modo.
+
+**Testes:** Servidor local imitando o Vercel: computador com 3 jogos (um de 8 MB, enviado em 3 partes) → código → celular emulado com estante vazia recebeu os 3 jogos; o mesmo código usado de novo é recusado (já apagado). Envio de um cartucho só repetido sem erros. Game Boy com controle simulado no celular deitado: tela 400×360 (10:9) na altura toda.
+
+## 20/10/2026 · Celular com controle (GameSir X2 e outros): só a imagem do jogo
+
+- Com um controle conectado ao celular (GameSir X2, X2s, Xbox, DualSense, 8BitDo…), deitar o celular mostra só a imagem do jogo, ocupando a altura toda da tela, sem os botões de toque. Desconectar o controle traz os botões de volta.
+- Para encher a tela toda, inclusive nas laterais, escolha "Esticar para 16:9" em Encaixe nas opções de vídeo (a imagem fica mais larga que a original).
+- Corrigido: alguns Android mostram o leitor de digital como se fosse um controle ("uinput-fpc"). Isso fazia o Índigo achar que havia controle e tirar os botões de toque. Esse falso controle agora é ignorado.
+- Controles que não seguem o layout padrão (modo "Other"/DirectInput em alguns Android) agora têm o direcional lido também pelos eixos do chapéu.
+- Corrigido: no celular deitado, o Modo TV aberto pelo controle ficava escondido atrás do console.
+
+**Testes:** Pixel 7 deitado com controle simulado: só leitor de digital → continua com botões de toque; GameSir simulado → botões somem e a tela vai a 540×360 (altura inteira); direita + A chegam ao jogo; "Esticar" → 863×360 (tela inteira). Testes de toque e som repetidos sem erros.
+
+## 20/10/2026 · Tela cheia no celular sem congelar
+
+- Corrigido: no celular, "Modo TV" (tela cheia) abria a tela feita para controle, sem os botões de toque. Com o console deitado por cima, a imagem do jogo ficava parada e parecia travada (relatado com Pokémon Fire Red no Android).
+- No celular sem controle conectado, o botão vira "Tela cheia": o navegador entra em tela cheia, tenta girar para deitado e o jogo aparece com os botões de toque. No menu do Índigo, "Ver a página" sai da tela cheia.
+- Com controle conectado, o Modo TV continua igual.
+- Corrigido: o item "Paleta do Game Boy" aparecia no menu em jogos de Game Gear, Master System e Neo Geo Pocket.
+
+**Testes:** Pixel 7 emulado: em pé, "Tela cheia" ativa a tela cheia do navegador; ao deitar, o console com botões ocupa a tela e a imagem continua mudando (duas capturas diferentes); "Ver a página" sai da tela cheia. Testes de toque e som da etapa anterior repetidos sem erros.
+
+## 20/10/2026 · Celular: som confiável e controles de toque
+
+- Som no celular: o áudio agora é ligado dentro do próprio toque, como o iPhone e o Android exigem. Antes, ao abrir um jogo pela estante, o pedido saía depois de ler o cartucho e o celular podia recusar, deixando o jogo mudo.
+- iPhone: o Índigo pede para tocar como app de jogo, então o som sai mesmo com a chave de silencioso ligada nos iPhones que permitem isso.
+- Se o som parar sozinho (ligação, outro app tocando, tela bloqueada), o próximo toque religa. O topo da página mostra "Som ligado" ou "Som parado: toque aqui".
+- Botão "Testar som" nas opções: toca três notas e diz se o navegador liberou o som e se o volume do Índigo está em zero.
+- Correção: com o som parado, o jogo rodava um pouco mais lento porque o ritmo seguia uma fila de áudio que não andava. Agora o ritmo só segue o áudio quando ele está tocando.
+- Direcional pelo ângulo do polegar: diagonais fáceis, dá para deslizar entre direções sem levantar o dedo e o polegar não "escapa" ao sair do desenho.
+- Tocar entre A e B aperta os dois; dá para deslizar de um para o outro. Vários dedos ao mesmo tempo continuam funcionando.
+- Botões maiores no celular em pé; Select, Start e Option aceitam toque numa área maior que o desenho; L e R do GBA ficam visíveis em cima.
+- Vibração curta ao apertar (Android), que dá para desligar em "Vibrar ao tocar nos botões da tela".
+- Celular deitado com jogo aberto: o console ocupa a tela inteira, sem rolagem, com L e R nos cantos e os atalhos Menu, Salvar estado e Carregar.
+- O menu do Índigo (o mesmo do controle do Xbox) agora funciona com toque: tocar escolhe, ◀ ▶ mudam opções, ✕ fecha. Nele, "Ver a página" sai da tela cheia; deitar o celular de novo volta.
+- Segurar o dedo nos botões não abre mais o menu do navegador nem seleciona texto; uma notificação ou troca de app solta os botões apertados.
+- Corrigido: o Select do GBA aparecia dentro de uma caixa por herdar o estilo dos seletores da página.
+
+**Testes:** Navegador automatizado imitando Pixel 7 (em pé e deitado) e iPhone 13, com toques reais: diagonal, deslizar para a esquerda, polegar fora do desenho, meio de A e B, dois dedos (cima + A), soltar; tela cheia deitado sem rolagem, menu aberto pelo toque e "Ver a página". Som testado com um contexto que só retoma dentro de um gesto (como no iPhone): parado mostra "Som parado: toque aqui" e um toque no A religa, com o jogo a 60 qps.
+
+## 15/10/2026 · Site público, fora do Google, com PIN na nuvem
+
+- O site deixa de pedir login do Vercel: qualquer aparelho abre o endereço direto.
+- Continua fora do Google: todas as páginas mandam "noindex, nofollow" (cabeçalho e meta), que proíbe buscadores de listar o site.
+- Saves na nuvem e "Enviar cartucho" passam a pedir um PIN, digitado uma vez em cada aparelho e guardado nele. Sem o PIN ninguém lê nem grava seus saves; tentativas erradas esperam quase 1 s cada.
+- Na estante, "Nuvem bloqueada: digite o PIN" com o atalho "Digitar PIN" quando o aparelho ainda não tem o PIN.
+
+**Testes:** Servidor local com as rotas reais e PIN configurado: sem PIN a nuvem responde 401 e a estante mostra "Nuvem bloqueada"; PIN errado é recusado; PIN certo libera e sincroniza.
+
+## 15/10/2026 · Capas, favoritos, coleções e 9 espaços de estado
+
+- Capa automática tirada uma única vez, na primeira tela com conteúdo (quase sempre a tela-título), e depois fixa. Antes a capa só aparecia depois de 1,5 min de jogo e mudava a cada minuto.
+- Em Detalhes: usar a tela atual como capa, escolher uma imagem própria (recortada em 3:2) ou remover a capa. No menu do controle: "Usar a tela atual como capa".
+- Favoritos: estrela em cada cartucho da estante, no Detalhes e no menu do controle; filtro "★ Favoritos".
+- Coleções (ex.: "Zerados", "Pokémon"): crie e marque em Detalhes; cada coleção vira um filtro na estante e no menu do controle (LB/RB).
+- 9 espaços de estado por jogo (eram 3), com nome opcional ("antes do chefe") e miniatura. No menu do controle, a tela "Estados salvos" mostra os 9 espaços com miniatura: espaço vazio salva direto, espaço usado oferece carregar ou salvar por cima.
+- O backup e a restauração levam favoritos, coleções e o ponto de Continuar.
+- Corrigido durante os testes: a contagem de tempo de jogo tinha sido apagada sem querer nesta etapa e impedia abrir jogos; foi restaurada antes de publicar.
+
+**Testes:** Navegador automatizado: capa tirada sozinha no Tutankham; favorito e filtro de favoritos; coleção criada e virando filtro; estado salvo no espaço 7, nomeado e listado no seletor e no menu do controle. Testes das etapas anteriores repetidos sem erros (estante, saves, versões, backup, nuvem entre dois aparelhos, Continuar).
+
+## 15/10/2026 · Controle no Xbox, saves na nuvem e Continuar
+
+- Saves na nuvem: cada save gravado sobe sozinho para a nuvem do site (Vercel Blob) uns 20 s depois, e os saves mais novos feitos em outro aparelho descem ao abrir a página, ao voltar para a aba, a cada 5 min e antes de abrir o jogo. Só os saves sobem, nunca as ROMs. Ficam as 6 versões mais recentes de cada jogo na nuvem.
+- Em conflito vale o save mais novo; o outro vai para as versões anteriores. Se o jogo aberto tiver um save mais novo na nuvem, o Índigo avisa e a versão fica disponível em Detalhes → Na nuvem → Usar esta.
+- Continuar de onde parou: um estado automático é guardado a cada minuto de jogo, ao trocar de jogo e ao sair da aba. A estante mostra uma barra "Continuar" com o último jogo e um botão Continuar em cada cartucho. Ele não aparece se o save do cartucho veio depois de outro aparelho, para não voltar a um ponto antigo.
+- Menu do controle (View + Menu): "Continuar de onde parou" no topo; estante com filtro por console (LB/RB) e ordem (Y); tela de cada cartucho com Continuar, Jogar do início, carregar estados 1 a 3, versões anteriores do save com confirmação, enviar e remover (mantendo ou não o save).
+- Menu do controle: tela "Nuvem e backup" para sincronizar, ligar ou desligar a nuvem e baixar um backup de saves e estados.
+
+**Testes:** Servidor local imitando o Vercel com armazenamento em memória e dois navegadores simulando dois aparelhos: o save do aparelho A subiu, o aparelho B recebeu e abriu o jogo com ele; versões da nuvem aparecem em Detalhes; Continuar volta ao ponto exato; o menu do controle foi percorrido pelo teclado (estante, cartucho, nuvem). Rota da nuvem testada à parte (envio, lista, versões, limite de 6, chave inválida).
+
+## 15/10/2026 · Estante, saves e backup
+
+- Saves de cartucho agora ficam no banco do navegador (IndexedDB), não mais no localStorage, que tinha limite de uns 5 MB e podia falhar sem avisar. Os saves antigos são copiados automaticamente na primeira abertura.
+- O save só aparece como gravado depois que o banco confirma. Se a gravação falhar, o Índigo tenta de novo e avisa para exportar o .sav.
+- Cada ROM tem o próprio save. Antes, duas ROMs com o mesmo cabeçalho (homebrews, hacks) dividiam o save.
+- Versões anteriores do save: até 12 por jogo, uma a cada 10 minutos de jogo e sempre antes de importar, restaurar ou apagar. Dá para restaurar ou baixar qualquer uma.
+- Backup da estante num arquivo .indigo (ROMs, saves, versões e estados) e restauração que junta com o que já existe, sem apagar nada.
+- Aviso na estante quando o navegador pode apagar os dados (comum no Xbox) ou quando o último backup tem mais de 14 dias.
+- Detalhes do cartucho: renomear, ver título, código, tamanho, datas e tempo de jogo; exportar, importar e apagar o save; versões anteriores; estados com miniatura, "Jogar daqui" e apagar.
+- Remover da estante pede confirmação e pergunta se apaga também o save e os estados (o save vai para as versões anteriores).
+- Adicionar várias ROMs de uma vez (botão ou arrastando vários arquivos), sem abrir cada uma.
+- Busca, filtro por console e ordem (recentes, nome, adicionados, tempo de jogo, console), lembrados entre visitas.
+- Tempo de jogo por cartucho, contado só com o jogo rodando.
+- Registro de atividade deste aparelho (saves importados e restaurados, backups, cartuchos adicionados e removidos).
+
+**Testes:** Testado no Chromium: save gravado e recuperado depois de recarregar a página; migração de save antigo do localStorage; versões anteriores e restauração; backup completo e restauração num navegador limpo; adição em lote com arquivos válidos, repetidos e inválidos; filtros e ordenação.
+
+## 15/10/2026 · Atualização automática da página
+
+- A página confere se há versão nova ao abrir, ao voltar para a aba e a cada 30 minutos. Sem jogo rodando, recarrega sozinha; com jogo, avisa.
+- O servidor pede para o navegador sempre revalidar a página (o Xbox estava mostrando uma versão antiga guardada).
+
+**Testes:** Testado no Chromium com servidor local: com a mesma versão não recarrega; com versão nova recarrega uma única vez.
+
+## 15/10/2026 · Neo Geo Pocket e Neo Geo Pocket Color
+
+- Núcleo novo: CPU TLCS-900H, vídeo K2GE (cor e monocromático), som T6W28 com o Z80, timers, interrupções, micro-DMA, relógio e flash do cartucho (save .ngf).
+- BIOS e fonte do sistema próprias, sem nenhum dado da SNK.
+- Tela 160×152, botão Option, saves .ngf e estados.
+
+**Testes:** CPU comparada instrução a instrução com um emulador de referência (540 mil instruções de homebrews e 2,4 milhões de instruções aleatórias). Telas de Tutankham e do template iguais às da referência, exceto o desenho da fonte.
+
+## 15/10/2026 · Game Gear e Master System
+
+- Núcleo Z80 (passa ZEXDOC e ZEXALL), vídeo modo 4, som SN76489 com o estéreo do Game Gear, mapeadores Sega e Codemasters.
+
+**Testes:** ZEXDOC/ZEXALL 100%; exemplos do devkitSMS idênticos às capturas de referência.
+
+## 15/10/2026 · Fluidez no Xbox, relógio e precisão do GBA
+
+- Emulação num Web Worker e som por AudioWorklet: a página só desenha e lê os controles.
+- Relógio do cartucho do GBA (Pokémon Ruby/Sapphire/Emerald e outros) e tempo de memória mais fiel.
+
+**Testes:** GBA a 50 qps contra 9 qps antes num teste com WebGL lento; suíte de tempo do GBA melhorou.
+
+## 15/10/2026 · Game Boy e Game Boy Color
+
+- Núcleo novo de GB/GBC com tempo por ciclo, MBC1/2/3/5, relógio do MBC3 e paletas para o Game Boy clássico.
+
+**Testes:** Blargg cpu_instrs, instr_timing, mem_timing e outros; dmg-acid2 e cgb-acid2 pixel a pixel; Mooneye 86 de 90.

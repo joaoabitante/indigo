@@ -1,0 +1,123 @@
+// Escolha do núcleo pela ROM (mesma ordem de detectSystem em web/main.js).
+#include <algorithm>
+#include <cctype>
+#include <map>
+
+#include "../a2600/a2600.h"
+#include "../a7800/a7800.h"
+#include "../cps/cps.h"
+#include "../gb/gb.h"
+#include "../lynx/lynx.h"
+#include "../md/md.h"
+#include "../md32x/mars.h"
+#include "../msx/msx.h"
+#include "../gba/gba.h"
+#include "../nes/nes.h"
+#include "../neogeo/neogeo.h"
+#include "../ngp/ngp.h"
+#include "../pce/pce.h"
+#include "../pm/pm.h"
+#include "../ps1/ps1.h"
+#include "../segacd/segacd.h"
+#include "../sms/sms.h"
+#include "../snes/snes.h"
+#include "../tdo/tdo.h"
+#include "../tms/coleco.h"
+#include "../vectrex/vectrex.h"
+#include "../tms/sg1000.h"
+#include "../vb/vb.h"
+#include "../ws/ws.h"
+#include "core.h"
+#include "zip.h"
+
+namespace indigo {
+
+namespace {
+std::string lower(std::string s) {
+  std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+  return s;
+}
+bool endsWith(const std::string& s, const char* suf) {
+  const std::string x(suf);
+  return s.size() >= x.size() && s.compare(s.size() - x.size(), x.size(), x) == 0;
+}
+bool hasGbLogo(const std::vector<uint8_t>& b) {
+  return b.size() >= 0x150 && b[0x104] == 0xCE && b[0x105] == 0xED && b[0x106] == 0x66 && b[0x107] == 0x66;
+}
+}  // namespace
+
+std::unique_ptr<Core> createCore(const std::vector<uint8_t>& rom, const std::string& fileName,
+                                 const std::vector<uint8_t>* save, const std::vector<uint8_t>* gbaBios) {
+  const std::string n = lower(fileName);
+  // arcade: o .zip inteiro vai ao núcleo (Capcom CPS1/CPS2)
+  if (zip::isZip(rom) && cps::isCpsSet(rom, n)) return std::make_unique<cps::CpsCore>(rom, n, save);
+  // Neo Geo: .zip do MAME (inteiro) ou .neo; o neogeo.zip da BIOS não é jogo
+  if (zip::isZip(rom) && neogeo::isNeoGeoBiosZip(rom, n)) return nullptr;
+  if (neogeo::isNeoGeoRom(rom, n)) return std::make_unique<neogeo::NeoGeoCore>(rom, n, save);
+  if (nes::isNesRom(rom)) return std::make_unique<nes::NESCore>(rom, save);  // mapeador sem suporte: lança erro com o número
+  if (snes::isSnesRom(rom, n)) return std::make_unique<snes::SNESCore>(rom, save);  // chip especial sem suporte: lança erro
+  if (ngp::isNgpRom(rom)) return std::make_unique<ngp::NGPCore>(rom, save);
+  // PlayStation: a BIOS (512 KB) não é jogo (o app a guarda com setFirmware("ps1")); um programa PS-X EXE roda
+  // depois da BIOS chegar ao menu, e sem a BIOS o núcleo não é criado (lança o erro com a explicação)
+  if (ps1::isPs1Bios(rom)) return nullptr;
+  if (ps1::isPsxExe(rom)) return std::make_unique<ps1::Ps1Core>(rom, fileName, save);
+  // BIOS do Sega CD (tem o cabeçalho "SEGA" de um cartucho): não é jogo; o app a guarda com setFirmware
+  if (segacd::isSegaCdBios(rom)) return nullptr;
+  // 32X: .32x ou "MARS CHECK MODE"/"SEGA 32X" no cabeçalho (antes do Mega Drive: também tem "SEGA" em 0x100)
+  if (md32x::isMd32xRom(rom, n)) return std::make_unique<md32x::Md32xCore>(rom, save);
+  // Mega Drive: .md, .gen, .smd, ou "SEGA" em 0x100 (antes do Master System e do .bin do Atari 2600)
+  if (md::isMdRom(rom, n)) return std::make_unique<md::MDCore>(rom, save);
+  if (pm::isPMRom(rom, n)) return std::make_unique<pm::PMCore>(rom, save);
+  // ColecoVision (.col, .cv; precisa da BIOS do usuário) e SG-1000/SC-3000 (.sg, .sc: vídeo TMS9918 próprio,
+  // antes do Master System, que não desenha os modos TMS)
+  if (pce::isPceRom(rom, n)) return pce::createPceCore(rom, n, save);  // PC Engine (.pce) e SuperGrafx (.sgx)
+  if (vb::isVbRom(rom, n)) return std::make_unique<vb::VBCore>(rom, save);  // Virtual Boy: .vb, .vboy
+  if (lynx::isLynxRom(rom, n)) return std::make_unique<lynx::LynxCore>(rom, save);  // .lnx (LYNX), .lyx, .o (BS93)
+  if (vectrex::isVectrexRom(rom, n)) return std::make_unique<vectrex::VectrexCore>(rom, save);  // "g GCE", .vec, .gam
+  if (a7800::isA7800Rom(rom, n)) return std::make_unique<a7800::A7800Core>(rom, save);  // cabeçalho ATARI7800 ou .a78
+  if (ws::isWsRom(rom, n)) return std::make_unique<ws::WSCore>(rom, save);  // WonderSwan: .ws, .wsc, .pc2
+  if (tms::isColecoRom(rom, n)) return std::make_unique<tms::ColecoCore>(rom, save);
+  if (tms::isSg1000Rom(rom, n)) return std::make_unique<tms::SG1000Core>(rom, save);
+  // MSX: .mx1/.mx2, ou .rom com o cabeçalho "AB" dos cartuchos
+  if (msx::isMsxRom(rom, n)) return std::make_unique<msx::MSXCore>(rom, save, msx::msxMachineFor(rom, n));
+  // Nintendo DS: a versão web reconhece, mas aqui ainda não existe núcleo
+  if ((rom.size() >= 0x200 && rom[0x15C] == 0x56 && rom[0x15D] == 0xCF) || endsWith(n, ".nds")) return nullptr;
+  const bool gbaLogo = rom.size() >= 0xC0 && rom[4] == 0x24 && rom[5] == 0xFF && rom[6] == 0xAE && rom[7] == 0x51;
+  const bool gbaExt = endsWith(n, ".gba") || endsWith(n, ".agb");
+  if (gbaLogo || (rom.size() > 0xB2 && rom[0xB2] == 0x96 && (gbaExt || endsWith(n, ".bin"))))
+    return std::make_unique<gba::GBACore>(rom, save, gbaBios);
+  if (hasGbLogo(rom)) return std::make_unique<gb::GBCore>(rom, save);
+  const std::string sk = sms::smsKind(rom, n);
+  if (!sk.empty()) return std::make_unique<sms::SMSCore>(rom, sk == "gg", save);
+  if (gbaExt) return std::make_unique<gba::GBACore>(rom, save, gbaBios);
+  if (rom.size() >= 0x150 && (endsWith(n, ".gbc") || endsWith(n, ".cgb") || endsWith(n, ".gb") || endsWith(n, ".sgb")))
+    return std::make_unique<gb::GBCore>(rom, save);
+  // Atari 2600 por último: .a26, ou .bin com tamanho e vetor de reset de cartucho de 2600
+  if (a2600::isA2600Rom(rom, n)) return std::make_unique<a2600::A2600Core>(rom, save);
+  // 3DO: a BIOS (do usuário) não é jogo; o app a guarda com setFirmware("3do"). Os jogos vêm em CD.
+  if (tdo::isTdoBios(rom)) return nullptr;
+  return nullptr;
+}
+
+bool isArcadeSet(const std::vector<uint8_t>& z, const std::string& fileName) {
+  if (!zip::isZip(z)) return false;
+  const std::string n = lower(fileName);
+  return cps::isCpsSet(z, n) || neogeo::isNeoGeoSet(z, n) || neogeo::isNeoGeoBiosZip(z, n);
+}
+
+namespace {
+std::map<std::string, std::vector<uint8_t>>& firmwares() {
+  static std::map<std::string, std::vector<uint8_t>> m;
+  return m;
+}
+}  // namespace
+
+void setFirmware(const std::string& name, std::vector<uint8_t> data) { firmwares()[name] = std::move(data); }
+
+const std::vector<uint8_t>& firmware(const std::string& name) {
+  static const std::vector<uint8_t> none;
+  auto it = firmwares().find(name);
+  return it == firmwares().end() ? none : it->second;
+}
+
+}  // namespace indigo

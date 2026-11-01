@@ -1,0 +1,64 @@
+# disco: teste
+# XA-ADPCM com filtro: estéreo 37,8 kHz (2x), mono 37,8 kHz (1x), estéreo 18,9 kHz (1x), 8 bits (2x)
+cmd 01
+irq 1
+cmd 0c
+irq 1
+rd 2048
+cmd 0d 01 01
+irq 1
+mark estéreo 37,8 kHz
+cmd 0e c8
+irq 1
+cmd 02 00 06 00
+irq 1
+cmd 1b
+irq 1
+audio 1
+irq 30
+audio 0
+cmd 09
+irq 2
+mark mono 37,8 kHz
+cmd 0e 48
+irq 1
+cmd 02 00 10 00
+irq 1
+cmd 1b
+irq 1
+audio 1
+irq 25
+audio 0
+cmd 09
+irq 2
+mark estéreo 18,9 kHz
+cmd 02 00 14 00
+irq 1
+cmd 1b
+irq 1
+audio 1
+irq 25
+audio 0
+cmd 09
+irq 2
+mark 8 bits estéreo 37,8 kHz
+cmd 0e c8
+irq 1
+cmd 02 00 18 00
+irq 1
+cmd 1b
+irq 1
+audio 1
+irq 50
+audio 0
+cmd 09
+irq 2
+mark XA desligado: os setores de áudio vêm como dados
+cmd 0e 80
+irq 1
+cmd 02 00 06 00
+irq 1
+cmd 1b
+irq 17
+cmd 09
+irq 2

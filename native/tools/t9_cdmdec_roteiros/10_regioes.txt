@@ -1,0 +1,15 @@
+# disco: europa
+cmd 01
+irq 1
+cmd 1a
+irq 2
+mark ~ troca para o disco japonês (o Índigo dá o INT5 08h da tampa, o Beetle não)
+disc japao
+wait 40000000
+cmd 01
+wait 2000000
+mark disco japonês
+cmd 01
+irq 1
+cmd 1a
+irq 2

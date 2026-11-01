@@ -1,0 +1,18 @@
+# disco: teste
+# Play com relatório (INT1 a cada 16 quadros, absoluto/relativo e pico), Forward/Backward
+cmd 01
+irq 1
+cmd 0e 04
+irq 1
+mark relatórios
+cmd 03 02
+irq 13
+mark ~t avanço rápido
+cmd 04
+irq 7
+mark ~t retrocesso
+cmd 05
+irq 7
+mark ~t pausa
+cmd 09
+irq 2

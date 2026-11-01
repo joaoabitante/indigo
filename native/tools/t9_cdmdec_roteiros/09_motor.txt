@@ -1,0 +1,27 @@
+# disco: teste
+# Stop, MotorOn, ReadTOC, SetSession
+cmd 01
+irq 1
+mark ~t stop
+cmd 08
+irq 2
+cmd 01
+irq 1
+mark ~t motor
+cmd 07
+irq 2
+cmd 07
+irq 1
+mark ~t stop de novo e init
+cmd 08
+irq 2
+cmd 0a
+irq 2
+mark ~t readtoc
+cmd 1e
+irq 2
+mark ~t setsession
+cmd 12 01
+irq 2
+cmd 14 00
+irq 1

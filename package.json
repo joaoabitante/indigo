@@ -1,0 +1,12 @@
+{
+  "name": "indigo-gba",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "esbuild": "0.24.0"
+  },
+  "dependencies": {
+    "@vercel/blob": "2.8.0"
+  }
+}

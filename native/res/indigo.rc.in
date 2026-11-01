@@ -1,0 +1,30 @@
+// Ícone e informações do programa (Propriedades > Detalhes no Windows). Gerado pelo CMake a partir de VERSION.
+#include <winver.h>
+
+1 ICON "@INDIGO_RES_DIR@/indigo.ico"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+PRODUCTVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "041604B0"
+    BEGIN
+      VALUE "CompanyName", "Joao Carlos Bueno Abitante"
+      VALUE "FileDescription", "Indigo - emulador de NES, GB, GBC, GBA, SMS, GG e NGP"
+      VALUE "FileVersion", "@PROJECT_VERSION@"
+      VALUE "InternalName", "indigo"
+      VALUE "OriginalFilename", "indigo.exe"
+      VALUE "ProductName", "Indigo"
+      VALUE "ProductVersion", "@PROJECT_VERSION@"
+      VALUE "LegalCopyright", "Joao Carlos Bueno Abitante"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0416, 1200
+  END
+END

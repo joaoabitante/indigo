@@ -1,0 +1,13 @@
+# disco: teste
+# pausa automática no fim da faixa (INT4) e Play de novo
+cmd 01
+irq 1
+cmd 0e 02
+irq 1
+mark fim da faixa 2
+cmd 02 00 35 25
+irq 1
+cmd 03
+irq 2
+cmd 11
+irq 1

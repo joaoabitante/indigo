@@ -1,0 +1,147 @@
+ÍNDIGO PARA PC - versão @VERSAO@
+Consoles: SNES (Super Famicom), NES (Famicom), Game Boy, Game Boy Color, Game Boy Advance, Master System, Game Gear,
+Neo Geo Pocket e Neo Geo Pocket Color
+
+Como usar
+- Abra indigo.exe e arraste um jogo (.sfc, .smc, .nes, .gb, .gbc, .gba, .sms, .gg, .ngp, .ngc ou .zip) para a janela, ou aperte Ctrl+O.
+- A tela inicial mostra "Continuar <jogo>" (volta exatamente de onde você parou) e os últimos jogos abertos.
+
+Instalar
+- Indigo-@VERSAO@-instalador.exe: instala só para você (não pede administrador), cria o atalho no menu Iniciar
+  e, se quiser, faz os jogos abrirem com dois cliques. Para desinstalar: Configurações > Aplicativos > Índigo.
+  Os saves NÃO são apagados ao desinstalar nem ao instalar uma versão nova por cima.
+- Ou a versão portátil (o .zip): é só descompactar e abrir indigo.exe.
+
+Licença
+- O Índigo é software livre (GNU GPL versão 3). Ele não traz jogos nem BIOS: use cópias dos seus.
+  Créditos de terceiros: veja TERCEIROS.md no código-fonte (github.com/joaoabitante, em breve público).
+
+Novo na 2.2.1
+- PlayStation: jogos que travavam no logo do PlayStation ou na primeira tela de carregamento agora entram
+  (Resident Evil 3, Ace Combat 3, NASCAR 2001, Crash Team Racing e outros). O sinal do controle e do cartão de
+  memória (/ACK) agora dura só um instante, como no console.
+
+Novo na 2.2
+- Panasonic 3DO (EXPERIMENTAL): abra antes a BIOS do seu console (ex.: panafz10.bin) e depois o jogo em
+  .cue/.bin, .chd ou .iso. Ainda não foi testado com jogos de verdade: se algum der problema, avise.
+- Sega CD reescrito do zero. Estados salvos do Sega CD de versões antigas não carregam (o save do jogo continua).
+- Licença GPL-3.0 e créditos de terceiros.
+
+Novo na 2.0.1
+- PlayStation: resolução 2x e 4x (Ajustes ou menu do jogo); CD, DMA e vídeos mais perto do console.
+
+Novo na 1.9.1
+- SNES: jogos com o chip SPC7110 agora abrem: Far East of Eden Zero (Tengai Makyou Zero, com o relógio do
+  cartucho), Momotarou Dentetsu Happy e Super Power League 4, com o save de bateria. O chip descomprime os gráficos
+  e os textos do jogo; ele foi conferido contra outro emulador em milhares de sequências de comandos (não existem
+  ROMs de teste públicas do chip). Com os jogos de verdade, esta é a primeira versão: se algum der problema, avise.
+  O relógio do Far East of Eden Zero segue a data e a hora do computador ou do celular: ao abrir o jogo e ao
+  carregar um estado, o relógio do cartucho recebe a hora do aparelho.
+  Ainda faltam os chips CX4 (Mega Man X2 e X3) e DSP-2/3/4.
+
+Novo na 1.7.1
+- SNES: jogos com o chip S-DD1 agora abrem: Star Ocean (com o save de bateria) e Street Fighter Alpha 2.
+  O chip descomprime os gráficos do jogo durante a cópia para a memória do console; a descompressão foi
+  conferida byte a byte contra outro emulador (não existem ROMs de teste públicas do chip). Com os jogos de
+  verdade, esta é a primeira versão: se algum der problema, avise qual.
+  Ainda faltam os chips SPC7110 (Far East of Eden Zero, Momotarou Dentetsu Happy) e CX4 (Mega Man X2 e X3).
+
+Novo na 1.4
+- SNES: jogos com o chip DSP-1 agora abrem (Super Mario Kart, Pilotwings, Super Air Diver, Ballz 3D...).
+  Sem nada a fazer, o Índigo imita as contas do chip. Se você tiver o arquivo do chip (dsp1b.rom, 8 KB, tirado
+  do seu cartucho), abra-o no Índigo como se fosse um jogo, uma vez só: a partir daí o chip roda o programa
+  original, que é exato. Ao abrir o jogo, o Índigo mostra por alguns segundos qual dos dois está em uso.
+- SNES: jogos com o chip SA-1 agora abrem (Super Mario RPG, Kirby Super Star, Kirby's Dream Land 3,
+  PGA Tour 96, Jikkyou Oshaberi Parodius...), com o save de bateria.
+  Testados com programas feitos para conferir o chip (não existem ROMs de teste públicas dele); com os jogos de
+  verdade, esta é a primeira versão: se algum der problema, avise qual.
+  Ainda faltam os chips S-DD1 (Star Ocean, Street Fighter Alpha 2), SPC7110 e CX4 (Mega Man X2 e X3).
+
+Novo na 1.3
+- SNES: jogos com o chip Super FX no cartucho agora abrem (Star Fox, Stunt Race FX, Vortex, Dirt Trax FX,
+  Yoshi's Island, Doom, Winter Gold), com o save de bateria do Yoshi's Island. Testado com as ROMs de teste
+  públicas do chip; com os jogos de verdade, esta é a primeira versão: se algum der problema, avise qual.
+  Outros chips especiais ainda não abriam nesta versão (o DSP-1 e o SA-1 entraram na 1.4).
+
+Novo na 1.2
+- SNES / Super Famicom: abra o arquivo .sfc ou .smc (ou o .zip com ele dentro). Saves de bateria, estados,
+  estante, capas e nuvem funcionam como nos outros consoles. Botões X e Y: no teclado, D e C; no controle, o
+  botão de cima e o da esquerda (no SNES os botões seguem a posição do controle original: B embaixo, A à
+  direita). Jogos com chips especiais no cartucho ainda não abriam nesta versão (o Super FX entrou na 1.3).
+- NES: mais 6 chips de cartucho, com o som extra que eles tocam junto com o do console.
+  MMC5 (Castlevania III americano, Just Breed, Uncharted Waters, Gemfire, Bandit Kings of Ancient China),
+  VRC6 da Konami (Akumajou Densetsu, Madara, Esper Dream 2), VRC7 com som FM (Lagrange Point),
+  Namco 163 (Megami Tensei II, King of Kings, Erika to Satoru no Yume Bouken) e o som do Sunsoft 5B (Gimmick!).
+
+Novo na 1.1
+- Interface nova: a tela inicial é uma biblioteca com as capas dos jogos e abas por console (Todos,
+  Favoritos, NES, GB, GBA...). No teclado: setas escolhem, Enter joga, Tab troca o console, F marca favorito,
+  Esc abre os Ajustes (backup, nuvem, controles, pastas de jogos, sobre). No controle: L/R trocam o console,
+  X marca favorito, Start abre os Ajustes.
+- NES / Famicom: abra o arquivo .nes (ou o .zip com ele dentro). Saves de bateria (Zelda, Final Fantasy...),
+  estados, estante, capas e nuvem funcionam como nos outros consoles. Controles: os mesmos do Game Boy
+  (A, B, Select e Start). Jogos com mapeadores mais raros ainda não abrem: o Índigo mostra o número do
+  mapeador que falta.
+- Para jogar NES com dois cliques no .nes, ligue de novo "Abrir jogos com dois cliques" (instalador ou
+  "Sobre e novidades").
+
+Índigo 1.0
+- Primeira versão completa para PC e Android, com tudo o que veio nas versões de teste abaixo.
+
+Novo na 0.9
+- Estante: tela inicial > "Estante: todos os jogos". Mostra todos os jogos (favoritos primeiro), em páginas de
+  8, com filtro por console. Ao lado aparece a capa: a tela do jogo na última vez que você fechou
+  (no menu do jogo, "Usar esta tela como capa" troca a capa; "Favorito" marca o jogo).
+- Pastas de jogos: tela inicial > "Pastas de jogos" > "Adicionar pasta". Todos os jogos da pasta (e das
+  subpastas) entram na estante.
+- Filtros de tela (menu do jogo > "Filtro de tela"): nítido, suave, LCD (grade), TV de tubo (linhas) e EPX.
+- Controles (tela inicial ou menu do jogo > "Controles"): trocar as teclas e os botões do controle.
+  Atalhos no controle: Select + R salva estado, Select + L carrega, Select + esquerda/direita troca o espaço,
+  Select + Start abre o menu.
+- "Sobre e novidades" na tela inicial: versão, o que mudou em cada versão e, no PC, a opção
+  "Abrir jogos com dois cliques".
+
+Novo na 0.6
+- Nuvem dos saves (a mesma do site, com o mesmo PIN): menu "Nuvem dos saves" > "Digitar o PIN".
+  Depois disso o Índigo sincroniza sozinho: ao abrir, traz o save mais novo de outro aparelho; ao jogar, envia
+  o seu. Se os dois lados mudaram, fica o mais novo e o outro vai para "Versões anteriores do save".
+- Backup .indigo (o mesmo formato do site): tela inicial > "Backup (.indigo)" para exportar (com ou sem as
+  ROMs). Para importar, é só abrir o arquivo .indigo no Índigo. Os estados salvos do site não vêm junto
+  (o formato é outro); jogos, saves e versões anteriores vêm.
+
+Novo na 0.5
+- Esc (ou o botão Guia do controle, ou Start + Select juntos) abre o menu: salvar e carregar estado nos 9 espaços
+  com data e miniatura, acelerar 4x, reiniciar, paleta, versões anteriores do save, abrir ou fechar jogo.
+- Ao fechar o jogo ou o Índigo, o ponto em que você estava fica guardado ("Continuar").
+- Jogos dentro de .zip abrem direto.
+- Cada save guarda até 12 versões anteriores (uma a cada 10 minutos de jogo, no máximo). Se um save der
+  problema, volte para uma versão anterior pelo menu; o save atual também fica guardado.
+- Se o Windows mostrar "O Windows protegeu o computador", clique em "Mais informações" e
+  "Executar assim mesmo" (o programa não tem assinatura digital).
+
+Teclado (igual à versão web)
+- Setas: direcional
+- X: A (botão 2 no Master System/Game Gear)
+- Z: B (botão 1 no Master System/Game Gear)
+- A / S: L / R (Game Boy Advance)
+- Enter: Start (Pause no Master System, Option no Neo Geo Pocket)
+- Backspace: Select (Option no Neo Geo Pocket)
+- Espaço (segurar): acelerar 4x
+- F5: salvar estado       F8: carregar estado       1 a 9: escolher o espaço
+- P: pausar   Ctrl+R: reiniciar   F3: trocar paleta do Game Boy   F11 ou Alt+Enter: tela cheia
+
+Controle (Xbox, GameSir e outros): A = A, B ou X = B, LB/RB = L/R, Menu = Start, View = Select, RT = acelerar,
+clique do analógico esquerdo = pausar.
+
+Saves e estados ficam em %APPDATA%\Indigo\Indigo\ (com o nome completo do jogo, ex.: Pokemon Emerald.gba.sav)
+Na primeira vez que um jogo é aberto, um .sav (ou .ngf, no Neo Geo Pocket) com o mesmo nome,
+ao lado da ROM, é importado. Saves de GBA da versão web (com o ajuste do relógio) também funcionam.
+
+Game Boy Advance
+- Usa a BIOS própria do Índigo: o jogo começa direto, sem a animação da Nintendo.
+- Se você tiver a BIOS do seu próprio GBA (arquivo de 16 KB, por exemplo gba_bios.bin), abra esse arquivo
+  no Índigo uma vez: ele é copiado para a pasta de dados e passa a ser usado nos jogos de GBA.
+  Para voltar à BIOS própria, apague %APPDATA%\Indigo\Indigo\gba_bios.bin.
+- O relógio dos cartuchos (Pokémon Ruby/Sapphire/Emerald, Boktai) segue a hora do Windows.
+
+O Neo Geo Pocket usa a BIOS própria do Índigo: o jogo começa direto, sem o menu da SNK.

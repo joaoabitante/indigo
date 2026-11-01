@@ -1,0 +1,38 @@
+# disco: teste
+# ReadN em velocidade dupla, 2048 bytes, Pause, GetlocP e retomada sem Setloc
+cmd 01
+irq 1
+mark ~t init (o Beetle responde em 4,1 milhões de ciclos; o ps1-tests cdrom/timing mediu no console de 138 mil a 600 mil)
+cmd 0a
+irq 2
+mark leitura 2x
+rd 2048
+cmd 0e 80
+irq 1
+cmd 02 00 02 20
+irq 1
+cmd 06
+irq 11
+cmd 09
+irq 2
+rd 0
+mark posição depois da pausa
+cmd 11
+irq 1
+mark retomada
+rd 2048
+cmd 06
+irq 6
+cmd 09
+irq 2
+mark leitura 1x de outro ponto
+cmd 0e 00
+irq 1
+cmd 02 00 03 05
+irq 1
+cmd 1b
+irq 8
+cmd 10
+irq 1
+cmd 09
+irq 2

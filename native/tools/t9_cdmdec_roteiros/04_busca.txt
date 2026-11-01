@@ -1,0 +1,43 @@
+# disco: teste
+# SeekL/SeekP em dados e áudio, GetlocL/GetlocP depois da busca
+cmd 01
+irq 1
+mark ~t init (o Beetle responde em 4,1 milhões de ciclos; o ps1-tests cdrom/timing mediu no console de 138 mil a 600 mil)
+cmd 0a
+irq 2
+mark SeekL nos dados
+cmd 02 00 04 00
+irq 1
+cmd 15
+irq 2
+cmd 10
+irq 1
+mark SeekP nos dados
+cmd 02 00 10 00
+irq 1
+cmd 16
+irq 2
+cmd 10
+irq 1
+mark SeekL no áudio falha
+cmd 02 00 25 00
+irq 1
+cmd 15
+irq 2
+mark SeekP no áudio
+cmd 02 00 25 00
+irq 1
+cmd 16
+irq 2
+cmd 10
+irq 1
+mark leitura depois da busca
+rd 2048
+cmd 02 00 05 00
+irq 1
+cmd 15
+irq 2
+cmd 06
+irq 4
+cmd 09
+irq 2

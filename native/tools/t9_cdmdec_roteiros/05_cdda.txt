@@ -1,0 +1,46 @@
+# disco: teste
+# Play da faixa 2 (CD-DA), volume, Mute e Play a partir do Setloc
+cmd 01
+irq 1
+cmd 0e 00
+irq 1
+cmd 0c
+irq 1
+mark play faixa 2
+cmd 03 02
+irq 1
+audio 1
+wait 40000000
+audio 0
+cmd 09
+irq 2
+mark play do setloc com volume mono
+vol 40 40 40 40
+cmd 02 00 30 00
+irq 1
+cmd 03
+irq 1
+audio 1
+wait 25000000
+audio 0
+mark mudo
+cmd 0b
+irq 1
+audio 1
+wait 5000000
+audio 0
+cmd 0c
+irq 1
+cmd 09
+irq 2
+mark play da faixa 3 em velocidade dupla
+vol 80 00 80 00
+cmd 0e 80
+irq 1
+cmd 03 03
+irq 1
+audio 1
+wait 30000000
+audio 0
+cmd 09
+irq 2

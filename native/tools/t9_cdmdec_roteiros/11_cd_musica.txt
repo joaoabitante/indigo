@@ -1,0 +1,23 @@
+# disco: audio
+cmd 01
+irq 1
+cmd 13
+irq 1
+cmd 14 01
+irq 1
+cmd 14 00
+irq 1
+cmd 0c
+irq 1
+mark play
+cmd 03 01
+irq 1
+audio 1
+wait 30000000
+audio 0
+mark ~ posição no meio do Play (o Beetle lê o 2º setor depois da busca um setor mais tarde)
+cmd 11
+irq 1
+mark pausa
+cmd 09
+irq 2

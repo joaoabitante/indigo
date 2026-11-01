@@ -1,0 +1,12 @@
+node_modules/
+out/
+*.gba
+*.sav
+*.nds
+*.gb
+*.gbc
+*.zip
+
+# arquivos do app para baixar pelo site (PC e Android)
+!downloads/*.zip
+dist/downloads/

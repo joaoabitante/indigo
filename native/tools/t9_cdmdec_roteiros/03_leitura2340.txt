@@ -1,0 +1,35 @@
+# disco: teste
+# setores inteiros (2340 bytes), Form 2 e Setloc durante a leitura
+cmd 01
+irq 1
+mark 2340 bytes
+rd 2340
+cmd 0e a0
+irq 1
+cmd 02 00 02 10
+irq 1
+cmd 1b
+irq 9
+cmd 09
+irq 2
+mark Form 2 lido com 2048
+rd 2048
+cmd 0e 80
+irq 1
+cmd 02 00 02 18
+irq 1
+cmd 06
+irq 15
+cmd 09
+irq 2
+mark Setloc durante a leitura
+cmd 02 00 02 50
+irq 1
+cmd 06
+irq 6
+cmd 02 00 03 00
+irq 1
+cmd 06
+irq 6
+cmd 09
+irq 2

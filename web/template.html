@@ -1,0 +1,881 @@
+<!--META-->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='7' fill='%234a46a8'/%3E%3Crect x='10' y='10' width='12' height='12' rx='2' fill='%2311121c'/%3E%3Ccircle cx='26' cy='13' r='2' fill='%23f3b545'/%3E%3Cpath d='M5 16h3M6.5 14.5v3' stroke='%23ecebf6' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,500;0,700;1,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: um portátil horizontal no centro da página (direcional | tela | A-B, L/R nos ombros);
+   abaixo, uma bandeja com cartucho, comandos, save e opções. No celular em pé, a tela sobe e os botões ficam embaixo.
+   Visual escuro deliberado: carcaça índigo de plástico, LED âmbar, botões grafite. */
+:root {
+  color-scheme: dark;
+  --room: #11121c;
+  --panel: #1c1d2c;
+  --panel-2: #26283c;
+  --line: #34374f;
+  --ink: #ecebf6;
+  --muted: #a2a3c0;
+  --shell-hi: #6763c9;
+  --shell: #4a46a8;
+  --shell-lo: #322e80;
+  --shell-edge: #24205e;
+  --btn: #2a2a36;
+  --btn-hi: #44445a;
+  --btn-ab: #3b3a4e;
+  --btn-ink: #9a99b5;
+  --shell-ink: #b5b3e6;
+  --shell-alpha: 1;
+  --pcb: none;
+  --wear: .55;
+  --bezel: #17171f;
+  --led: #f3b545;
+  --led-ink: #241a05;
+  --ok: #6fd3a0;
+  --font-display: 'Chakra Petch', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', monospace;
+}
+html, body { min-height: 100%; }
+body {
+  background: radial-gradient(ellipse 80% 55% at 50% 30%, #1d1e33 0%, var(--room) 70%) var(--room);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 32px;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+*, *::before, *::after { box-sizing: inherit; }
+
+/* ---------------- topo ---------------- */
+.top {
+  max-width: 1040px; margin: 0 auto 20px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+}
+.top h1 { margin: 0; font: italic 700 22px/1 var(--font-display); letter-spacing: .04em; }
+.top p { margin: 0; color: var(--muted); font-size: 13px; }
+.chips { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.chip {
+  font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+  font-variant-numeric: tabular-nums;
+}
+.chip[data-on="1"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.chip[data-warn="1"] { color: var(--led); border-color: var(--led); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .chip[data-warn="1"] { animation: none; } }
+
+/* ---------------- o aparelho ---------------- */
+.device {
+  position: relative; max-width: 1040px; margin: 0 auto;
+  padding-top: 18px; /* espaço para os ombros L/R */
+  user-select: none; -webkit-user-select: none;
+}
+.shoulder {
+  position: absolute; top: 0; width: 26%; height: 52px; z-index: 0;
+  background: linear-gradient(180deg, #3a3a4a, var(--btn));
+  border: 1px solid #1a1a22; cursor: pointer;
+  display: flex; align-items: flex-start; padding: 6px 22px;
+  font: 700 13px/1 var(--font-display); color: #8c8ca6;
+}
+.shoulder.l { left: 4%; border-radius: 60px 18px 0 0; }
+.shoulder.r { right: 4%; border-radius: 18px 60px 0 0; justify-content: flex-end; }
+.shoulder.on { background: linear-gradient(180deg, #55556c, var(--btn-hi)); transform: translateY(3px); }
+
+.body {
+  position: relative; z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(0, 2.5fr) minmax(150px, 1fr);
+  grid-template-areas: "left face right";
+  align-items: center; gap: 0 clamp(12px, 2vw, 28px);
+  padding: clamp(18px, 3vw, 34px) clamp(18px, 3vw, 40px) clamp(22px, 3.4vw, 40px);
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse 60% 40% at 30% 8%, color-mix(in srgb, var(--shell-hi) 70%, transparent), transparent 70%),
+    linear-gradient(172deg,
+      color-mix(in srgb, var(--shell-hi) calc(var(--shell-alpha) * 100%), transparent) 0%,
+      color-mix(in srgb, var(--shell) calc(var(--shell-alpha) * 100%), transparent) 35%,
+      color-mix(in srgb, var(--shell-lo) calc(var(--shell-alpha) * 100%), transparent) 100%),
+    var(--pcb);
+  border-radius: 90px 90px 150px 150px / 70px 70px 160px 160px;
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,.18),
+    inset 0 -10px 24px rgba(10,6,40,.45),
+    0 0 0 2px var(--shell-edge),
+    0 30px 60px -20px rgba(0,0,0,.7);
+}
+/* textura do plástico + marcas leves de uso (abaixo dos botões) */
+.body::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(ellipse 18% 22% at 16% 52%, rgba(0,0,0,calc(var(--wear) * .22)), transparent 70%),
+    radial-gradient(ellipse 16% 20% at 84% 48%, rgba(0,0,0,calc(var(--wear) * .2)), transparent 70%),
+    radial-gradient(ellipse 30% 10% at 50% 96%, rgba(0,0,0,calc(var(--wear) * .25)), transparent 70%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-size: auto, auto, auto, 180px 180px;
+  mix-blend-mode: overlay; opacity: .9;
+}
+/* brilho especular: luz vinda de cima à esquerda */
+.body::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 0;
+  background:
+    linear-gradient(115deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.04) 22%, transparent 38%),
+    radial-gradient(ellipse 50% 18% at 50% 2%, rgba(255,255,255,.18), transparent 70%),
+    linear-gradient(0deg, rgba(0,0,0,.18), transparent 30%);
+}
+.wing, .face { position: relative; z-index: 1; }
+.wing { display: flex; flex-direction: column; align-items: center; gap: 22px; min-width: 0; }
+.wing.left { grid-area: left; }
+.wing.right { grid-area: right; }
+.face { grid-area: face; min-width: 0; }
+
+/* moldura da tela */
+.bezel {
+  background: linear-gradient(180deg, #202029, var(--bezel));
+  border-radius: 14px 14px 14px 14px;
+  padding: clamp(10px, 1.8vw, 18px) clamp(14px, 3vw, 34px) clamp(8px, 1.2vw, 12px);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.12);
+}
+.bezel-top {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  font: 500 9px/1 var(--font-mono); letter-spacing: .2em; color: #6b6b85;
+}
+.bezel-top .stripe { flex: 1; height: 2px; background: linear-gradient(90deg, #3b3b55, transparent); }
+.led { width: 8px; height: 8px; border-radius: 50%; background: #3d3320; flex: none; transition: background .3s, box-shadow .3s; }
+body[data-loaded="1"] .led { background: var(--led); box-shadow: 0 0 8px var(--led); }
+#screenWrap { position: relative; width: 100%; max-width: 100%; aspect-ratio: 3 / 2; background: #000; border-radius: 3px; overflow: hidden; }
+#screenWrap[data-drag="1"] { outline: 2px dashed var(--led); outline-offset: 3px; }
+#screenWrap:fullscreen { border-radius: 0; display: grid; place-items: center; }
+/* Game Boy / Color: tela 10:9 com a mesma altura da tela do GBA */
+body[data-sys="gb"] #screenWrap, body[data-sys="gbc"] #screenWrap, body[data-sys="gg"] #screenWrap { aspect-ratio: 10 / 9; width: 74.074%; margin-inline: auto; }
+body[data-sys="sms"] #screenWrap { aspect-ratio: 4 / 3; width: 88.889%; margin-inline: auto; }
+body[data-sys="ngp"] #screenWrap, body[data-sys="ngpc"] #screenWrap { aspect-ratio: 20 / 19; width: 70.175%; margin-inline: auto; }
+body[data-sys="ngp"] .pill.sel, body[data-sys="ngpc"] .pill.sel { visibility: hidden; }
+body[data-sys="gb"] .shoulder, body[data-sys="gbc"] .shoulder, body[data-sys="gg"] .shoulder, body[data-sys="sms"] .shoulder, body[data-sys="ngp"] .shoulder, body[data-sys="ngpc"] .shoulder { visibility: hidden; }
+body:not([data-sys="gb"]):not([data-sys="gbc"]) .gb-only { display: none !important; }
+body[data-sys]:not([data-sys="gba"]) .gba-only { display: none !important; }
+#screenWrap:fullscreen canvas { width: min(100vw, 150vh); height: auto; }
+canvas#screen { width: 100%; height: 100%; display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+#screenWrap::after { /* reflexo do vidro, bem discreto */
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(125deg, rgba(255,255,255,.07) 0%, rgba(255,255,255,.02) 30%, transparent 45%);
+}
+.bezel { position: relative; }
+.bezel::before { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(160deg, rgba(255,255,255,.08), transparent 35%); }
+.round::after { content: ''; position: absolute; width: 30%; height: 22%; left: 24%; top: 16%; border-radius: 50%; background: rgba(255,255,255,.16); filter: blur(1px); pointer-events: none; }
+.round { position: relative; }
+
+/* ---------------- temas da carcaça ---------------- */
+body[data-shell="grafite"] {
+  --shell-hi: #4a4b55; --shell: #2c2d34; --shell-lo: #1d1e23; --shell-edge: #111216;
+  --btn: #1a1b20; --btn-hi: #3a3b44; --btn-ab: #2b2416; --btn-ink: var(--led); --shell-ink: #a8a9b6; --wear: .35;
+}
+body[data-shell="gelo"] {
+  --shell-hi: #ffffff; --shell: #e3e5ec; --shell-lo: #bfc3cf; --shell-edge: #8e93a3;
+  --btn: #3a3d4a; --btn-hi: #5a5e70; --btn-ab: #474b5c; --btn-ink: #e3e5ec; --shell-ink: #545a70; --wear: .4;
+}
+body[data-shell="fume"] {
+  --shell-hi: #5a5f6e; --shell: #2a2d36; --shell-lo: #16181d; --shell-edge: #0c0d10; --shell-alpha: .62;
+  --btn: #1c1e24; --btn-hi: #3b3f4b; --btn-ab: #2a2d36; --btn-ink: #b9bdcc; --shell-ink: #c3c7d6; --wear: .2;
+  --pcb:
+    radial-gradient(circle at 20% 30%, #c9a24a 0 3px, transparent 4px) 0 0 / 46px 46px,
+    repeating-linear-gradient(45deg, transparent 0 34px, rgba(201,162,74,.45) 34px 36px, transparent 36px 83px),
+    linear-gradient(90deg, transparent 47%, rgba(201,162,74,.5) 47% 53%, transparent 53%) 0 0 / 46px 69px,
+    linear-gradient(0deg, transparent 48%, rgba(201,162,74,.35) 48% 52%, transparent 52%) 0 0 / 138px 46px,
+    linear-gradient(160deg, #134a36, #0c2f23);
+}
+body[data-shell="agua"] {
+  --shell-hi: #7fe0dc; --shell: #2aa7a6; --shell-lo: #146b70; --shell-edge: #0b4549; --shell-alpha: .58;
+  --btn: #1b3438; --btn-hi: #2f5a60; --btn-ab: #22444a; --btn-ink: #c9f3f1; --shell-ink: #dcfbf9; --wear: .2;
+  --pcb:
+    radial-gradient(circle at 70% 60%, #e8d9a8 0 2.5px, transparent 3.5px) 0 0 / 40px 40px,
+    repeating-linear-gradient(-45deg, transparent 0 30px, rgba(232,217,168,.4) 30px 32px, transparent 32px 77px),
+    linear-gradient(90deg, transparent 48%, rgba(232,217,168,.45) 48% 52%, transparent 52%) 0 0 / 40px 60px,
+    linear-gradient(0deg, transparent 48%, rgba(232,217,168,.3) 48% 52%, transparent 52%) 0 0 / 120px 40px,
+    linear-gradient(160deg, #18493f, #0d2c27);
+}
+
+/* ---------------- Modo TV ---------------- */
+#tv { position: fixed; inset: 0; z-index: 20; background: #000; }
+#tvScreen { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+#tv[data-idle="1"] { cursor: none; }
+.hud {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 14px max(16px, env(safe-area-inset-right, 0px)) calc(14px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  background: linear-gradient(0deg, rgba(0,0,0,.8), rgba(0,0,0,0));
+  transition: opacity .4s;
+}
+#tv[data-idle="1"] .hud { opacity: 0; pointer-events: none; }
+#tvInfo { font: 500 12.5px/1.3 var(--font-mono); color: #d8d7ea; font-variant-numeric: tabular-nums; margin-right: auto; }
+.hud .btn { background: rgba(38,40,60,.85); }
+.empty { position: absolute; inset: 0; display: grid; place-content: center; gap: 10px; text-align: center; padding: 14px; }
+body[data-loaded="1"] .empty { display: none; }
+.empty strong { font: 700 clamp(16px, 2.6vw, 24px)/1.1 var(--font-display); letter-spacing: .03em; }
+.empty span { color: var(--muted); font-size: 13px; max-width: 32ch; margin: 0 auto; }
+.wordmark {
+  margin-top: 8px; text-align: center;
+  font: italic 700 clamp(13px, 1.6vw, 17px)/1 var(--font-display); letter-spacing: .32em; color: #8a88c4;
+}
+.wordmark small { font: 500 9px/1 var(--font-mono); letter-spacing: .18em; color: #5d5d78; margin-left: 6px; font-style: normal; }
+
+/* direcional */
+.dpad {
+  --s: clamp(36px, 4.6vw, 48px);
+  position: relative; width: calc(var(--s) * 3); height: calc(var(--s) * 3);
+  display: grid; grid-template-columns: repeat(3, var(--s)); grid-template-rows: repeat(3, var(--s));
+  filter: drop-shadow(0 3px 0 rgba(10,8,40,.55));
+}
+.dpad::before { /* depressão circular na carcaça */
+  content: ''; position: absolute; inset: -14px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(20,16,70,.45), rgba(20,16,70,0) 70%); z-index: -1;
+}
+.dk { background: var(--btn); cursor: pointer; display: grid; place-items: center; color: #555570; font-size: 11px; }
+.dk.up { grid-area: 1 / 2; border-radius: 6px 6px 0 0; }
+.dk.down { grid-area: 3 / 2; border-radius: 0 0 6px 6px; }
+.dk.left { grid-area: 2 / 1; border-radius: 6px 0 0 6px; }
+.dk.right { grid-area: 2 / 3; border-radius: 0 6px 6px 0; }
+.dk.mid { grid-area: 2 / 2; background: radial-gradient(circle, #232330 30%, var(--btn) 32%); cursor: default; }
+.dk.on { background: var(--btn-hi); color: var(--ink); }
+.diag { cursor: pointer; } /* zonas invisíveis para diagonais no toque */
+.diag.ul { grid-area: 1 / 1; } .diag.ur { grid-area: 1 / 3; } .diag.dl { grid-area: 3 / 1; } .diag.dr { grid-area: 3 / 3; }
+
+/* A e B */
+.ab { display: flex; gap: clamp(10px, 1.6vw, 18px); transform: rotate(-22deg); padding: 10px 0; }
+.ab .key { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.round {
+  --d: clamp(46px, 5.6vw, 60px);
+  width: var(--d); height: var(--d); border-radius: 50%; cursor: pointer;
+  background: radial-gradient(circle at 35% 30%, #5a5970, var(--btn-ab) 55%, #24232f);
+  box-shadow: 0 4px 0 rgba(10,8,40,.6), inset 0 1px 0 rgba(255,255,255,.15);
+  display: grid; place-items: center; font: 700 16px/1 var(--font-display); color: var(--btn-ink);
+}
+.round.on { transform: translateY(3px); box-shadow: 0 1px 0 rgba(10,8,40,.6); background: radial-gradient(circle at 35% 30%, #6c6b86, var(--btn-hi) 60%, #2c2b38); color: var(--ink); }
+.ab .label { font: 700 11px/1 var(--font-display); color: var(--shell-ink); letter-spacing: .1em; transform: rotate(22deg); }
+.ab .b { margin-top: 26px; }
+
+/* select / start */
+.meta { display: flex; gap: 16px; }
+.pill { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.pill .cap {
+  width: 44px; height: 13px; border-radius: 8px; cursor: pointer; transform: rotate(-22deg);
+  background: var(--btn); box-shadow: 0 2px 0 rgba(10,8,40,.55);
+}
+.pill .cap.on { background: var(--btn-hi); transform: rotate(-22deg) translateY(2px); box-shadow: none; }
+.pill small { font: 600 9px/1 var(--font-display); letter-spacing: .14em; color: var(--shell-ink); }
+
+/* alto-falante e luz */
+.speaker { display: grid; grid-template-columns: repeat(6, 6px); gap: 6px; transform: rotate(-22deg); opacity: .8; }
+.speaker i { width: 6px; height: 6px; border-radius: 50%; background: var(--shell-edge); box-shadow: inset 0 1px 1px rgba(0,0,0,.6); }
+.power { display: flex; align-items: center; gap: 8px; font: 600 9px/1 var(--font-display); letter-spacing: .18em; color: var(--shell-ink); }
+
+/* celular em pé: tela em cima, controles embaixo */
+@media (max-width: 760px) {
+  .device { padding-top: 14px; }
+  .shoulder { height: 44px; width: 30%; }
+  .body {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: "face face" "left right";
+    gap: 22px 8px;
+    border-radius: 44px 44px 70px 70px / 40px 40px 90px 90px;
+    padding: 18px 16px 28px;
+  }
+  .wing { gap: 18px; }
+  .speaker { display: none; }
+  /* botões maiores para o polegar */
+  .dpad { --s: clamp(44px, 13vw, 58px); }
+  .round { --d: clamp(60px, 17.5vw, 76px); }
+  .ab .b { margin-top: 30px; }
+  body[data-sys="gba"] .device, body:not([data-sys]) .device { padding-top: 34px; }
+  .shoulder { height: 62px; padding-top: 10px; }
+}
+
+/* área de toque maior que o desenho dos botões pequenos (o toque conta no pseudo-elemento) */
+.pill .cap { position: relative; }
+.pill.sel { background: none; border: 0; padding: 0; max-width: none; border-radius: 0; } /* não herdar o estilo da classe .sel dos seletores */
+.pill .cap::before { content: ''; position: absolute; inset: -16px -10px; }
+.device, .device * { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.dpad, .ab, .pill .cap, .shoulder { touch-action: none; }
+html { touch-action: manipulation; }
+
+/* atalhos que só aparecem no celular deitado */
+.mini, .minibar { display: none; }
+.mini {
+  font: 600 12px/1 var(--font-body); color: var(--shell-ink); cursor: pointer;
+  background: color-mix(in srgb, var(--btn) 70%, transparent); border: 1px solid color-mix(in srgb, var(--shell-edge) 80%, transparent);
+  border-radius: 999px; padding: 9px 14px; min-height: 36px;
+}
+
+/* celular deitado com jogo aberto (ou tela cheia pelo toque): o console ocupa a tela inteira, sem rolagem.
+   data-imm é decidido em main.js (updateImm). */
+body[data-imm="1"] { overflow: hidden; }
+/* com controle conectado: só a imagem do jogo, o maior possível sem deformar (proporção original de cada console) */
+body[data-imm="1"][data-pad="1"] .wing, body[data-imm="1"][data-pad="1"] .shoulder { display: none !important; }
+body[data-imm="1"][data-pad="1"] .device, body[data-imm="1"][data-pad="1"] .body { background: #000 !important; }
+body[data-imm="1"][data-pad="1"] .body::before, body[data-imm="1"][data-pad="1"] .body::after { display: none; }
+body[data-imm="1"][data-pad="1"] .body { grid-template-columns: 1fr !important; grid-template-areas: "face" !important; place-items: center; padding: 0 env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px) !important; }
+/* margem para os cantos arredondados da tela, o recorte da câmera e a barra de gestos: sem ela, o texto
+   das bordas do jogo (caixas de diálogo, placar) ficava cortado */
+body[data-imm="1"][data-pad="1"] { --mv: max(14px, env(safe-area-inset-top, 0px), env(safe-area-inset-bottom, 0px)); --mh: max(24px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px)); }
+body[data-imm="1"][data-pad="1"] .face { width: min(calc(100vw - 2 * var(--mh)), calc((100dvh - 2 * var(--mv)) * 1.5)) !important; }
+body[data-imm="1"][data-pad="1"] .bezel { padding: 0 !important; background: #000; box-shadow: none; border-radius: 0; }
+body[data-imm="1"][data-pad="1"] .bezel::before, body[data-imm="1"][data-pad="1"] #screenWrap::after { display: none; }
+body[data-imm="1"][data-pad="1"] #screenWrap { border-radius: 0; }
+body[data-imm="1"] .device {
+  position: fixed; inset: 0; z-index: 30; max-width: none; margin: 0; padding: 0;
+  background: var(--room); touch-action: none; overscroll-behavior: none;
+}
+body[data-imm="1"] .body {
+  height: 100%; border-radius: 0; box-shadow: none;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-areas: "left face right";
+  gap: 0 10px;
+  padding: max(8px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+}
+body[data-imm="1"] .face { width: min(60vw, calc((100dvh - 28px) * 1.5 + 12px)); }
+body[data-imm="1"] .bezel { padding: 6px; border-radius: 10px; }
+body[data-imm="1"] .bezel-top,
+body[data-imm="1"] .wordmark,
+body[data-imm="1"] .speaker { display: none; }
+body[data-imm="1"] .wing { height: 100%; justify-content: center; gap: 14px; padding-top: 30px; }
+body[data-imm="1"] .dpad { --s: clamp(42px, 15dvh, 60px); }
+body[data-imm="1"] .round { --d: clamp(54px, 18dvh, 74px); }
+body[data-imm="1"] .mini { display: inline-block; }
+body[data-imm="1"] .minibar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+body[data-imm="1"] .shoulder {
+  top: 0; height: 44px; width: 20%; z-index: 2; padding: 0 18px; align-items: center;
+  border-radius: 0 0 18px 18px; border-top: 0;
+}
+body[data-imm="1"] .shoulder.l { left: 0; border-radius: 0 0 18px 0; }
+body[data-imm="1"] .shoulder.r { right: 0; border-radius: 0 0 0 18px; }
+body[data-imm="1"] .shoulder.on { transform: translateY(2px); }
+
+
+/* ---------------- estante ---------------- */
+.shelf { max-width: 1040px; margin: 30px auto 0; display: flex; flex-direction: column; gap: 14px; }
+.shelf-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.shelf-head h2 { margin: 0; font: italic 700 20px/1 var(--font-display); letter-spacing: .04em; }
+.shelf-head .note { font-variant-numeric: tabular-nums; }
+#shelfSearch {
+  margin-left: auto; font: 500 14px/1.2 var(--font-body); color: var(--ink);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; width: min(260px, 100%);
+}
+#shelfSearch:focus-visible { outline: 2px solid var(--led); outline-offset: 2px; }
+.shelf-empty {
+  border: 1px dashed var(--line); border-radius: 10px; padding: 22px 18px; color: var(--muted); font-size: 14px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.shelf-empty strong { color: var(--ink); font-family: var(--font-display); font-size: 16px; letter-spacing: .02em; }
+#shelfGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 16px; }
+.cart-item { display: flex; flex-direction: column; gap: 6px; min-width: 0; position: relative; }
+.cart-fav { position: absolute; top: 2px; right: 4px; z-index: 2; width: 30px; height: 30px; border-radius: 50%; border: 0; background: rgba(15,16,26,.65); color: var(--muted); font-size: 16px; line-height: 30px; cursor: pointer; opacity: .55; transition: opacity .15s; }
+.cart-item:hover .cart-fav, .cart-fav:focus-visible, .cart-fav.on { opacity: 1; }
+.cart-fav.on { color: var(--led); }
+.cart-fav:focus-visible { outline: 2px solid var(--led); }
+.cart-play { all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 8px; border-radius: 10px; }
+.cart-play:focus-visible { outline: 2px solid var(--led); outline-offset: 4px; }
+/* cartucho genérico: plástico cinza, frisos no topo e janela de etiqueta */
+.cart-shell {
+  position: relative; display: block; aspect-ratio: 1 / 0.9; max-width: 100%;
+  background: linear-gradient(180deg, #4b4c5c, #393a48 70%, #30313d);
+  border-radius: 8px 8px 12px 12px;
+  clip-path: polygon(0 10%, 8% 0, 92% 0, 100% 10%, 100% 100%, 0 100%);
+  padding: 16% 9% 10%;
+  box-shadow: inset 0 2px 0 rgba(255,255,255,.12), inset 0 -6px 12px rgba(0,0,0,.35);
+  transition: transform .15s ease;
+}
+.cart-play:hover .cart-shell { transform: translateY(-4px); }
+.cart-ridge { position: absolute; left: 22%; right: 22%; top: 5%; height: 6%; background: repeating-linear-gradient(90deg, #2b2c37 0 3px, transparent 3px 7px); border-radius: 2px; }
+.cart-label {
+  display: grid; place-items: center; height: 100%; overflow: hidden; border-radius: 4px;
+  background: linear-gradient(135deg, var(--shell-hi), var(--shell-lo));
+  box-shadow: 0 0 0 2px #24252f;
+}
+.cart-label img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; display: block; }
+.nocover { font: italic 700 26px/1 var(--font-display); color: rgba(255,255,255,.85); letter-spacing: .05em; }
+.cart-name { font: 600 14px/1.25 var(--font-body); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cart-meta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tag { font: 600 10.5px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; padding: 3px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+.tag.sys-gb { color: #b9d98a; border-color: color-mix(in srgb, #b9d98a 45%, var(--line)); }
+.tag.sys-gbc { color: #ffb37a; border-color: color-mix(in srgb, #ffb37a 45%, var(--line)); }
+.tag.sys-gba { color: #b3a9ff; border-color: color-mix(in srgb, #b3a9ff 45%, var(--line)); }
+.tag.sys-gg { color: #7fd0ff; border-color: color-mix(in srgb, #7fd0ff 45%, var(--line)); }
+.tag.sys-sms { color: #ff8f8f; border-color: color-mix(in srgb, #ff8f8f 45%, var(--line)); }
+.tag.sys-ngp, .tag.sys-ngpc { color: #c9a8ff; border-color: color-mix(in srgb, #c9a8ff 45%, var(--line)); }
+.tag.sys-nds { color: var(--muted); }
+.tag.on { color: var(--led); border-color: color-mix(in srgb, var(--led) 50%, var(--line)); }
+.cart-actions { display: flex; gap: 2px; flex-wrap: wrap; }
+.cart-send { font: 600 12px/1 var(--font-body); color: var(--led); background: none; border: 1px solid transparent; border-radius: 6px; padding: 4px 6px; cursor: pointer; }
+.cart-send:hover { border-color: color-mix(in srgb, var(--led) 45%, var(--line)); }
+body:not([data-xfer="ready"]) .xfer-only, body:not([data-xfer="ready"]) #receiveBtn { display: none !important; }
+.shelf-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; }
+.shelf-tools { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+.shelf-tools #shelfSearch { margin-left: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 600 12.5px/1 var(--font-body); color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; cursor: pointer; }
+.chip.on { color: var(--ink); border-color: var(--led); background: color-mix(in srgb, var(--led) 14%, var(--panel)); }
+.chip:focus-visible, .linkbtn:focus-visible { outline: 2px solid var(--led); outline-offset: 2px; }
+.sort { margin-left: auto; display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.shelf-warn { margin: 0; font-size: 13px; color: var(--muted); border-left: 3px solid var(--led); padding: 6px 10px; background: color-mix(in srgb, var(--led) 6%, transparent); border-radius: 0 6px 6px 0; }
+.resume-bar { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--led) 40%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--led) 7%, var(--panel)); }
+.resume-bar img { width: 72px; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 6px; image-rendering: pixelated; }
+.resume-bar span { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.resume-bar b { font: 700 15px/1.2 var(--font-display); overflow-wrap: anywhere; }
+.resume-bar small { color: var(--muted); font-size: 12.5px; }
+.shelf-cloud { margin: 0; font-size: 13px; color: var(--muted); }
+.shelf-cloud::before { content: '☁ '; color: var(--led); }
+.shelf-cloud[data-state="error"], .shelf-cloud[data-state="locked"] { color: #ffb4a6; }
+.linkbtn { font: 600 13px/1.2 var(--font-body); color: var(--led); background: none; border: 0; padding: 2px 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.btn.danger { color: #ff9a9a; border-color: color-mix(in srgb, #ff6b6b 45%, var(--line)); }
+.xfer-box.wide { width: min(680px, 100%); max-height: calc(100vh - 32px); overflow: auto; }
+.xfer-box h4 { margin: 14px 0 0; font: 700 14px/1.2 var(--font-display); letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
+.det-top { display: flex; gap: 16px; flex-wrap: wrap; }
+.det-cover { align-self: flex-start; width: 160px; aspect-ratio: 3 / 2; border-radius: 8px; overflow: hidden; background: linear-gradient(135deg, var(--shell-hi), var(--shell-lo)); display: grid; place-items: center; flex: none; }
+.det-cover img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
+.det-head { flex: 1 1 260px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.det-rename { display: flex; gap: 8px; }
+.det-rename input { flex: 1; min-width: 0; font: 600 16px/1.2 var(--font-body); color: var(--ink); background: var(--bg, #11121c); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.det-info { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
+.det-info dt { color: var(--muted); }
+.det-info dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.det-hist summary { cursor: pointer; font-size: 13px; color: var(--led); }
+.dlg-list { margin: 6px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.dlg-list li { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.det-states { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 10px; }
+.det-cols { align-items: center; }
+.det-newtag { display: flex; gap: 6px; }
+.det-newtag input { font: 500 13px/1.2 var(--font-body); color: var(--ink); background: var(--bg, #11121c); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; width: 200px; }
+.btn.small.on { color: var(--led); border-color: var(--led); }
+.det-state span:last-child { display: flex; gap: 12px; }
+.det-state { display: flex; flex-direction: column; gap: 4px; font-size: 12px; min-width: 0; }
+.det-state img, .nothumb { width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 6px; image-rendering: pixelated; background: #0c0d16; }
+.nothumb { display: grid; place-items: center; color: var(--muted); font-size: 12px; border: 1px dashed var(--line); }
+.det-remove { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 12px; }
+.opt-inline { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+#logCard { grid-column: 1 / -1; }
+.log-tabs { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-start; }
+.log-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; max-height: 420px; overflow: auto; font-size: 13.5px; line-height: 1.45; }
+.log-list li { display: flex; flex-direction: column; gap: 3px; }
+.log-list time { font: 500 11.5px/1 var(--font-mono); color: var(--muted); }
+.log-list ul { margin: 2px 0 0; padding-left: 18px; color: var(--muted); list-style: disc; display: flex; flex-direction: column; gap: 3px; }
+.log-list ul li { display: list-item; }
+#xfer { position: fixed; inset: 0; z-index: 30; background: rgba(6,6,14,.72); display: grid; place-items: center; padding: 16px; }
+.xfer-box { width: min(440px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 30px 60px -20px rgba(0,0,0,.7); }
+.xfer-box h3 { margin: 0; font: 700 19px/1.2 var(--font-display); overflow-wrap: anywhere; }
+.xfer-box .note { margin: 0; }
+.xfer-box .code { font: 500 clamp(40px, 11vw, 58px)/1 var(--font-mono); letter-spacing: .08em; color: var(--led); text-align: center; padding: 10px 0; font-variant-numeric: tabular-nums; }
+.bar { height: 10px; border-radius: 6px; background: var(--panel-2); overflow: hidden; border: 1px solid var(--line); }
+.bar span { display: block; height: 100%; background: var(--led); transition: width .2s; }
+.recv { display: flex; gap: 8px; }
+#recvCode { flex: 1; min-width: 0; font: 500 26px/1 var(--font-mono); letter-spacing: .12em; text-align: center; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+#recvCode:focus-visible { outline: 2px solid var(--led); outline-offset: 2px; }
+.cart-del {
+  align-self: flex-start; font: 500 12px/1 var(--font-body); color: var(--muted); background: none;
+  border: 1px solid transparent; border-radius: 6px; padding: 4px 6px; cursor: pointer;
+}
+.cart-del:hover { border-color: var(--line); color: var(--ink); }
+.cart-del[data-confirm="1"] { color: #ff9a8a; border-color: #ff9a8a; }
+@media (prefers-reduced-motion: reduce) { .cart-shell { transition: none; } }
+
+/* ---------------- menu do console (controle) ---------------- */
+[hidden] { display: none !important; }
+#cmenu { position: fixed; inset: 0; z-index: 40; background: rgba(8,8,18,.82); display: grid; place-items: center; padding: 16px; }
+.cm-panel {
+  width: min(760px, 100%); max-height: calc(100% - 20px); overflow: auto;
+  background: linear-gradient(180deg, var(--panel), var(--room)); border: 1px solid var(--line); border-radius: 16px;
+  padding: clamp(18px, 3vw, 34px); display: flex; flex-direction: column; gap: 16px;
+  box-shadow: 0 40px 80px -30px rgba(0,0,0,.8);
+}
+.cm-title { font: italic 700 clamp(22px, 3vw, 32px)/1 var(--font-display); letter-spacing: .05em; }
+.cm-panel { position: relative; }
+.cm-nav { position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); font: 600 20px/1 var(--font-body); cursor: pointer; display: grid; place-items: center; }
+.cm-nav:not(.cm-close) { right: 62px; font-size: 26px; }
+.cm-list li, .cm-cart, .cm-keys div { cursor: pointer; }
+.cm-arrow { display: inline-block; padding: 6px 8px; margin: -6px 0; font-weight: 600; }
+#cmenu .cm-title { padding-right: 110px; }
+.cm-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cm-list li {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: clamp(10px, 1.4vw, 16px) 18px; border-radius: 10px; border: 2px solid transparent;
+  font: 600 clamp(17px, 2vw, 22px)/1.2 var(--font-body);
+}
+.cm-list li small { font: 500 clamp(13px, 1.4vw, 16px)/1.3 var(--font-body); color: var(--muted); }
+.cm-list li.cm-on { background: var(--panel-2); border-color: var(--led); }
+.cm-list li.cm-on small { color: var(--ink); }
+.cm-legend { font: 500 clamp(12px, 1.3vw, 15px)/1.4 var(--font-body); color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
+.cm-legend b { display: inline-grid; place-items: center; min-width: 1.6em; padding: 1px 6px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink); font-family: var(--font-mono); font-weight: 500; }
+.cm-body { margin: 0; font-size: clamp(15px, 1.6vw, 18px); color: var(--muted); }
+.cm-body.warn { color: #ffb4a6; }
+.cm-shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+.cm-cart { display: flex; flex-direction: column; gap: 8px; padding: 8px; border-radius: 10px; border: 2px solid transparent; }
+.cm-cart img, .cm-cart span { width: 100%; aspect-ratio: 3 / 2; object-fit: cover; image-rendering: pixelated; border-radius: 6px; background: linear-gradient(135deg, var(--shell-hi), var(--shell-lo)); display: grid; place-items: center; font: italic 700 24px/1 var(--font-display); }
+.cm-cart b { font: 600 14px/1.25 var(--font-body); overflow-wrap: anywhere; }
+.cm-cart.cm-on { border-color: var(--led); background: var(--panel-2); }
+.cm-cart small { font-size: 12px; color: var(--muted); }
+.cm-filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: clamp(13px, 1.4vw, 16px); color: var(--muted); }
+.cm-filter span { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); }
+.cm-filter span.on { color: var(--ink); border-color: var(--led); }
+.cm-filter b, .cm-sort b { font: 500 12px/1 var(--font-mono); padding: 3px 6px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink); }
+.cm-filter .cm-sort { margin-left: auto; border: 0; padding: 0; display: flex; gap: 6px; align-items: center; }
+.cm-head { display: flex; gap: 16px; align-items: center; }
+.cm-head img { width: clamp(90px, 12vw, 150px); aspect-ratio: 3 / 2; object-fit: cover; border-radius: 8px; image-rendering: pixelated; }
+.cm-head .cm-body { margin-top: 6px; }
+.cm-confirm li.cm-on { border-color: #ff9a9a; }
+.cm-list li.cm-thumb { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 14px; }
+.cm-list li.cm-thumb img, .cm-list li.cm-thumb i { width: clamp(64px, 8vw, 96px); aspect-ratio: 3 / 2; object-fit: cover; border-radius: 6px; image-rendering: pixelated; background: #0c0d16; display: block; border: 1px dashed var(--line); }
+.cm-code { font: 500 clamp(38px, 7vw, 64px)/1 var(--font-mono); letter-spacing: .1em; text-align: center; color: var(--led); font-variant-numeric: tabular-nums; }
+.cm-keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; width: min(420px, 100%); align-self: center; }
+.cm-keys div { display: grid; place-items: center; height: clamp(48px, 7vh, 66px); border-radius: 10px; background: var(--panel-2); border: 2px solid var(--line); font: 600 clamp(20px, 2.4vw, 28px)/1 var(--font-mono); }
+.cm-keys div.cm-on { border-color: var(--led); color: var(--led); }
+.xbox-hint { display: none; }
+body[data-xbox="1"] .xbox-hint {
+  display: flex; max-width: 1040px; margin: 0 auto 14px; gap: 10px; align-items: baseline; flex-wrap: wrap;
+  background: color-mix(in srgb, var(--led) 12%, var(--panel)); border: 1px solid color-mix(in srgb, var(--led) 40%, var(--line));
+  border-radius: 10px; padding: 12px 16px; font-size: 15px;
+}
+.xbox-hint b { color: var(--led); }
+
+/* ---------------- bandeja ---------------- */
+.card.wide { grid-column: 1 / -1; }
+.pad-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 18px 28px; }
+@media (max-width: 760px) { .pad-grid { grid-template-columns: minmax(0, 1fr); } }
+.pad-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+#padName { font: 700 17px/1.25 var(--font-display); overflow-wrap: anywhere; }
+.pad-live { display: flex; flex-wrap: wrap; gap: 6px; }
+.pad-live span {
+  font: 500 11.5px/1 var(--font-mono); padding: 5px 7px; border-radius: 5px; border: 1px solid var(--line); color: var(--muted);
+  transition: background .08s, color .08s;
+}
+.pad-live span.on { background: var(--led); color: var(--led-ink); border-color: var(--led); }
+.steps { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.steps b { color: var(--ink); font-weight: 600; }
+#padMap { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 0 20px; }
+.map-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.map-name { color: var(--muted); }
+.map-btn { font: 500 12.5px/1.3 var(--font-mono); overflow-wrap: anywhere; }
+.map-row.hit .map-btn { color: var(--led); }
+.map-row.hit .map-name { color: var(--ink); }
+.map-row.listening .map-btn { color: var(--led); animation: blink 1s steps(2, start) infinite; }
+@keyframes blink { to { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .map-row.listening .map-btn { animation: none; } }
+.btn.small { padding: 6px 10px; font-size: 12.5px; }
+.tray {
+  max-width: 1040px; margin: 26px auto 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; align-items: start;
+}
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.card h2 { margin: 0; font: 700 12px/1 var(--font-display); text-transform: uppercase; letter-spacing: .16em; color: var(--muted); }
+.cart { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+#romName { font: 700 19px/1.2 var(--font-display); overflow-wrap: anywhere; }
+#romMeta, .note { font-size: 13px; color: var(--muted); }
+.mono { font-family: var(--font-mono); font-size: 12.5px; }
+.btn {
+  position: relative;
+  font: 600 14px/1 var(--font-body); color: var(--ink);
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px 14px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+.btn:hover { border-color: var(--muted); }
+.btn:focus-visible, label.btn:focus-within { outline: 2px solid var(--led); outline-offset: 2px; }
+.btn.primary { background: var(--led); color: var(--led-ink); border-color: var(--led); }
+.btn input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+table.keys { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.keys td { padding: 5px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.keys tr:last-child td { border-bottom: 0; }
+table.keys td:first-child { color: var(--muted); width: 40%; }
+kbd { font-family: var(--font-mono); font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
+.opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; }
+.opt input[type=range] { width: 130px; accent-color: var(--led); }
+.sel { font: 500 13px/1.2 var(--font-body); color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; max-width: 58%; min-width: 0; }
+.opt input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--led); }
+details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+details[open] summary { margin-bottom: 8px; }
+
+#toast {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  background: var(--ink); color: var(--room); font-weight: 600; font-size: 14px;
+  padding: 10px 16px; border-radius: 8px; max-width: calc(100vw - 32px); z-index: 60;
+}
+@media (prefers-reduced-motion: reduce) { .led { transition: none; } }
+</style>
+
+<!--LANDING_TOP-->
+<!--DOWNLOADS-->
+<!--LANDING_MID-->
+<section class="play" id="jogar" aria-labelledby="playTitle">
+<header class="top">
+  <div>
+    <p class="l-kicker">No navegador · sem instalar</p>
+    <h2 id="playTitle">Jogar no navegador</h2>
+    <p>Game Boy, Game Boy Color, Game Boy Advance, Game Gear, Master System e Neo Geo Pocket aqui mesmo, no celular, no PC ou no Xbox. Suas ROMs ficam só neste navegador.</p>
+  </div>
+  <div class="chips">
+    <span class="chip" id="fps">— qps</span>
+    <span class="chip" id="padState" data-on="0">Nenhum controle</span>
+    <button class="chip" id="soundState" type="button" hidden>Som</button>
+  </div>
+</header>
+
+<section class="device" id="touch" aria-label="Console">
+  <div class="shoulder l" data-key="L">L</div>
+  <div class="shoulder r" data-key="R">R</div>
+
+  <div class="body">
+    <div class="wing left">
+      <div class="dpad" aria-label="Direcional">
+        <div class="diag ul" data-key="UP LEFT"></div>
+        <div class="dk up" data-key="UP">▲</div>
+        <div class="diag ur" data-key="UP RIGHT"></div>
+        <div class="dk left" data-key="LEFT">◀</div>
+        <div class="dk mid"></div>
+        <div class="dk right" data-key="RIGHT">▶</div>
+        <div class="diag dl" data-key="DOWN LEFT"></div>
+        <div class="dk down" data-key="DOWN">▼</div>
+        <div class="diag dr" data-key="DOWN RIGHT"></div>
+      </div>
+      <div class="meta">
+        <div class="pill sel"><div class="cap" data-key="SELECT"></div><small>SELECT</small></div>
+        <div class="pill"><div class="cap" data-key="START"></div><small id="startLabel">START</small></div>
+      </div>
+    </div>
+
+    <div class="face">
+      <div class="bezel">
+        <div class="bezel-top"><span class="led" aria-hidden="true"></span><span>POWER</span><span class="stripe"></span><span id="bezelTag">32-BIT ARM7</span></div>
+        <div id="screenWrap">
+          <canvas id="screen" width="240" height="160" data-smooth="0" aria-label="Tela do jogo"></canvas>
+          <div class="empty">
+            <strong>Insira um cartucho</strong>
+            <span>Arraste uma ROM de Game Boy, Game Boy Color, Game Boy Advance, Game Gear, Master System ou Neo Geo Pocket (.gb, .gbc, .gba, .gg, .sms, .ngp, .ngc ou .zip) para a tela ou use “Abrir ROM” logo abaixo. Tudo roda no seu navegador.</span>
+          </div>
+        </div>
+        <div class="wordmark">ÍNDIGO<small id="resTag">240×160</small></div>
+      </div>
+    </div>
+
+    <div class="wing right">
+      <div class="ab">
+        <div class="key b"><div class="round" data-key="B">B</div></div>
+        <div class="key"><div class="round" data-key="A">A</div></div>
+      </div>
+      <div class="speaker" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+      <div class="minibar">
+        <button class="mini" type="button" data-act="menu">☰ Menu</button>
+        <button class="mini" type="button" data-act="save">Salvar estado</button>
+        <button class="mini" type="button" data-act="load">Carregar</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="shelf" aria-label="Estante de cartuchos">
+  <div class="shelf-head">
+    <h2>Estante</h2>
+    <span class="note" id="shelfCount"></span>
+    <span class="note" id="shelfUsage"></span>
+    <div class="shelf-actions">
+      <label class="btn small">Adicionar ROMs<input type="file" id="addRoms" multiple accept=".gb,.gbc,.sgb,.cgb,.gba,.agb,.gg,.sms,.sg,.ngp,.ngc,.npc,.bin,.zip"></label>
+      <button class="btn small" id="backupBtn" type="button">Backup</button>
+      <button class="btn small xfer-only" id="sendShelfBtn" type="button">Enviar estante</button>
+      <button class="btn small" id="receiveBtn" type="button">Receber por código</button>
+    </div>
+  </div>
+  <div class="resume-bar" id="resumeBar" hidden></div>
+  <div class="shelf-tools" id="shelfTools" hidden>
+    <input type="search" id="shelfSearch" placeholder="Buscar jogo" aria-label="Buscar jogo na estante">
+    <div class="chips" id="shelfChips" role="group" aria-label="Filtrar por console"></div>
+    <label class="sort">Ordem
+      <select id="shelfSort" class="sel">
+        <option value="recent">Jogados recentemente</option>
+        <option value="name">Nome (A–Z)</option>
+        <option value="added">Adicionados por último</option>
+        <option value="time">Mais tempo de jogo</option>
+        <option value="console">Console</option>
+      </select>
+    </label>
+  </div>
+  <p class="shelf-cloud" id="cloudNote" hidden></p>
+  <p class="shelf-warn" id="storageWarn" hidden></p>
+  <div class="shelf-empty" id="shelfEmpty">
+    <strong>Sua estante está vazia</strong>
+    <span>Abra a ROM de um cartucho seu com “Abrir ROM”, ou use “Adicionar ROMs” para guardar várias de uma vez. Elas ficam só neste navegador e aparecem aqui, com a última tela jogada e o save. Nada é enviado para fora do aparelho.</span>
+  </div>
+  <p class="shelf-empty" id="shelfNone" hidden>Nenhum cartucho com esse filtro.</p>
+  <div id="shelfGrid"></div>
+</section>
+
+<section class="tray">
+  <div class="card">
+    <h2>Cartucho</h2>
+    <div class="cart">
+      <span id="romName">Nenhuma ROM</span>
+      <span id="romMeta">Formatos: .gb, .gbc, .gba, .gg (Game Gear), .sms (Master System), .ngp/.ngc (Neo Geo Pocket) e .zip</span>
+    </div>
+    <div class="row">
+      <label class="btn primary">Abrir ROM<input type="file" id="romFile" accept=".gb,.gbc,.sgb,.cgb,.gba,.agb,.gg,.sms,.sg,.ngp,.ngc,.npc,.bin,.zip"></label>
+      <button class="btn" id="pause" type="button">Pausar</button>
+      <button class="btn" id="reset" type="button">Reiniciar</button>
+      <button class="btn" id="fullscreen" type="button">Modo TV · 1080p</button>
+      <button class="btn" id="menuBtn" type="button">Menu do controle</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Comandos</h2>
+    <table class="keys">
+      <tr><td>Direcional</td><td><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></td></tr>
+      <tr><td>A / B</td><td><kbd>X</kbd> / <kbd>Z</kbd> <small>(no Game Gear e no Master System: 2 / 1)</small></td></tr>
+      <tr><td>L / R <small>(só GBA)</small></td><td><kbd>A</kbd> / <kbd>S</kbd></td></tr>
+      <tr><td>Start / Select</td><td><kbd>Enter</kbd> / <kbd>Backspace</kbd> <small>(Start pausa no Master System; no Neo Geo Pocket, Start é o Option)</small></td></tr>
+      <tr><td>Acelerar 4×</td><td>segure <kbd>Espaço</kbd></td></tr>
+      <tr><td>Pausar</td><td><kbd>P</kbd></td></tr>
+      <tr><td>Salvar / carregar estado</td><td><kbd>F5</kbd> / <kbd>F8</kbd></td></tr>
+      <tr><td>Modo TV</td><td><kbd>F</kbd></td></tr>
+      <tr><td>Menu do controle</td><td><kbd>M</kbd> · no controle: <b>View + ☰</b></td></tr>
+      <tr><td>Controle</td><td>veja o cartão Controle abaixo</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Save</h2>
+    <span class="note" id="saveState">Sem jogo aberto</span>
+    <span class="note">O save do cartucho fica no banco deste navegador, por ROM, gravado assim que o jogo salva. Versões anteriores e backup ficam em “Detalhes” e “Backup”, na estante.</span>
+    <div class="row"><label class="btn">Importar .sav<input type="file" id="saveFile" accept=".sav,.srm,.ngf,.bin"></label><button class="btn" id="saveExport" type="button">Exportar .sav</button></div>
+    <label class="opt" for="stateSlot">Estado do jogo
+      <select id="stateSlot" class="sel"><option value="1">Espaço 1</option></select>
+    </label>
+    <div class="row"><button class="btn" id="stateSave" type="button">Salvar estado</button><button class="btn" id="stateLoad" type="button">Carregar estado</button></div>
+    <span class="note">O estado congela o jogo no ponto exato, em qualquer tela. Atalhos: <kbd>F5</kbd> salva, <kbd>F8</kbd> carrega.</span>
+  </div>
+
+  <div class="card">
+    <h2>Vídeo e som</h2>
+    <label class="opt" for="filter">Filtro
+      <select id="filter" class="sel">
+        <option value="xbr">HD (xBR), recomendado</option>
+        <option value="remaster">HD Remaster (mais liso)</option>
+        <option value="sharp">Pixel original</option>
+        <option value="bicubic">Bicúbico (suave)</option>
+        <option value="lcd">Tela LCD (subpixels)</option>
+        <option value="crt">TV de tubo</option>
+        <option value="epx">EPX 4× (clássico)</option>
+      </select>
+    </label>
+    <label class="opt gb-only" for="gbPalette">Paleta do Game Boy
+      <select id="gbPalette" class="sel"></select>
+    </label>
+    <label class="opt" for="shellTheme">Carcaça
+      <select id="shellTheme" class="sel">
+        <option value="indigo">Índigo</option>
+        <option value="grafite">Grafite fosco</option>
+        <option value="gelo">Gelo</option>
+        <option value="fume">Fumê translúcido</option>
+        <option value="agua">Água translúcido</option>
+      </select>
+    </label>
+    <label class="opt" id="paramRow" for="param"><span id="paramLabel">Suavidade das bordas</span> <input type="range" id="param" min="0" max="100" value="25"></label>
+    <label class="opt" for="lcdColor">Cores do LCD original <input type="checkbox" id="lcdColor"></label>
+    <label class="opt" for="frameBlend">Anti-cintilação <input type="checkbox" id="frameBlend"></label>
+    <label class="opt" for="fit">Escala no Modo TV
+      <select id="fit" class="sel">
+        <option value="aspect">Preencher altura (6,75× em 1080p)</option>
+        <option value="integer">Inteira (6× em 1080p)</option>
+        <option value="stretch">Esticar para 16:9</option>
+      </select>
+    </label>
+    <span class="note">O GBA tem só 240×160 pixels e o Game Boy, 160×144. Os filtros HD redesenham os contornos na resolução da sua tela. "Cores do LCD original" mostra as cores como na tela do portátil; "Anti-cintilação" mescla quadros para jogos que piscam sprites. Atalho: <kbd>F</kbd> abre e fecha o Modo TV.</span>
+    <label class="opt" for="volume">Volume <input type="range" id="volume" min="0" max="100" value="70"></label>
+    <label class="opt" for="mute">Sem som <input type="checkbox" id="mute"></label>
+    <button class="btn" id="soundTest" type="button">Testar som</button>
+    <label class="opt" for="haptic" id="hapticRow">Vibrar ao tocar nos botões da tela <input type="checkbox" id="haptic" checked></label>
+    <details class="gba-only">
+      <summary>BIOS do GBA (opcional)</summary>
+      <div class="cart">
+        <span class="note">O Índigo traz uma BIOS própria. Se você extraiu a do seu console (16 KB), carregue aqui para máxima compatibilidade.</span>
+        <span class="note mono" id="biosState">Usando BIOS interna</span>
+        <div class="row"><label class="btn">Carregar BIOS<input type="file" id="biosFile" accept=".bin,.rom"></label></div>
+      </div>
+    </details>
+
+  </div>
+
+
+  <div class="card wide" id="padCard">
+    <h2>Controle</h2>
+    <div class="pad-grid">
+      <div class="pad-side">
+        <span id="padName">Nenhum controle detectado</span>
+        <span class="note" id="padHint">Conecte o controle e aperte qualquer botão: o navegador só mostra o controle depois do primeiro toque.</span>
+        <div class="pad-live" aria-label="Teste ao vivo dos botões">
+          <span data-i="0">A</span><span data-i="1">B</span><span data-i="2">X</span><span data-i="3">Y</span>
+          <span data-i="4">LB</span><span data-i="5">RB</span><span data-i="6">LT</span><span data-i="7">RT</span>
+          <span data-i="8">View</span><span data-i="9">Menu</span><span data-i="10">LS</span><span data-i="11">RS</span>
+          <span data-i="12">↑</span><span data-i="13">↓</span><span data-i="14">←</span><span data-i="15">→</span>
+        </div>
+        <ol class="steps">
+          <li><b>Cabo:</b> ligue o controle no PC com cabo USB-C (ou micro-USB nos modelos antigos).</li>
+          <li><b>Bluetooth:</b> no Windows, Configurações › Bluetooth › Adicionar dispositivo; no controle, segure o botão de parear (ao lado do USB) até o Xbox piscar rápido.</li>
+          <li><b>Adaptador sem fio Xbox:</b> conecte o adaptador e aperte o botão de parear nele e no controle.</li>
+          <li>Com a página aberta, aperte qualquer botão do controle.</li>
+        </ol>
+        <label class="opt" for="padPreset">Layout
+          <select id="padPreset" class="sel">
+            <option value="letters">Letras iguais (A do Xbox = A)</option>
+            <option value="position">Posição Nintendo (direita = A)</option>
+            <option value="custom">Personalizado</option>
+          </select>
+        </label>
+        <label class="opt" for="padStick">Analógico esquerdo como direcional <input type="checkbox" id="padStick"></label>
+        <label class="opt" for="padDead">Zona morta do analógico <input type="range" id="padDead" min="15" max="80" value="45"></label>
+        <div class="row"><button class="btn" id="padTest" type="button">Testar vibração</button></div>
+      </div>
+      <div id="padMap" aria-label="Mapeamento dos botões"></div>
+    </div>
+  </div>
+  <div class="card" id="logCard">
+    <h2>Registro</h2>
+    <div class="log-tabs chips" role="tablist">
+      <button type="button" class="chip on" data-logtab="changes" role="tab">Melhorias</button>
+      <button type="button" class="chip" data-logtab="activity" role="tab">Atividade deste aparelho</button>
+    </div>
+    <ul class="log-list" id="logList"></ul>
+  </div>
+</section>
+
+</section>
+
+<!--LANDING_END-->
+</main>
+
+<!--LANDING_BOTTOM-->
+
+<div id="tv" hidden data-idle="0">
+  <canvas id="tvScreen" aria-label="Jogo em tela cheia"></canvas>
+  <div class="hud">
+    <span id="tvInfo">Saída —</span>
+    <button class="btn" id="tvFilter" type="button">Trocar filtro</button>
+    <button class="btn" id="tvFit" type="button">Trocar escala</button>
+    <button class="btn" id="tvClose" type="button">Sair (Esc)</button>
+  </div>
+</div>
+
+<div id="cmenu" hidden></div>
+
+<div id="xfer" hidden><div class="xfer-box" id="xferBody" role="dialog" aria-modal="true" aria-label="Transferência de cartucho"></div></div>
+
+<div id="toast" role="status" hidden></div>
+
+<script>
+/*BUNDLE*/
+</script>
