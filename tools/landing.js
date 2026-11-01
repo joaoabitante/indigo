@@ -421,11 +421,11 @@ export function landingMid({ press = [] } = {}) {
     <div class="code-copy">
       <p class="l-kicker">Código aberto</p>
       <h2 id="codeTitle">Aberto, e com um ponto final de propósito</h2>
-      <p>O Índigo vai ter o código aberto, sob a licença <b>GPL-3.0</b>: qualquer pessoa pode ler, estudar e melhorar, e ele continua livre para sempre.</p>
-      <p>A lista vai até o PlayStation e o 3DO, que chega na 2.2. Depois disso, em vez de correr atrás do próximo console, o Índigo para e investe em qualidade: a meta é ser o melhor emulador de código aberto até a geração do PlayStation.</p>
+      <p>O código do Índigo é aberto, sob a licença <b>GPL-3.0</b>: qualquer pessoa pode ler, estudar e melhorar, e ele continua livre para sempre.</p>
+      <p>A lista vai até o PlayStation e o 3DO (experimental, desde a 2.2). Depois disso, em vez de correr atrás do próximo console, o Índigo para e investe em qualidade: a meta é ser o melhor emulador de código aberto até a geração do PlayStation.</p>
       <div class="code-badges">
         <span class="badge">${ICON.code}GPL-3.0</span>
-        <span class="badge badge-soon" aria-label="Repositório público: em breve">${ICON.lock}Repositório público · em breve</span>
+        <a class="badge" href="https://github.com/joaoabitante/indigo" target="_blank" rel="noopener">${ICON.code}Código no GitHub</a>
       </div>
     </div>
     <ol class="road" aria-label="Plano do projeto">
@@ -435,7 +435,7 @@ export function landingMid({ press = [] } = {}) {
 </section>`;
 
   const faq = [
-    ['O Índigo é grátis mesmo?', 'Sim. O app e o site são grátis, sem cadastro. O Índigo vai ter o código aberto (GPL-3.0).'],
+    ['O Índigo é grátis mesmo?', 'Sim. O app e o site são grátis, sem cadastro. O código é aberto (GPL-3.0), em github.com/joaoabitante/indigo.'],
     ['O Índigo vem com jogos ou BIOS?', 'Não. O Índigo não traz nenhum jogo e nenhuma BIOS, e não indica onde baixar. Use cópias dos seus próprios cartuchos e discos.', 'faq-jogos'],
     ['Quais consoles pedem BIOS?', 'O PlayStation, o Sega CD, o Neo Geo, o Neo Geo CD e o PC Engine CD. Na primeira vez, o app pede o arquivo da BIOS do seu console. Os outros sistemas rodam sem nada além do jogo.'],
     ['Quais arquivos de jogo ele abre?', 'Os arquivos comuns de cada console, inclusive dentro de .zip. Os jogos em CD abrem em .cue/.bin, .chd ou .iso.'],
@@ -510,7 +510,7 @@ export function landingFooter({ app, autista }) {
       <a class="l-brand" href="#topo" aria-label="Índigo Nexus, início"><span class="l-mark" aria-hidden="true"></span>ÍNDIGO<span class="l-nexus">NEXUS</span></a>
       <p class="foot-tag">O ponto de encontro de 50 anos de videogames: consoles, gerações e aparelhos conectados num app só.</p>
       <p>Um projeto do ${ae}, criado pelo João com a ajuda de inteligência artificial (Claude).</p>
-      <p>Versão ${esc(app.version)} · Código aberto (GPL-3.0), repositório em breve.</p>
+      <p>Versão ${esc(app.version)} · Código aberto (GPL-3.0): <a href="https://github.com/joaoabitante/indigo" target="_blank" rel="noopener">github.com/joaoabitante/indigo</a>.</p>
     </div>
     <ul class="foot-links" aria-label="Atalhos">
       <li><a href="#consoles">Consoles</a></li>

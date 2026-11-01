@@ -2,6 +2,14 @@
 
 Gerado de `web/changelog.js` (o mesmo texto aparece no cartão “Registro” da página).
 
+## 01/11/2026 · App 2.2.1: jogos de PlayStation que travavam agora entram
+
+- Resident Evil 3, Ace Combat 3, NASCAR 2001, Crash Team Racing e outros jogos que paravam no logo do PlayStation ou na primeira tela de carregamento agora entram no jogo.
+- A causa: o sinal do controle e do cartão de memória (/ACK) ficava ligado; no console ele é um pulso curto, e a biblioteca de cartão da Sony espera o pulso acabar.
+- Código aberto: o Índigo agora tem repositório público em github.com/joaoabitante/indigo (GPL-3.0).
+
+**Testes:** Teste novo do pulso do /ACK (controle e cartão); NASCAR 2001 até a corrida de demonstração e Ace Combat 3 até o menu; revalidação de 1031 comparações iguais e robustez com 0 problemas.
+
 ## 01/11/2026 · App 2.2: 3DO experimental e código livre (GPL-3.0)
 
 - Panasonic 3DO, em fase experimental: abra antes a BIOS do seu console (ex.: panafz10.bin) e depois o jogo em .cue/.bin, .chd ou .iso. Ainda não foi testado com jogos comerciais.

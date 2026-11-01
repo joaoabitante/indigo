@@ -3,6 +3,16 @@
 export const CHANGELOG = [
   {
     date: '2026-11-01',
+    title: 'App 2.2.1: jogos de PlayStation que travavam agora entram',
+    items: [
+      'Resident Evil 3, Ace Combat 3, NASCAR 2001, Crash Team Racing e outros jogos que paravam no logo do PlayStation ou na primeira tela de carregamento agora entram no jogo.',
+      'A causa: o sinal do controle e do cartão de memória (/ACK) ficava ligado; no console ele é um pulso curto, e a biblioteca de cartão da Sony espera o pulso acabar.',
+      'Código aberto: o Índigo agora tem repositório público em github.com/joaoabitante/indigo (GPL-3.0).',
+    ],
+    tests: 'Teste novo do pulso do /ACK (controle e cartão); NASCAR 2001 até a corrida de demonstração e Ace Combat 3 até o menu; revalidação de 1031 comparações iguais e robustez com 0 problemas.',
+  },
+  {
+    date: '2026-11-01',
     title: 'App 2.2: 3DO experimental e código livre (GPL-3.0)',
     items: [
       'Panasonic 3DO, em fase experimental: abra antes a BIOS do seu console (ex.: panafz10.bin) e depois o jogo em .cue/.bin, .chd ou .iso. Ainda não foi testado com jogos comerciais.',
