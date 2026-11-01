@@ -377,6 +377,24 @@ velocidade cheia no notebook e no Edge 70.
   mas a geometria treme como no console.
 - Novidades da próxima versão (para entrar em `src/app/novidades.h` quando a versão for decidida):
   "PlayStation: resolução 2x e 4x (Ajustes ou menu do jogo)".
+- ✅ Varredura noturna de compatibilidade (01/11/2026, branch `ps1-noite`): NASCAR 2001 e Ace Combat 3 do João
+  jogados com botões por roteiro (`PS1KEYS`/`PS1SHOTS` no `indigo-t9_ps1int disco`, `REF_KEYS` no `t9_ps1_ref.c`)
+  e comparados com o Beetle PSX com os mesmos botões: NASCAR até a corrida (cartão de memória: criar o save
+  funciona) e Ace Combat 3 do menu de idiomas até a missão (pausa, mísseis, voo pelo analógico, replay), sem
+  travas, cores erradas, gráficos faltando nem som mudo. As cópias não têm vídeos nem XA (o MDEC e o XA seguem só
+  nos testes sintéticos). O som sai 4/3 mais alto que o do Beetle, igual na SPU e no CD-DA; o nosso bate com a
+  conta do psx-spx (seno de 8000 no CD com volume 7FFFh sai com 5657 de RMS), então fica como está.
+- ✅ ps1-tests completos contra o console na mesma noite: `cpu/access-time` (50 de 50 tempos a até 2 ciclos: os
+  registradores com 3 ciclos, CD e SPU só com o tempo deles, COM0 só nos acessos seguidos, expansão 3),
+  `cpu/code-in-io` (7 de 7: busca de instruções na SPU e no DMA), `cpu/io-access-bitwidth` (30 linhas: JOY_MODE de
+  32 bits, SIO_MODE, escrita larga no CD-ROM) e `timers` (volta a 0 no alvo como no console, leitura esperando o
+  buffer de escrita: as 10000 leituras por valor do contador iguais às do console). Ficam diferentes: o lixo do
+  barramento nas leituras sem registrador (expansão 3, bits altos do I_MASK e do alvo do timer), o MDECSTAT antes
+  do primeiro reset, os modos de sincronia do timer 0 com o hblank (o log do console foi tirado num aparelho com
+  cristal PAL, as linhas não batem), a sobra de 5 ciclos no `timers` "1000 cycles delay" e um caso do
+  `dma/chopping` (2 palavras por 1 ciclo da CPU a 10,3%; a média dos 130 melhorou de 1,16% para 1,10%).
+  Revalidação: `validate.sh` com 1031 comparações iguais e 0 problemas; robustez com sanitizadores (12 3 20261106):
+  312 ROMs, 0 problemas.
 
 ## Etapa 9b · Panasonic 3DO (versão 2.2)
 
@@ -431,14 +449,14 @@ revalidação e a robustez em 0 problemas. A ordem das frentes é a ordem de pri
 | Check | O que entrega | Como verificar |
 |---|---|---|
 | B.1 | Placar de precisão: por console, quantos testes públicos passam do total (Blargg, mooneye, PeterLemon, ps1-tests, SingleStepTests, …) | Tabela gerada pelo `validate.sh`, publicada no site |
-| B.2 | Fechar as diferenças conhecidas do PS1: CD (busca além do fim do disco, tempo do Init), chopping do DMA, status passo a passo e IDCT do MDEC | Os 4 testes do ps1-tests iguais ao console |
+| B.2 | Fechar as diferenças conhecidas do PS1: CD (busca além do fim do disco, tempo do Init), chopping do DMA, status passo a passo e IDCT do MDEC | Os 4 testes do ps1-tests iguais ao console (01/11: também access-time, code-in-io, io-access-bitwidth e timers; ver a etapa 9) |
 | B.3 | Subir o placar dos outros consoles, um por ciclo, começando pelo de pior resultado | Placar maior a cada versão, nunca menor |
 
 ### Frente C · Compatibilidade
 
 | Check | O que entrega | Como verificar |
 |---|---|---|
-| C.1 | Lista de jogos testados por console (situação: perfeito, jogável, com defeito, não abre), alimentada pelos testes do João | Lista no repositório e no site |
+| C.1 | Lista de jogos testados por console (situação: perfeito, jogável, com defeito, não abre), alimentada pelos testes do João | Lista no repositório e no site (PS1, 01/11: NASCAR 2001 e Ace Combat 3 jogáveis até a corrida e a missão) |
 | C.2 | Cada defeito vira um caso de teste com homebrew ou ROM de teste (nunca o jogo comercial no repositório) | O caso entra no `validate.sh` |
 | C.3 | Banco de dados de jogos (só somas de verificação e nomes, sem as ROMs) para reconhecer região, mapper e save certos sozinho | Jogos com cabeçalho errado abrem sem ajuste manual |
 

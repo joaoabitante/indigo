@@ -18,6 +18,11 @@ inline void st16(uint8_t* p, uint16_t v) { std::memcpy(p, &v, 2); }
 // regiões com o espaço físico de 512 MB: KUSEG (só os primeiros 512 MB existem), KSEG0 e KSEG1
 constexpr uint64_t WB_COST = 4;  // escrita na RAM pelo buffer de escrita
 constexpr bool MAPPED[8] = {true, false, false, false, true, true, false, false};
+// registradores de onde o console busca instruções (cpu/code-in-io: os da SPU e os do DMA respondem como memória;
+// o scratchpad, o MDEC e os de interrupção dão erro de barramento na busca)
+inline bool ioFetchable(uint32_t region, uint32_t ph) {
+  return MAPPED[region] && ((ph >= 0x1F801080 && ph < 0x1F801100) || (ph >= 0x1F801C00 && ph < 0x1F802000));
+}
 }  // namespace
 
 void Cpu::reset() {
@@ -54,7 +59,10 @@ uint32_t Cpu::fetch(uint32_t a) {
   const uint32_t region = a >> 29;
   const uint32_t ph = a & 0x1FFFFFFF;
   const uint8_t* p = MAPPED[region] ? s.rpage[ph >> 16] : nullptr;
-  if (!p) return 0xFFFFFFFF;  // fora da RAM e da BIOS: erro de barramento na busca (quem chama confere)
+  if (!p) {
+    if (ioFetchable(region, ph)) return s.ioRead(ph, 4);
+    return 0xFFFFFFFF;  // fora da RAM e da BIOS: erro de barramento na busca (quem chama confere)
+  }
   const uint32_t op = ld32(p + (ph & 0xFFFF));
   if (region == 5 || !(s.cacheCtrl & 0x800)) {
     s.now += s.fcost[ph >> 16];
@@ -89,6 +97,7 @@ bool Cpu::memRead(uint32_t a, int size, uint32_t& out) {
       out = size == 4 ? ld32(q) : size == 2 ? ld16(q) : *q;
       return true;
     }
+    if (s.now < wbReady) s.now = wbReady;  // o barramento só fica livre com o buffer de escrita vazio
     out = s.ioRead(ph, size);
     return true;
   }
@@ -161,7 +170,10 @@ void Cpu::run() {
     s.now += 1;
     if (pc & 3) { badv = pc; exception(EXC_ADEL); continue; }
     const uint32_t op = fetch(pc);
-    if (op == 0xFFFFFFFF && !s.rpage[(pc & 0x1FFFFFFF) >> 16]) { exception(EXC_IBE); continue; }
+    if (op == 0xFFFFFFFF && !s.rpage[(pc & 0x1FFFFFFF) >> 16] && !ioFetchable(pc >> 29, pc & 0x1FFFFFFF)) {
+      exception(EXC_IBE);
+      continue;
+    }
     pc = npc;
     npc += 4;
     execute(op);

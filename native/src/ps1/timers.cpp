@@ -13,6 +13,10 @@ void Timers::reset() {
   inVblank_ = false;
 }
 
+bool Timers::sysClock(int i) const {
+  return i == 2 ? !((t_[2].mode >> 9) & 1) : !((t_[i].mode >> 8) & 1);
+}
+
 bool Timers::countsSys(int i) const {
   const uint32_t src = (t_[i].mode >> 8) & 3;
   if (i == 2) return true;
@@ -38,12 +42,35 @@ void Timers::add(int i, uint32_t n) {
   const uint32_t old = t.counter;
   uint64_t c = uint64_t(old) + n;
   bool target = false, overflow = false;
-  if (old < t.target && c >= t.target) target = true;
-  if (t.mode & 0x08) {
-    if (t.target == 0) { c = 0; target = true; }
-    else if (c >= t.target) { target = true; c %= t.target; }
+  // volta a 0 no alvo: o contador chega ao alvo e um ciclo do sistema depois volta a 0, perdendo o passo desse
+  // ciclo (timer-dump do ps1-tests, relógio de pontos manual: 1, 2, 3, 4 e logo 0 com alvo 4; timers, relógio do
+  // sistema com alvo 10: 0 por 2 ciclos e 1..10 por 1 ciclo cada, período 12). Nos relógios lentos o período fica
+  // igual ao alvo; no do sistema, alvo+2 (HOLD marca o 0 que ainda segura o próximo passo)
+  if ((t.mode & 0x08) && old <= t.target && t.target) {
+    if (sysClock(i)) {
+      const uint64_t period = uint64_t(t.target) + 2, at = uint64_t(t.target) + 1;  // fase em que mostra o alvo
+      const uint64_t ph0 = (t.mode & HOLD) ? 0 : old == 0 ? 1 : uint64_t(old) + 1, ph = ph0 + n;
+      target = ph0 < at ? ph >= at : ph >= period + at;
+      t.mode &= ~HOLD;
+      if (ph % period == 0) t.mode |= HOLD;
+      c = ph % period <= 1 ? 0 : ph % period - 1;
+    } else if (c >= t.target) {
+      target = old < t.target || c >= 2 * uint64_t(t.target);
+      c %= t.target;
+    }
+  } else if ((t.mode & 0x08) && !t.target) {
+    c = 0;
+    target = true;
+  } else {
+    if (old < t.target && c >= t.target) target = true;
+    t.mode &= ~HOLD;
+    if (c >= 0xFFFF) overflow = true;
+    if (c >= 0x10000) {
+      c &= 0xFFFF;  // depois do FFFFh volta a 0 (período 10000h)
+      if ((t.mode & 0x08) && c >= t.target) { target = true; c = t.target ? c % t.target : 0; }
+      else if (c >= t.target) target = true;
+    }
   }
-  if (c >= 0xFFFF) { overflow = true; c %= 0xFFFF; }
   t.counter = uint32_t(c);
   if (target) t.mode |= 0x800;
   if (overflow) t.mode |= 0x1000;
@@ -80,7 +107,8 @@ uint64_t Timers::nextEvent() const {
     if (!(t.mode & 0x40) && t.irqDone) continue;
     if (i == 1 && ((t.mode >> 8) & 1)) continue;  // hblank: a virada de linha já é um evento
     uint32_t dist = 0xFFFF - t.counter;
-    if ((t.mode & 0x10) && t.counter < t.target) dist = std::min(dist, t.target - t.counter);
+    if (dist == 0) dist = 0x10000;
+    if ((t.mode & 0x10) && t.counter < t.target) dist = std::min(dist, t.target - t.counter + ((t.mode & HOLD) ? 1 : 0));
     if ((t.mode & 0x08) && t.target == 0) dist = 1;
     if (dist == 0) dist = 1;
     uint64_t cyc = dist;
@@ -123,7 +151,7 @@ uint32_t Timers::read(uint32_t off) {
   T& t = t_[i];
   switch (off & 0xC) {
     case 0x0: return t.counter;
-    case 0x4: { const uint32_t v = t.mode; t.mode &= ~0x1800u; return v; }
+    case 0x4: { const uint32_t v = t.mode & 0x1FFF; t.mode &= ~0x1800u; return v; }
     case 0x8: return t.target;
     default: return 0;
   }
@@ -134,7 +162,7 @@ void Timers::write(uint32_t off, uint32_t v) {
   if (i > 2) return;
   T& t = t_[i];
   switch (off & 0xC) {
-    case 0x0: t.counter = v & 0xFFFF; break;
+    case 0x0: t.counter = v & 0xFFFF; t.mode &= ~HOLD; break;
     case 0x4: {
       t.mode = (v & 0x3FF) | 0x400;
       t.counter = 0;
@@ -157,7 +185,7 @@ void Timers::write(uint32_t off, uint32_t v) {
 void Timers::sync(StateIO& io) {
   for (auto& t : t_) {
     io.sync(t.counter); io.sync(t.mode); io.sync(t.target); io.sync(t.paused); io.sync(t.irqDone);
-    if (io.reading()) { t.counter &= 0xFFFF; t.target &= 0xFFFF; t.mode &= 0x1FFF; }
+    if (io.reading()) { t.counter &= 0xFFFF; t.target &= 0xFFFF; t.mode &= 0x1FFF | HOLD; }
   }
   io.sync(last_); io.sync(dotFrac_); io.sync(inVblank_);
   if (io.reading()) { dotFrac_ &= 0xFFFFFFFFu; if (last_ > sys_.now) last_ = sys_.now; }

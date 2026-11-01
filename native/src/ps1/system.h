@@ -46,7 +46,8 @@ public:
   uint8_t fcost[0x2000] = {};    // ciclos extras por busca de instrução fora da cache
   uint32_t cacheCtrl = 0;
   uint32_t memCtrl[9] = {}, ramSizeReg = 0;
-  uint8_t cdCost[3] = {}, spuCost[3] = {}, exp1Cost[3] = {}, exp2Cost[3] = {};
+  uint8_t sio1Mode = 0;  // SIO_MODE da porta serial (sem cabo; fora do estado salvo, que não muda de versão por ele)
+  uint8_t cdCost[3] = {}, spuCost[3] = {}, exp1Cost[3] = {}, exp2Cost[3] = {}, exp3Cost[3] = {};
 
   uint32_t ioRead(uint32_t ph, int size);
   void ioWrite(uint32_t ph, uint32_t v, int size);

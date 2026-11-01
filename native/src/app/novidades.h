@@ -11,6 +11,12 @@ struct Versão {
 };
 
 inline constexpr Versão VERSOES[] = {
+    {"2.2.2", "01/11/2026",
+     {"PlayStation mais fiel ao console:",
+      "timers, tempos de acesso e",
+      "escritas nos registradores",
+      "NASCAR 2001 e Ace Combat 3",
+      "testados até a corrida/missão", nullptr}},
     {"2.2.1", "01/11/2026",
      {"PlayStation: jogos que travavam",
       "no logo ou no carregamento",

@@ -18,7 +18,9 @@ uint32_t rd32(const std::vector<uint8_t>& b, size_t o) {
 void accessTime(uint32_t delay, uint32_t com, uint8_t out[3]) {
   int first = 0, seq = 0, min = 0;
   const int access = int((delay >> 4) & 15);
-  if (delay & 0x100) { first += int(com & 15) - 1; seq += int(com & 15) - 1; }
+  // COM0 (recuperação) só pesa nos acessos seguidos: o cpu/access-time do console mede 18 ciclos no SPUCNT de 16
+  // bits e 11 na expansão 2 de 8 bits (com o COM0 no primeiro acesso dariam 22 e 16)
+  if (delay & 0x100) seq += int(com & 15) - 1;
   if (delay & 0x400) { first += int((com >> 8) & 15); seq += int((com >> 8) & 15); }
   if (delay & 0x800) min = int((com >> 12) & 15);
   if (first < 6) first++;
@@ -35,7 +37,7 @@ void accessTime(uint32_t delay, uint32_t com, uint8_t out[3]) {
 
 constexpr uint32_t RAM_LOAD_COST = 4;   // leitura da RAM: ~5 ciclos no total
 constexpr uint32_t RAM_FETCH_COST = 4;  // busca fora da cache na RAM
-constexpr uint32_t IO_COST = 2;         // registradores internos (GPU, DMA, timers, IRQ...)
+constexpr uint32_t IO_COST = 1;         // registradores internos (GPU, DMA, timers, IRQ...)
 }  // namespace
 
 System::System(const std::vector<uint8_t>& bios)
@@ -77,6 +79,7 @@ void System::updateMemTiming() {
   accessTime(memCtrl[5], memCtrl[8], spuCost);
   accessTime(memCtrl[2], memCtrl[8], exp1Cost);
   accessTime(memCtrl[7], memCtrl[8], exp2Cost);
+  accessTime(memCtrl[3], memCtrl[8], exp3Cost);
 }
 
 void System::reset() {
@@ -87,6 +90,7 @@ void System::reset() {
                           0x200931E1, 0x00020843, 0x00070777, 0x00031125};
   std::memcpy(memCtrl, mc, sizeof mc);
   ramSizeReg = 0x00000B88;
+  sio1Mode = 0;
   cacheCtrl = 0;
   buildPages();
   istat = imask = 0;
@@ -140,11 +144,14 @@ void System::runFrame() {
 uint32_t System::ioRead(uint32_t ph, int size) {
   if (ph >= 0x1F801000 && ph < 0x1F802000) {
     const uint32_t off = ph & 0xFFF;
-    now += IO_COST;
+    // o CD-ROM e a SPU ficam atrás do barramento com o próprio tempo de acesso (cdCost / spuCost)
+    if (!((off >= 0x800 && off < 0x804) || off >= 0xC00)) now += IO_COST;
     if (off < 0x24) return memCtrl[off >> 2] >> ((ph & 3) * 8);
     if (off >= 0x40 && off < 0x50) return sio.read(off & 0xF, size);
     if (off >= 0x50 && off < 0x60) {  // SIO1 (serial): sem cabo, sempre pronta para enviar
-      return (off & 0xF) == 4 ? 0x00000005u : 0;
+      if ((off & 0xF) == 4) return 0x00000005u;
+      if ((off & 0xF) == 8) return sio1Mode;  // SIO_MODE guarda o que se escreve (8 bits)
+      return 0;
     }
     if (off >= 0x60 && off < 0x64) return ramSizeReg >> ((ph & 3) * 8);
     if (off >= 0x70 && off < 0x74) return istat >> ((ph & 3) * 8);
@@ -179,6 +186,7 @@ uint32_t System::ioRead(uint32_t ph, int size) {
     if (ph == 0x1F802021) return 0x0C;  // DUART: transmissor pronto
     return 0xFFFFFFFF;
   }
+  if (ph >= 0x1FA00000 && ph < 0x1FC00000) { now += exp3Cost[size >> 1]; return 0; }  // expansão 3 vazia
   return 0;
 }
 
@@ -192,7 +200,10 @@ void System::ioWrite(uint32_t ph, uint32_t v, int size) {
       return;
     }
     if (off >= 0x40 && off < 0x50) { sio.write(off & 0xF, v, size); reschedule(); return; }
-    if (off >= 0x50 && off < 0x60) return;
+    if (off >= 0x50 && off < 0x60) {
+      if ((off & 0xF) == 8) sio1Mode = uint8_t(v);
+      return;
+    }
     if (off >= 0x60 && off < 0x64) { ramSizeReg = v32; return; }
     if (off >= 0x70 && off < 0x74) {
       const uint32_t mask = size == 4 ? 0xFFFFFFFFu : ((1u << (size * 8)) - 1) << ((ph & 3) * 8);
@@ -206,7 +217,9 @@ void System::ioWrite(uint32_t ph, uint32_t v, int size) {
     if (off >= 0x800 && off < 0x804) {
       syncPeriph();
       if (dbg_) std::fprintf(stderr, "CD w %X <- %02X  pc=%08X t=%llu\n", off & 3, v, cpu.pc, (unsigned long long)now);
-      cdrom.write(off & 3, v, size);
+      // porta de 8 bits: uma escrita de 16 ou 32 bits vira 2 ou 4 escritas de byte no mesmo endereço, do byte
+      // baixo ao alto (cpu/io-access-bitwidth no console: escrever 0x5678 em 1F801800 deixa o índice em 2)
+      for (int i = 0; i < size; i++) cdrom.write(off & 3, (v >> (8 * i)) & 0xFF, 1);
       reschedule();
       return;
     }

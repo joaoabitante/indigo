@@ -36,6 +36,8 @@ private:
   void add(int i, uint32_t n);
   void irq(int i);
   bool countsSys(int i) const;   // conta ciclos do sistema (ou do sistema/8)
+  bool sysClock(int i) const;    // conta cada ciclo do sistema
+  static constexpr uint32_t HOLD = 0x8000;  // no modo (fora do registrador): 0 recém-voltado do alvo
 };
 
 }  // namespace indigo::ps1

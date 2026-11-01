@@ -8,6 +8,8 @@
 //  5. Com a BIOS do usuário (pulado se não existir: <pasta>/../../bios-joao/scph1001.bin ou PS1_BIOS):
 //     - partida até o menu (logo da Sony e menu), comparada com o Beetle PSX (ref/menu.ppm);
 //     - ps1-tests com o psx.log do console de verdade (cpu, dma, gpu): nenhum "fail" e os mesmos "pass";
+//     - cpu/access-time (ciclos de leitura de cada região) e cpu/io-access-bitwidth (escritas de 8/16/32 bits nos
+//       registradores) comparados com o psx.log do console; timers (contador com volta a 0 no alvo, leituras por valor);
 //     - ps1-tests de GPU com o vram.png do console de verdade: VRAM igual ponto a ponto;
 //     - ps1-tests de GPU com o quadro final do Beetle PSX (ref/gpu-*.ppm);
 //     - gpu/bandwidth: tempos de desenho a menos de 12% dos medidos no console.
@@ -472,7 +474,8 @@ int main(int argc, char** argv) {
     }
     // ps1-tests com o psx.log do console
     {
-      const char* T[] = {"cpu-cop", "dma-dpcr", "dma-otc-test", "gpu-gp0-e1", "gpu-gpustat", "gpu-mask-bit", "dma-chain-looping"};
+      const char* T[] = {"cpu-cop", "dma-dpcr", "dma-otc-test", "gpu-gp0-e1", "gpu-gpustat", "gpu-mask-bit", "dma-chain-looping",
+                         "cpu-code-in-io"};
       for (const char* t : T) {
         const auto exe = readAll(dir + "/build/exe/" + t + ".exe");
         std::string area = t;
@@ -498,6 +501,112 @@ int main(int argc, char** argv) {
               std::string(t) + ": " + std::to_string(passes) + " pass, " + std::to_string(fails) + " fail (console: " +
                   std::to_string(expPass) + " pass)");
         std::printf("%-20s %d pass, %d fail (console: %d pass)\n", t, passes, fails, expPass);
+      }
+    }
+    // cpu/access-time: ciclos de leitura de 8/16/32 bits de cada região, a até 2 ciclos do console (a de 32 bits
+    // no SPUCNT é desalinhada e cai numa exceção: fica de fora)
+    {
+      const auto exe = readAll(dir + "/build/exe/cpu-access-time.exe");
+      const auto logBytes = readAll(dir + "/ps1-tests/cpu/access-time/psx.log");
+      if (exe.empty() || logBytes.empty()) check(false, "falta cpu-access-time");
+      else {
+        Ps1Core core(exe, "cpu-access-time", nullptr);
+        for (int f = 0; f < 300; f++) core.runFrame();
+        // "  5.21" = 5 + 21/100 (o teste imprime %d.%d de 100 leituras)
+        auto table = [](const std::string& t) {
+          std::vector<std::pair<std::string, std::vector<double>>> out;
+          for (const auto& l : lines(t)) {
+            const size_t p = l.find(')');
+            if (l.size() < 12 || l[11] != '(' || p == std::string::npos) continue;
+            std::vector<double> v;
+            const char* q = l.c_str() + p + 1;
+            while (*q) {
+              char* e;
+              const long a = std::strtol(q, &e, 10);
+              if (e == q) break;
+              q = e;
+              if (*q != '.') break;
+              const long b = std::strtol(q + 1, &e, 10);
+              q = e;
+              v.push_back(double(a) + double(b) / 100);
+            }
+            out.emplace_back(l.substr(0, 10), v);
+          }
+          return out;
+        };
+        const auto got = table(core.tty()), exp = table(std::string(logBytes.begin(), logBytes.end()));
+        int n = 0, ok = 0;
+        std::string bad;
+        for (size_t i = 0; i < exp.size() && i < got.size(); i++)
+          for (size_t k = 0; k < exp[i].second.size() && k < got[i].second.size(); k++) {
+            if (exp[i].first.rfind("SPUCNT", 0) == 0 && k == 2) continue;
+            n++;
+            if (std::fabs(got[i].second[k] - exp[i].second[k]) <= 2.0) ok++;
+            else bad += " " + exp[i].first.substr(0, exp[i].first.find(' ')) + "/" + std::to_string(8 << k) + "=" +
+                        std::to_string(got[i].second[k]).substr(0, 5);
+          }
+        check(exp.size() == got.size() && ok == n && n == 50, "cpu/access-time: " + std::to_string(ok) + " de " +
+              std::to_string(n) + " tempos a até 2 ciclos do console;" + bad);
+        std::printf("cpu/access-time: %d de %d tempos a até 2 ciclos do console\n", ok, n);
+      }
+    }
+    // cpu/io-access-bitwidth: o que se lê depois de escrever 0x12345678 com 8/16/32 bits (as linhas que não
+    // dependem de lixo do barramento nem do instante: JOY_MODE, SIO_MODE, CDROM_STAT, DMA, RAM)
+    {
+      const auto exe = readAll(dir + "/build/exe/cpu-io-access-bitwidth.exe");
+      const auto logBytes = readAll(dir + "/ps1-tests/cpu/io-access-bitwidth/psx.log");
+      if (exe.empty() || logBytes.empty()) check(false, "falta cpu-io-access-bitwidth");
+      else {
+        Ps1Core core(exe, "cpu-io-access-bitwidth", nullptr);
+        for (int f = 0; f < 300; f++) core.runFrame();
+        auto pick = [](const std::string& t) {
+          std::vector<std::string> out;
+          for (const auto& l : lines(t))
+            for (const char* k : {"RAM ", "SCRATCHPAD", "DMA0_ADDR", "DMAC_", "JOY_", "SIO_MODE", "CDROM_STAT", "SPUCNT"})
+              if (l.rfind(k, 0) == 0) out.push_back(l);
+          return out;
+        };
+        const auto got = pick(core.tty()), exp = pick(std::string(logBytes.begin(), logBytes.end()));
+        int eq = 0;
+        std::string first;
+        for (size_t i = 0; i < exp.size(); i++) {
+          if (i < got.size() && got[i] == exp[i]) eq++;
+          else if (first.empty()) first = " " + (i < got.size() ? got[i] : std::string("(nada)")) + " x console " + exp[i];
+        }
+        check(exp.size() == 30 && eq == int(exp.size()), "cpu/io-access-bitwidth: " + std::to_string(eq) + " de " +
+              std::to_string(exp.size()) + " linhas iguais ao console;" + first);
+        std::printf("cpu/io-access-bitwidth: %d de %zu linhas iguais ao console\n", eq, exp.size());
+      }
+    }
+    // timers: alvo com volta a 0 (relógio do sistema, alvo 10): quantas de 10000 leituras caem em cada valor do
+    // contador, a até 5 das do console (lá 0 aparece em dobro: a volta a 0 segura um passo; e a leitura do timer
+    // espera o buffer de escrita do sh da volta anterior, senão o laço tem 16 ciclos e só vê 3 valores)
+    {
+      const auto exe = readAll(dir + "/build/exe/timers-timers.exe");
+      const auto logBytes = readAll(dir + "/ps1-tests/timers/psx.log");
+      if (exe.empty() || logBytes.empty()) check(false, "falta timers-timers");
+      else {
+        Ps1Core core(exe, "timers-timers", nullptr);
+        for (int f = 0; f < 1500 && core.tty().find("Target + 1 not reached") == std::string::npos; f++) core.runFrame();
+        auto ticks = [](const std::string& t) {
+          std::vector<int> v;
+          const size_t p = t.find("Check when Timer2");
+          if (p == std::string::npos) return v;
+          for (const auto& l : lines(t.substr(p))) {
+            if (l.rfind("counter == ", 0) != 0) continue;
+            const size_t c = l.find(',');
+            if (c != std::string::npos) v.push_back(std::atoi(l.c_str() + c + 1));
+          }
+          return v;
+        };
+        const auto got = ticks(core.tty()), exp = ticks(std::string(logBytes.begin(), logBytes.end()));
+        int near = 0;
+        for (size_t i = 0; i < exp.size() && i < got.size(); i++) near += std::abs(got[i] - exp[i]) <= 5;
+        std::string g;
+        for (int x : got) g += " " + std::to_string(x);
+        check(exp.size() == 12 && got.size() == 12 && near == 12, "timers: leituras por valor do contador:" + g);
+        std::printf("timers: alvo com volta a 0: %d de %zu valores com as leituras do console (0: %d, 10: %d)\n", near, exp.size(),
+                    got.empty() ? -1 : got[0], got.size() > 10 ? got[10] : -1);
       }
     }
     // GPU: VRAM igual à do console

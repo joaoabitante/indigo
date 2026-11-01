@@ -16,6 +16,10 @@ Licença
 - O Índigo é software livre (GNU GPL versão 3). Ele não traz jogos nem BIOS: use cópias dos seus.
   Créditos de terceiros: veja TERCEIROS.md no código-fonte (github.com/joaoabitante, em breve público).
 
+Novo na 2.2.2
+- PlayStation: os timers, os tempos de acesso aos registradores e as escritas de 8, 16 e 32 bits agora seguem
+  o console (conferidos com os ps1-tests). NASCAR 2001 e Ace Combat 3 testados até a corrida e a missão.
+
 Novo na 2.2.1
 - PlayStation: jogos que travavam no logo do PlayStation ou na primeira tela de carregamento agora entram
   (Resident Evil 3, Ace Combat 3, NASCAR 2001, Crash Team Racing e outros). O sinal do controle e do cartão de

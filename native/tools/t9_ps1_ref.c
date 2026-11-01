@@ -4,6 +4,7 @@
  * A pasta da BIOS precisa ter scph5501.bin (o Beetle procura por esse nome; pode ser um link para outra BIOS
  * americana). Nada do Beetle é copiado: o núcleo é aberto com dlopen. */
 #include <dlfcn.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -81,10 +82,91 @@ static void video(const void* d, unsigned w, unsigned h, size_t pitch) {
     }
   }
 }
-static void audio1(int16_t l, int16_t r) { (void)l; (void)r; }
-static size_t audioN(const int16_t* d, size_t n) { (void)d; return n; }
+/* som: soma dos quadrados desde o último quadro gravado (RMS no REF_SHOTS) */
+static double sl, sr;
+static long sn;
+static FILE* wav; /* REF_WAV: s16 estéreo cru */
+static void audio1(int16_t l, int16_t r) {
+  sl += (double)l * l; sr += (double)r * r; sn++;
+  if (wav) { const int16_t o[2] = {l, r}; fwrite(o, 2, 2, wav); }
+}
+static size_t audioN(const int16_t* d, size_t n) {
+  if (wav) fwrite(d, 4, n, wav);
+  for (size_t i = 0; i < n; i++) { sl += (double)d[2 * i] * d[2 * i]; sr += (double)d[2 * i + 1] * d[2 * i + 1]; }
+  sn += (long)n;
+  return n;
+}
 static void poll(void) {}
-static int16_t input(unsigned p, unsigned d, unsigned i, unsigned id) { (void)p; (void)d; (void)i; (void)id; return 0; }
+/* roteiro de botões REF_KEYS, mesmo formato do PS1KEYS do indigo-t9_ps1int:
+ * "quadro:botões[:duração]" ou "de-até/passo:botões[:duração]"; S Start, s Select, X Xis, O Bola, T Triângulo,
+ * Q Quadrado, U D L R, 1 L1, 2 R1, 3 L2, 4 R2 */
+struct step { int from, to, stepn, dur; unsigned mask; };
+static struct step steps[256];
+static int nsteps, curframe;
+static void parse_keys(const char* t) {
+  while (t && *t && nsteps < 256) {
+    struct step k = {0, 0, 1, 6, 0};
+    k.from = k.to = atoi(t);
+    while (*t && *t != ':' && *t != '-' && *t != ',') t++;
+    if (*t == '-') {
+      k.to = atoi(++t);
+      while (*t && *t != ':' && *t != '/' && *t != ',') t++;
+      if (*t == '/') { k.stepn = atoi(++t); if (k.stepn < 1) k.stepn = 1; while (*t && *t != ':' && *t != ',') t++; }
+    }
+    if (*t != ':') { while (*t && *t != ',') t++; if (*t) t++; continue; }
+    t++;
+    /* ids do RETRO_DEVICE_JOYPAD: B=0 Y=1 SELECT=2 START=3 UP=4 DOWN=5 LEFT=6 RIGHT=7 A=8 X=9 L=10 R=11 L2=12 R2=13 */
+    for (; *t && *t != ':' && *t != ','; t++) {
+      switch (*t) {
+        case 'S': k.mask |= 1u << 3; break;
+        case 's': k.mask |= 1u << 2; break;
+        case 'X': k.mask |= 1u << 0; break;
+        case 'O': k.mask |= 1u << 8; break;
+        case 'T': k.mask |= 1u << 9; break;
+        case 'Q': k.mask |= 1u << 1; break;
+        case 'U': k.mask |= 1u << 4; break;
+        case 'D': k.mask |= 1u << 5; break;
+        case 'L': k.mask |= 1u << 6; break;
+        case 'R': k.mask |= 1u << 7; break;
+        case '1': k.mask |= 1u << 10; break;
+        case '2': k.mask |= 1u << 11; break;
+        case '3': k.mask |= 1u << 12; break;
+        case '4': k.mask |= 1u << 13; break;
+      }
+    }
+    if (*t == ':') k.dur = atoi(++t);
+    while (*t && *t != ',') t++;
+    if (*t) t++;
+    steps[nsteps++] = k;
+  }
+}
+static unsigned keys_at(int f) {
+  unsigned m = 0;
+  for (int i = 0; i < nsteps; i++) {
+    const struct step* k = &steps[i];
+    if (f < k->from || f >= k->to + k->dur) continue;
+    const int s = k->from + ((f < k->to ? f : k->to) - k->from) / k->stepn * k->stepn; /* último aperto já começado */
+    if (f - s < k->dur) m |= k->mask;
+  }
+  return m;
+}
+static int16_t input(unsigned p, unsigned d, unsigned i, unsigned id) {
+  (void)i;
+  if (p != 0 || d != 1) return 0;
+  const unsigned m = keys_at(curframe);
+  if (id == 256) return (int16_t)m; /* RETRO_DEVICE_ID_JOYPAD_MASK */
+  return id < 16 ? (m >> id) & 1 : 0;
+}
+static void write_ppm(const char* path) {
+  FILE* o = fopen(path, "wb");
+  if (!o || !frame) { if (o) fclose(o); return; }
+  fprintf(o, "P6\n%u %u\n255\n", fw, fh);
+  for (unsigned i = 0; i < fw * fh; i++) {
+    const uint8_t rgb[3] = {(uint8_t)(frame[i] >> 16), (uint8_t)(frame[i] >> 8), (uint8_t)frame[i]};
+    fwrite(rgb, 1, 3, o);
+  }
+  fclose(o);
+}
 
 int main(int argc, char** argv) {
   if (argc < 6) { fprintf(stderr, "uso: %s core.so pasta_bios conteudo quadros saida.ppm\n", argv[0]); return 2; }
@@ -120,14 +202,28 @@ int main(int argc, char** argv) {
   if (!retro_load_game(&gi)) { fprintf(stderr, "o Beetle não carregou %s\n", argv[3]); return 1; }
   const int frames = atoi(argv[4]);
   if (getenv("REF_EJECT") && have_disk) disk.set_eject_state(true);
-  for (int f = 0; f < frames; f++) retro_run();
-  FILE* o = fopen(argv[5], "wb");
-  if (!o || !frame) return 1;
-  fprintf(o, "P6\n%u %u\n255\n", fw, fh);
-  for (unsigned i = 0; i < fw * fh; i++) {
-    const uint8_t rgb[3] = {(uint8_t)(frame[i] >> 16), (uint8_t)(frame[i] >> 8), (uint8_t)frame[i]};
-    fwrite(rgb, 1, 3, o);
+  parse_keys(getenv("REF_KEYS"));
+  if (getenv("REF_WAV")) wav = fopen(getenv("REF_WAV"), "wb");
+  const char* shots = getenv("REF_SHOTS");
+  const char* pre = getenv("REF_SHOT") ? getenv("REF_SHOT") : "ref";
+  for (int f = 0; f < frames; f++) {
+    curframe = f;
+    retro_run();
+    for (const char* q = shots; q && *q;) {
+      if (atoi(q) == f + 1) {
+        char path[1024];
+        snprintf(path, sizeof path, "%s-%d.ppm", pre, f + 1);
+        write_ppm(path);
+        printf("[quadro %d: %ux%u; som L %.4f R %.4f]\n", f + 1, fw, fh, sn ? sqrt(sl / sn) / 32768 : 0.0, sn ? sqrt(sr / sn) / 32768 : 0.0);
+        fflush(stdout);
+        sl = sr = 0; sn = 0;
+      }
+      while (*q && *q != ',') q++;
+      if (*q) q++;
+    }
   }
-  fclose(o);
+  if (wav) fclose(wav);
+  if (!frame) return 1;
+  write_ppm(argv[5]);
   return 0;
 }

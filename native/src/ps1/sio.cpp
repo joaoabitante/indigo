@@ -34,6 +34,7 @@ void Sio0::reset() {
 }
 
 uint32_t Sio0::read(uint32_t off, int size) {
+  (void)size;
   sync();
   switch (off) {
     case 0x0: {
@@ -46,7 +47,7 @@ uint32_t Sio0::read(uint32_t off, int size) {
                          (irqFlag_ ? 0x200u : 0u);
       return v >> ((off & 3) * 8);
     }
-    case 0x8: return mode_ | (size == 4 ? uint32_t(ctrl_) << 16 : 0);
+    case 0x8: return mode_;  // de 32 bits também só o JOY_MODE (cpu/io-access-bitwidth no console: 0x38)
     case 0xA: return ctrl_;
     case 0xE: return baud_;
     default: return 0;

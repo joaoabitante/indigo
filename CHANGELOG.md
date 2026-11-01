@@ -2,6 +2,13 @@
 
 Gerado de `web/changelog.js` (o mesmo texto aparece no cartão “Registro” da página).
 
+## 01/11/2026 · App 2.2.2: PlayStation mais fiel ao console
+
+- Timers que voltam a 0 no alvo como no console, tempos de acesso aos registradores e escritas de 8, 16 e 32 bits iguais aos testes tirados do aparelho (ps1-tests).
+- NASCAR 2001 testado até a corrida e o save no cartão; Ace Combat 3 até a missão, com pausa, mísseis e replay quadro a quadro iguais ao emulador de referência.
+
+**Testes:** Quatro testes novos do PS1 (146 verificações); revalidação de 1031 comparações iguais e robustez com 0 problemas.
+
 ## 01/11/2026 · App 2.2.1: jogos de PlayStation que travavam agora entram
 
 - Resident Evil 3, Ace Combat 3, NASCAR 2001, Crash Team Racing e outros jogos que paravam no logo do PlayStation ou na primeira tela de carregamento agora entram no jogo.
