@@ -1,5 +1,5 @@
 // Página inicial: destaca o download do aparelho de quem abre a página.
-// Android → APK; Windows → versão portátil (.zip); iPhone/iPad → o Índigo roda aqui no navegador.
+// Android → APK; Windows → versão portátil (.zip); Linux (e Steam Deck) → .tar.gz; iPhone/iPad → o Índigo roda aqui no navegador.
 // O botão principal do topo baixa direto no Windows e no Android e depois mostra os passos de instalação.
 export function initDownloads() {
   const box = document.getElementById('baixar');
@@ -10,7 +10,8 @@ export function initDownloads() {
   const android = /Android/i.test(ua);
   const xbox = /Xbox/i.test(ua);
   const windows = !android && !xbox && /Win/i.test(platform + ' ' + ua);
-  const rec = android ? 'android' : windows ? 'windows' : '';
+  const linux = !android && !windows && /Linux/i.test(platform + ' ' + ua) && !/CrOS/.test(ua) && !!box.querySelector('[data-platform="linux"]');
+  const rec = android ? 'android' : windows ? 'windows' : linux ? 'linux' : '';
   for (const card of box.querySelectorAll('.get-card')) card.dataset.rec = card.dataset.platform === rec ? '1' : '0';
   // o cartão recomendado vem primeiro (no celular, um embaixo do outro)
   const first = rec && box.querySelector(`.get-card[data-platform="${rec}"]`);
@@ -29,13 +30,13 @@ function initHero(rec, browserOnly, card) {
   const t = dl.querySelector('.b-t'), s = dl.querySelector('.b-s'), other = document.getElementById('heroOther');
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (rec) {
-    const win = rec === 'windows';
-    dl.href = win ? dl.dataset.win : dl.dataset.android;
+    const win = rec === 'windows', lin = rec === 'linux';
+    dl.href = win ? dl.dataset.win : lin ? dl.dataset.linux : dl.dataset.android;
     dl.setAttribute('download', '');
-    if (!win) dl.type = 'application/vnd.android.package-archive';
-    t.textContent = win ? 'Baixar para Windows' : 'Baixar para Android';
-    s.textContent = win ? `versão portátil · .zip · ${dl.dataset.winSize}` : `.apk · ${dl.dataset.androidSize}`;
-    if (other) other.innerHTML = ` · <a href="#baixar">${win ? 'também para Android' : 'também para Windows'}</a>`;
+    if (rec === 'android') dl.type = 'application/vnd.android.package-archive';
+    t.textContent = win ? 'Baixar para Windows' : lin ? 'Baixar para Linux' : 'Baixar para Android';
+    s.textContent = win ? `versão portátil · .zip · ${dl.dataset.winSize}` : lin ? `.tar.gz · ${dl.dataset.linuxSize}` : `.apk · ${dl.dataset.androidSize}`;
+    if (other) other.innerHTML = ` · <a href="#baixar">${rec === 'android' ? 'também para Windows e Linux' : rec === 'linux' ? 'também para Windows e Android' : 'também para Linux e Android'}</a>`;
     // o download começa e a página mostra os passos de instalação do aparelho
     dl.addEventListener('click', () => {
       if (card) setTimeout(() => card.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }), 300);

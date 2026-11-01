@@ -244,7 +244,7 @@ function explainHtml() {
 
 // ---------------------------------------------------------------- blocos da página
 // app: downloads/app.json · zip/apk: { href, size } · links: { autista }
-export function landingTop({ app, zip, apk }) {
+export function landingTop({ app, zip, apk, tgz }) {
   const nav = `<a class="skip" href="#conteudo">Pular para o conteúdo</a>
 <nav class="l-nav" aria-label="Principal">
   <div class="l-wrap l-nav-in">
@@ -267,12 +267,12 @@ export function landingTop({ app, zip, apk }) {
     <div class="hero-copy">
       <a class="hero-new" href="#ps1"><span class="tag-new">Novo</span>O PlayStation chegou ao Índigo</a>
       <h1 id="heroTitle"><span class="h1-brand">Índigo Nexus</span> O ponto de encontro de <span class="hl">50 anos de videogames.</span></h1>
-      <p class="hero-lead">Do Atari ao PlayStation, ${SYSTEM_COUNT} consoles de várias gerações se conectam num emulador só, grátis para <b>Windows</b> e <b>Android</b>. Roda sem internet, guarda seus saves na nuvem e tem a precisão conferida a cada versão. E também joga aqui mesmo, no navegador.</p>
+      <p class="hero-lead">Do Atari ao PlayStation, ${SYSTEM_COUNT} consoles de várias gerações se conectam num emulador só, grátis para <b>Windows</b>, <b>Linux</b> e <b>Android</b>. Roda sem internet, guarda seus saves na nuvem e tem a precisão conferida a cada versão. E também joga aqui mesmo, no navegador.</p>
       <div class="hero-cta">
-        <a class="b-primary" id="heroDl" href="#baixar" data-win="${esc(zip.href)}" data-win-size="${esc(zip.size)}" data-android="${esc(apk.href)}" data-android-size="${esc(apk.size)}">${ICON.download}<span class="b-txt"><span class="b-t">Baixar o Índigo</span><small class="b-s">para Windows e Android · grátis</small></span></a>
+        <a class="b-primary" id="heroDl" href="#baixar" data-win="${esc(zip.href)}" data-win-size="${esc(zip.size)}" data-android="${esc(apk.href)}" data-android-size="${esc(apk.size)}"${tgz ? ` data-linux="${esc(tgz.href)}" data-linux-size="${esc(tgz.size)}"` : ''}>${ICON.download}<span class="b-txt"><span class="b-t">Baixar o Índigo</span><small class="b-s">para Windows, Linux e Android · grátis</small></span></a>
         <a class="b-ghost" id="heroPlay" href="#jogar">${ICON.play}<span>Jogar no navegador</span></a>
       </div>
-      <p class="hero-meta"><span class="dot-ok" aria-hidden="true"></span>Versão ${esc(app.version)} · Windows 10 e 11 · Android 7 ou mais novo<span id="heroOther"></span></p>
+      <p class="hero-meta"><span class="dot-ok" aria-hidden="true"></span>Versão ${esc(app.version)} · Windows 10 e 11 · Linux · Android 7 ou mais novo<span id="heroOther"></span></p>
     </div>
     <div class="hero-visual">${heroArt()}</div>
   </div>
@@ -339,7 +339,7 @@ export function landingTop({ app, zip, apk }) {
   const feats = [
     ['target', 'Precisão de verdade', `Cada versão passa por suítes de teste públicas e é comparada com emuladores de referência: ${COMPARISONS} comparações automáticas, 0 problemas.`],
     ['offline', 'Funciona sem internet', 'Tudo roda no seu aparelho, direto no processador. No avião, na estrada ou sem sinal, seus jogos abrem do mesmo jeito.'],
-    ['devices', 'O mesmo app no PC e no celular', 'Windows e Android com a mesma cara e os mesmos recursos. Comece no computador e continue no celular.'],
+    ['devices', 'O mesmo app no PC e no celular', 'Windows, Linux e Android com a mesma cara e os mesmos recursos. Comece no computador e continue no celular.'],
     ['cloud', 'Saves na nuvem com PIN', 'Seus saves sobem e descem sozinhos entre os aparelhos com um PIN, o mesmo deste site. Sem conta, sem e-mail. Seus jogos nunca saem do aparelho.'],
     ['rewind', 'Estados salvos', 'Congele o jogo em qualquer ponto e volte quando quiser, até naquela fase sem save.'],
     ['pad', 'Controle ou toque', 'Funciona com controles como Xbox, DualSense, DualShock, 8BitDo e GameSir, ou com os botões na tela do celular.'],
@@ -359,7 +359,7 @@ export function landingTop({ app, zip, apk }) {
 }
 
 // área de downloads (mantém os passos de instalação de cada sistema)
-export function downloadsSection({ app, zip, apk }) {
+export function downloadsSection({ app, zip, apk, tgz }) {
   return `<section class="get" id="baixar" aria-labelledby="getTitle">
  <div class="l-wrap">
   <div class="get-head">
@@ -394,7 +394,19 @@ export function downloadsSection({ app, zip, apk }) {
         <li><span>Se o Android pedir, permita <b>instalar apps desta fonte</b> para o navegador.</span></li>
         <li><span>Já tem uma versão anterior? Instale por cima: os saves continuam.</span></li>
       </ol>
-    </article>
+    </article>${tgz ? `
+    <article class="get-card" data-platform="linux" id="baixar-linux">
+      <span class="dl-badge">Recomendado para este aparelho</span>
+      <div class="dl-top"><span class="dl-icon">${ICON.pc}</span><div><h3>Linux</h3><p>PC de 64 bits e Steam Deck · Ubuntu 24.04, Fedora 39, Debian 13 ou mais novo</p></div></div>
+      <a class="dl-main" href="${tgz.href}" download>${ICON.download}<span>Baixar o Índigo</span><small>.tar.gz · ${tgz.size}</small></a>
+      <p class="dl-sha">SHA-256: <code>${esc(tgz.sha)}</code></p>
+      <p class="dl-note">Primeira versão para Linux. A nuvem dos saves ainda não funciona nela.</p>
+      <ol class="dl-steps">
+        <li><span>Clique com o botão direito no arquivo baixado e escolha <b>Extrair aqui</b>.</span></li>
+        <li><span>Abra o <b>indigo</b> da pasta extraída. Para ter o atalho no menu de aplicativos, rode <kbd>./instalar-atalho.sh</kbd>.</span></li>
+        <li><span>Arraste um jogo para a janela ou aperte <kbd>Ctrl</kbd>+<kbd>O</kbd>.</span></li>
+      </ol>
+    </article>` : ''}
   </div>
   <p class="get-ios" hidden>No iPhone e no iPad, o Índigo funciona aqui mesmo no navegador: <a href="#jogar">jogar agora</a>.</p>
   <div class="get-foot">
@@ -403,8 +415,8 @@ export function downloadsSection({ app, zip, apk }) {
       <ul>${app.news.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
     </div>
     <div class="get-other">
-      <h3>Mac, Linux, iPhone ou Xbox?</h3>
-      <p>O app é para Windows e Android. Nos outros aparelhos, o Índigo joga Game Boy, GBA, Master System, Game Gear e Neo Geo Pocket <a href="#jogar">aqui no navegador</a>.</p>
+      <h3>Mac, iPhone ou Xbox?</h3>
+      <p>O app é para Windows, Linux e Android. Nos outros aparelhos, o Índigo joga Game Boy, GBA, Master System, Game Gear e Neo Geo Pocket <a href="#jogar">aqui no navegador</a>.</p>
     </div>
   </div>
  </div>
@@ -415,7 +427,7 @@ export function downloadsSection({ app, zip, apk }) {
 export function landingMid({ press = [] } = {}) {
   const phases = [
     ['Fase 1', 'No navegador', 'O Índigo nasce como emulador web: Game Boy, Game Boy Color e Game Boy Advance, depois Master System, Game Gear e Neo Geo Pocket.', 'done'],
-    ['Fase 2', 'App para PC e celular', 'Um app nativo para Windows e Android, console por console, dos 8 bits até o PlayStation na versão 2.0.', 'done'],
+    ['Fase 2', 'App para PC e celular', 'Um app nativo para Windows e Android (e agora Linux), console por console, dos 8 bits até o PlayStation na versão 2.0.', 'done'],
     ['Fase 3', 'Manutenção e melhorias', 'Sem consoles novos depois do 3DO: o foco agora é deixar cada um melhor. Precisão, compatibilidade e velocidade, e recursos como resolução aumentada no PlayStation, rebobinar e filtros de imagem.', 'now'],
   ];
   const open = `<section class="l-sec" id="codigo" aria-labelledby="codeTitle">
@@ -445,7 +457,7 @@ export function landingMid({ press = [] } = {}) {
     ['Como funcionam os saves na nuvem?', 'Você escolhe um PIN e usa o mesmo em todos os aparelhos e neste site. Os saves vão para a nuvem e os mais novos descem para os outros aparelhos. Os jogos nunca saem do seu aparelho.'],
     ['Que dados a nuvem guarda?', 'Só os seus saves, com o nome do jogo e do aparelho, ligados ao seu PIN. O Índigo não pede nome, e-mail nem documento, e os jogos nunca saem do seu aparelho. Quem não liga a nuvem não manda nada para a internet.'],
     ['O Windows avisou que o arquivo pode ser perigoso. E agora?', 'O Índigo ainda não tem assinatura digital, por isso o Windows desconfia de todo programa novo. Antes de extrair, clique com o botão direito no .zip, abra Propriedades e marque Desbloquear. Se aparecer “O Windows protegeu o computador”, clique em Mais informações e em Executar assim mesmo.'],
-    ['Tem para iPhone, Mac ou Linux?', 'O app é só para Windows e Android. Em qualquer outro aparelho, use o emulador do navegador aqui do site, que roda Game Boy, Game Boy Color, GBA, Master System, Game Gear e Neo Geo Pocket.'],
+    ['Tem para iPhone ou Mac?', 'O app é para Windows, Linux (PC e Steam Deck) e Android. Em qualquer outro aparelho, use o emulador do navegador aqui do site, que roda Game Boy, Game Boy Color, GBA, Master System, Game Gear e Neo Geo Pocket.'],
     ['Por que parar na geração do PlayStation?', 'Para fazer bem feito. O Índigo vai até a geração do PlayStation: o 3DO, de 1993, é da mesma época e chega na versão 2.2, como o último console novo. Depois disso, o tempo vai só para melhorar os que já estão lá: precisão, compatibilidade e velocidade.'],
   ];
   const faqHtml = `<section class="l-sec" id="perguntas" aria-labelledby="faqTitle">
@@ -531,7 +543,7 @@ export function landingFooter({ app, autista }) {
 export function metaHtml({ app, siteUrl, autista }) {
   const base = siteUrl.replace(/\/+$/, '') + '/';
   const title = 'Índigo Nexus — emulador de videogames do Atari ao PlayStation';
-  const desc = `Índigo Nexus: o ponto de encontro de 50 anos de videogames. Emulador grátis e de código aberto para Windows e Android, com ${SYSTEM_COUNT} consoles do Atari ao PlayStation, sem internet e com saves na nuvem. Também roda no navegador.`;
+  const desc = `Índigo Nexus: o ponto de encontro de 50 anos de videogames. Emulador grátis e de código aberto para Windows, Linux e Android, com ${SYSTEM_COUNT} consoles do Atari ao PlayStation, sem internet e com saves na nuvem. Também roda no navegador.`;
   const ld = {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
@@ -540,7 +552,7 @@ export function metaHtml({ app, siteUrl, autista }) {
     description: desc,
     applicationCategory: 'GameApplication',
     applicationSubCategory: 'Emulador de videogames',
-    operatingSystem: 'Windows, Android',
+    operatingSystem: 'Windows, Linux, Android',
     softwareVersion: app ? app.version : undefined,
     inLanguage: 'pt-BR',
     url: base,
@@ -558,7 +570,7 @@ export function metaHtml({ app, siteUrl, autista }) {
 <meta property="og:locale" content="pt_BR">
 <meta property="og:site_name" content="Índigo Nexus">
 <meta property="og:title" content="Índigo Nexus · o ponto de encontro de 50 anos de videogames">
-<meta property="og:description" content="Emulador grátis e de código aberto para Windows e Android, com ${SYSTEM_COUNT} consoles do Atari ao PlayStation, saves na nuvem e precisão conferida a cada versão. Também roda no navegador.">
+<meta property="og:description" content="Emulador grátis e de código aberto para Windows, Linux e Android, com ${SYSTEM_COUNT} consoles do Atari ao PlayStation, saves na nuvem e precisão conferida a cada versão. Também roda no navegador.">
 <link rel="canonical" href="${esc(base)}">
 <meta property="og:url" content="${esc(base)}">
 <meta property="og:image" content="${esc(base)}og.png">

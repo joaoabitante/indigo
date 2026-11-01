@@ -86,6 +86,21 @@ Recebe correção só a versão mais nova (a de https://indigo.nexus). Cada vers
 testes com arquivos estragados de propósito (com AddressSanitizer e UBSan) e pelo teste de segurança `t_seguranca`.
 EOF
 
+# Dependabot: avisa de dependências com falha (npm do site, Gradle do Android) e abre a correção
+mkdir -p "$tmp/.github"
+cat > "$tmp/.github/dependabot.yml" <<'EOF'
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  - package-ecosystem: gradle
+    directory: /native/android
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+EOF
+
 # conferência final: nenhuma chave, senha ou e-mail particular pode sair
 # (o e-mail particular vem do autor do commit privado, para não ficar escrito neste script, que também é público)
 email=$(git -C "$repo" log -1 --format=%ae "$app")
