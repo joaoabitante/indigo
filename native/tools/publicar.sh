@@ -87,7 +87,9 @@ testes com arquivos estragados de propósito (com AddressSanitizer e UBSan) e pe
 EOF
 
 # conferência final: nenhuma chave, senha ou e-mail particular pode sair
-if grep -rIlE --exclude=publicar.sh "BEGIN [A-Z ]*PRIVATE KEY|joao\.abitante\.contabeis|storePassword|keyPassword" "$tmp" \
+# (o e-mail particular vem do autor do commit privado, para não ficar escrito neste script, que também é público)
+email=$(git -C "$repo" log -1 --format=%ae "$app")
+if grep -rIlE --exclude=publicar.sh "BEGIN [A-Z ]*PRIVATE KEY|storePassword|keyPassword" "$tmp" || grep -rIlF "$email" "$tmp" \
    || find "$tmp" -type f \( -name '*.keystore' -o -name '*.jks' -o -name '*.pem' -o -name '*.p12' -o -name '.env*' \) | grep -q .; then
   echo "segredo ou e-mail particular encontrado na cópia pública; nada foi publicado"; exit 1
 fi
