@@ -242,6 +242,8 @@ a:focus-visible, button:focus-visible, summary:focus-visible, select:focus-visib
 .dl-main .ico { width: 20px; height: 20px; stroke-width: 2.4; }
 .dl-main span { white-space: nowrap; }
 .dl-main small { margin-left: auto; font: 500 12.5px/1.2 var(--font-mono); opacity: .82; }
+.dl-sha { margin: -4px 0 0; color: var(--l-muted); font-size: 11.5px; overflow-wrap: anywhere; }
+.dl-sha code { font-size: 11px; }
 .dl-note { margin: 0; color: var(--l-muted); font-size: 13.5px; padding: 11px 14px; border: 1px dashed var(--l-line); border-radius: 11px; }
 .dl-steps { margin: 2px 0 0; padding: 0; list-style: none; counter-reset: dl; display: grid; gap: 9px; color: var(--l-muted); font-size: 14px; }
 .dl-steps li { counter-increment: dl; display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: start; }

@@ -38,13 +38,24 @@ async function blobsOf(code) {
 // nome da parte: part-007-<sufixo do Blob>.bin (o hífen evita que a parte 10 case com a 100)
 const partName = (n) => `part-${String(n).padStart(3, '0')}`;
 
-// remove transferências esquecidas
+// remove transferências esquecidas (todas as páginas, inclusive partes sem manifesto) e devolve quantos bytes
+// das transferências ainda válidas estão guardados
+const QUOTA = 2.5 * 1024 * 1024 * 1024;   // no máximo 2,5 GB guardados ao mesmo tempo (duas estantes inteiras)
 async function cleanup() {
+  let live = 0;
   try {
-    const { blobs } = await list({ prefix: 'transfer/', limit: 1000 });
-    const old = blobs.filter(b => Date.now() - new Date(b.uploadedAt).getTime() > TTL_MS).map(b => b.url);
-    if (old.length) await del(old);
+    const old = [];
+    let cursor;
+    do {
+      const r = await list({ prefix: 'transfer/', limit: 1000, cursor });
+      for (const b of r.blobs) {
+        if (Date.now() - new Date(b.uploadedAt).getTime() > TTL_MS) old.push(b.url); else live += b.size;
+      }
+      cursor = r.hasMore ? r.cursor : undefined;
+    } while (cursor);
+    for (let i = 0; i < old.length; i += 1000) await del(old.slice(i, i + 1000));
   } catch { /* limpeza é oportunista */ }
+  return live;
 }
 
 // conexão nova do Vercel usa OIDC (BLOB_STORE_ID); a antiga, uma chave de leitura/escrita
@@ -85,7 +96,7 @@ export async function POST(request) {
   const url = new URL(request.url);
   const action = url.searchParams.get('action');
   if (action === 'start') {
-    await cleanup();
+    if (await cleanup() > QUOTA) return fail('O espaço de transferências está cheio agora. Tente de novo em 1 hora.', 507);
     for (let tries = 0; tries < 8; tries++) {
       const code = String(Math.floor(Math.random() * 1e6)).padStart(6, '0');
       if ((await blobsOf(code)).length === 0) return json({ code });
@@ -99,6 +110,8 @@ export async function POST(request) {
     if (!Number.isInteger(part) || part < 0 || part >= MAX_PARTS) return fail('Parte inválida.');
     const body = await request.arrayBuffer();
     if (body.byteLength === 0 || body.byteLength > MAX_CHUNK) return fail('Parte com tamanho inválido.');
+    // cada código guarda no máximo as suas partes e o manifesto
+    if ((await blobsOf(code)).length > MAX_PARTS) return fail('Transferência grande demais.');
     await put(`${prefixOf(code)}${partName(part)}.bin`, body, {
       access: 'public', addRandomSuffix: true, contentType: 'application/octet-stream',
     });

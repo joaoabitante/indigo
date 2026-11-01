@@ -375,6 +375,7 @@ export function downloadsSection({ app, zip, apk }) {
       <span class="dl-badge">Recomendado para este aparelho</span>
       <div class="dl-top"><span class="dl-icon">${ICON.pc}</span><div><h3>Windows</h3><p>Windows 10 e 11 · 64 bits</p></div></div>
       <a class="dl-main" href="${zip.href}" download>${ICON.download}<span>Baixar o Índigo</span><small>versão portátil, sem instalar · .zip · ${zip.size}</small></a>
+      <p class="dl-sha">SHA-256: <code>${esc(zip.sha)}</code></p>
       <ol class="dl-steps">
         <li><span>Clique com o botão direito no arquivo baixado, escolha <b>Propriedades</b>, marque <b>Desbloquear</b> e clique em <b>OK</b>. Assim o Windows não bloqueia o Índigo.</span></li>
         <li><span>Clique de novo com o botão direito, escolha <b>Extrair tudo</b> e abra o <b>indigo.exe</b> da pasta extraída.</span></li>
@@ -386,6 +387,7 @@ export function downloadsSection({ app, zip, apk }) {
       <span class="dl-badge">Recomendado para este aparelho</span>
       <div class="dl-top"><span class="dl-icon">${ICON.phone}</span><div><h3>Android</h3><p>Android 7 ou mais novo · celulares de 64 bits</p></div></div>
       <a class="dl-main" href="${apk.href}" download type="application/vnd.android.package-archive">${ICON.download}<span>Baixar o app</span><small>.apk · ${apk.size}</small></a>
+      <p class="dl-sha">SHA-256: <code>${esc(apk.sha)}</code></p>
       <p class="dl-note">Funciona com o toque e com controles como GameSir, Xbox, DualSense e 8BitDo.</p>
       <ol class="dl-steps">
         <li><span>Toque no arquivo baixado e depois em <b>Instalar</b>.</span></li>

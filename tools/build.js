@@ -66,9 +66,12 @@ function landing() {
     const src = path.join('downloads', name);
     fs.copyFileSync(src, path.join('dist/downloads', name));
     const mb = (fs.statSync(src).size / 1e6).toFixed(1).replace('.', ',');
-    return { href: `downloads/${encodeURIComponent(name)}`, size: `${mb} MB` };
+    const sha = crypto.createHash('sha256').update(fs.readFileSync(src)).digest('hex');
+    return { name, href: `downloads/${encodeURIComponent(name)}`, size: `${mb} MB`, sha };
   };
   const d = { app, zip: file(app.portable), apk: file(app.android), autista: AUTISTA_EMPREENDE_URL.trim(), press: PRESS };
+  // SHA-256 de cada download (formato do sha256sum), para conferir que o arquivo não foi trocado no caminho
+  fs.writeFileSync('dist/downloads/SHA256SUMS.txt', [d.zip, d.apk].map(f => `${f.sha}  ${f.name}\n`).join(''));
   return { meta: metaHtml({ ...d, siteUrl: SITE_URL }), top: landingTop(d), downloads: downloadsHtml(d), mid: landingMid(d), end: landingEnd(d), footer: landingFooter(d) };
 }
 // substituição com função: o código minificado tem '$' que String.replace interpretaria
