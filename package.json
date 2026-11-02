@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "devDependencies": {
-    "esbuild": "0.25.12"
+    "esbuild": "0.28.2"
   },
   "dependencies": {
     "@vercel/blob": "2.8.0"
