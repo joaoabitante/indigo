@@ -2,6 +2,16 @@
 // A entrada mais nova fica em cima.
 export const CHANGELOG = [
   {
+    date: '2026-11-02',
+    title: 'App 2.4: 11 consoles novos',
+    items: [
+      'Famicom Disk System (.fds e .qd, com a troca de lado do disco no F4 ou no menu), Super Game Boy (molduras e cores dos jogos com suporte), Mega Duck, Watara Supervision e Game & Watch (com o .zip do MAME do próprio usuário, que traz o desenho da tela).',
+      'Experimentais: Atari 5200 (com o teclado do controle no teclado numérico), Intellivision, Tiger Game.com, PC-FX, Atari Jaguar e Sega Saturn. Funcionam com os testes, mas ainda não foram testados com jogos de verdade.',
+      'Famicom Disk System, Atari 5200, Intellivision, Game.com, PC-FX e Saturn pedem a BIOS do seu console: abra o arquivo uma vez no Índigo. O Índigo não traz nenhuma BIOS.',
+    ],
+    tests: 'Um teste novo por console (mais de 1.100 verificações, com BIOS de teste escritas para o Índigo); revalidação de 1043 comparações iguais e robustez com 0 problemas.',
+  },
+  {
     date: '2026-11-01',
     title: 'App 2.3: revisão de segurança',
     items: [

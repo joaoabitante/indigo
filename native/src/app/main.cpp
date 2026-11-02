@@ -6,7 +6,7 @@
 // Game Boy Advance: usa a BIOS própria do Índigo; se o arquivo gba_bios.bin (16 KB, a BIOS original do seu
 // aparelho) estiver na pasta de dados, ela é usada. Abrir esse arquivo no Índigo copia ele para lá.
 // Atalhos: Ctrl+O abrir jogo · F5 salvar estado · F8 carregar estado · 1–9 escolher espaço de estado ·
-// P pausar · Ctrl+R reiniciar · F3 trocar paleta do Game Boy · F11 ou Alt+Enter tela cheia · Esc menu.
+// P pausar · Ctrl+R reiniciar · F3 trocar paleta do Game Boy · F4 trocar o lado do disco (Famicom Disk System) · F11 ou Alt+Enter tela cheia · Esc menu.
 // Controle: botão Guia (ou Start + Select juntos) abre o menu. No celular: controles na tela (somem quando há um
 // controle ligado), botão MENU ou "voltar" do Android.
 //
@@ -39,11 +39,18 @@
 #include "shelf.h"
 #include "neogeo/neogeo.h"
 #include "pcecd/pcecd.h"
+#include "gb/gb.h"
 #include "vb/vb.h"
+#include "a5200/a5200.h"
 #include "vectrex/vectrex.h"
+#include "intv/intv.h"
 #include "neogeocd/neogeocd.h"
 #include "ps1/ps1.h"
 #include "tdo/tdo.h"
+#include "fds/fds.h"
+#include "gamecom/gamecom.h"
+#include "pcfx/pcfx.h"
+#include "saturn/saturn.h"
 #include "cdrom/cdrom.h"
 #include "segacd/segacd.h"
 #ifdef INDIGO_WINDOW_ICON
@@ -101,7 +108,7 @@ enum MenuId {
   M_CLOUD_PAGE, M_CLOUD_SYNC, M_CLOUD_TOGGLE, M_CLOUD_PIN, M_PIN_DEL, M_PIN_OK, M_PIN_SHOW,
   M_FILTER, M_CONTROLS_PAGE, M_MAP_PAD, M_MAP_KEYS, M_MAP_DEFAULT, M_CAPTURE_SKIP, M_CAPTURE_CANCEL, M_CAPTURE_INFO,
   M_SHELF_PAGE, M_SHELF_CONSOLE, M_SHELF_NEXT, M_SHELF_PREV, M_FAV, M_COVER, M_FOLDERS_PAGE, M_FOLDER_ADD, M_ABOUT_PAGE, M_ABOUT_NEWER, M_ABOUT_OLDER, M_ASSOCIATE, M_START_FULL, M_VB_3D, M_INFO, M_SETTINGS_PAGE, M_TEST_SOUND,
-  M_INTEGER, M_UI_SIZE, M_PS1_RES,
+  M_INTEGER, M_UI_SIZE, M_PS1_RES, M_DISK_SIDE, M_SGB,
   M_PIN_DIGIT = 80, M_SLOT = 100, M_FOLDER_DEL = 900, M_SHELF_ITEM = 1000, M_RECENT = 200, M_VERSION = 300
 };
 
@@ -193,6 +200,13 @@ bool isPmBios(const std::string& path, const std::vector<uint8_t>& data) {
   std::string n = fileName(path);
   for (char& c : n) c = static_cast<char>(SDL_tolower(static_cast<unsigned char>(c)));
   return n.size() > 4 && n.compare(n.size() - 4, 4, ".min") == 0;
+}
+
+// BIOS do Atari 5200 (5200.rom do aparelho do usuário): 2 KB, nome com "5200"
+bool isA5200Bios(const std::string& path, const std::vector<uint8_t>& data) {
+  std::string n = fileName(path);
+  for (char& c : n) c = static_cast<char>(SDL_tolower(static_cast<unsigned char>(c)));
+  return indigo::a5200::isA5200Bios(data, n);
 }
 
 // BIOS do ColecoVision (coleco.rom do aparelho do usuário): 8 KB, nome com "coleco"
@@ -288,12 +302,21 @@ public:
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "dsp1b.rom", fw) && fw.size() == 8192) indigo::setFirmware("dsp1", std::move(fw));
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "pm_bios.min", fw) && fw.size() == 4096) indigo::setFirmware("pm", std::move(fw));
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "coleco.rom", fw) && fw.size() == 8192) indigo::setFirmware("coleco", std::move(fw));
+    if (std::vector<uint8_t> fw; readFile(dataDir_ + "disksys.rom", fw) && fw.size() == 8192) indigo::setFirmware("fds", std::move(fw));
+    if (std::vector<uint8_t> fw; readFile(dataDir_ + "5200.rom", fw) && fw.size() == 2048) indigo::setFirmware("a5200", std::move(fw));
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "vectrex.rom", fw) && fw.size() == 8192) indigo::setFirmware("vectrex", std::move(fw));
+    if (std::vector<uint8_t> fw; readFile(dataDir_ + "intv_exec.bin", fw) && fw.size() == 8192) indigo::setFirmware("intv_exec", std::move(fw));
+    if (std::vector<uint8_t> fw; readFile(dataDir_ + "intv_grom.bin", fw) && fw.size() == 2048) indigo::setFirmware("intv_grom", std::move(fw));
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "lynxboot.img", fw) && fw.size() == 512) indigo::setFirmware("lynx", std::move(fw));
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "neogeo.zip", fw) && !fw.empty()) indigo::setFirmware("neogeo", std::move(fw));
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "neocd.bin", fw) && indigo::neogeocd::isNeoGeoCdBios(fw)) indigo::setFirmware("neogeocd", std::move(fw));
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "ps1_bios.bin", fw) && indigo::ps1::isPs1Bios(fw)) indigo::setFirmware("ps1", std::move(fw));
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "3do_bios.bin", fw) && indigo::tdo::isTdoBios(fw)) indigo::setFirmware("3do", std::move(fw));
+    // ROMs do Game.com (interna de 4 KB e do sistema de 256 KB, do console da pessoa)
+    if (std::vector<uint8_t> fw; readFile(dataDir_ + "gamecom_int.bin", fw) && fw.size() == indigo::gamecom::INT_ROM_SIZE) indigo::setFirmware("gamecom_int", std::move(fw));
+    if (std::vector<uint8_t> fw; readFile(dataDir_ + "gamecom_ext.bin", fw) && fw.size() == indigo::gamecom::EXT_ROM_SIZE) indigo::setFirmware("gamecom_ext", std::move(fw));
+    if (std::vector<uint8_t> fw; readFile(dataDir_ + "pcfx.rom", fw) && indigo::pcfx::isPcfxBios(fw, "pcfx.rom")) indigo::setFirmware("pcfx", std::move(fw));
+    if (std::vector<uint8_t> fw; readFile(dataDir_ + "saturn_bios.bin", fw) && indigo::saturn::isSaturnBios(fw)) indigo::setFirmware("saturn", std::move(fw));
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "syscard.pce", fw) && indigo::pcecd::isPceCdBios(fw)) indigo::setFirmware("pcecd", std::move(fw));
     for (const char* r : {"segacd_us", "segacd_eu", "segacd_jp"})
       if (std::vector<uint8_t> fw; readFile(dataDir_ + r + ".bin", fw) && indigo::segacd::isSegaCdBios(fw)) indigo::setFirmware(r, std::move(fw));
@@ -390,11 +413,11 @@ public:
 
   bool hasLR() const {
     const std::string s = core_->system();
-    return s == "gba" || s == "snes" || s == "pm" || s == "ws" || s == "wsc" || s == "md" || s == "32x" || s == "segacd" || s == "ps1" || s == "3do";
+    return s == "gba" || s == "snes" || s == "pm" || s == "ws" || s == "wsc" || s == "md" || s == "32x" || s == "segacd" || s == "ps1" || s == "3do" || s == "gnw" || s == "gamecom" || s == "a5200" || s == "pcfx" || s == "saturn";
   }
   bool hasXY() const {
     const std::string s = core_->system();
-    return s == "snes" || s == "ws" || s == "wsc" || s == "md" || s == "32x" || s == "segacd" || s == "ps1" || s == "3do";
+    return s == "snes" || s == "ws" || s == "wsc" || s == "md" || s == "32x" || s == "segacd" || s == "ps1" || s == "3do" || s == "gnw" || s == "gamecom" || s == "a5200" || s == "pcfx" || s == "saturn";
   }
   // controles de toque: medidas da tela e a imagem do jogo (deitado, eles ficam na faixa livre ao lado dela)
   bool ps1AnalogHeld_ = false;
@@ -408,6 +431,20 @@ public:
 
   // abre um jogo; com resume, continua do estado automático gravado ao fechar da última vez
   void setLaunchOptions(bool fullscreen, bool frontend) { forceFullscreen_ = fullscreen; frontend_ = frontend; }
+
+  // lado do disco do Famicom Disk System: "disco 1, lado A"...
+  static std::string diskSideName(int s) {
+    if (s < 0) return "nenhum no drive";
+    return "disco " + std::to_string(s / 2 + 1) + ", lado " + static_cast<char>('A' + s % 2);
+  }
+  // tira o disco do drive e põe o próximo lado (depois do último, volta ao primeiro)
+  void nextDiskSide() {
+    const int n = core_->diskSides();
+    if (n <= 0) { status("Este jogo não usa disco"); return; }
+    const int next = (std::max(core_->diskSide(), -1) + 1) % n;
+    core_->setDiskSide(next);
+    status("Trocando o disco: " + diskSideName(next));
+  }
 
   void openFile(std::string path, bool resume = false) {
     if (indigo::cdrom::isDiscPath(indigo::platform::displayName(path))) { openDisc(path, resume); return; }
@@ -450,6 +487,20 @@ public:
       }
       return;
     }
+    std::string lowName = name;
+    for (char& c : lowName) c = static_cast<char>(SDL_tolower(static_cast<unsigned char>(c)));
+    if (const std::string gk = indigo::gamecom::gamecomFirmwareKind(rom, lowName); !gk.empty()) {
+      // ROMs do Game.com (do console da pessoa): a interna (internal.bin, 4 KB) e a do sistema (external.bin, 256 KB)
+      if (writeFile(dataDir_ + gk + ".bin", rom)) {
+        indigo::setFirmware(gk, rom);
+        const bool both = !indigo::firmware("gamecom_int").empty() && !indigo::firmware("gamecom_ext").empty();
+        status(std::string(gk == "gamecom_int" ? "ROM interna" : "ROM do sistema") + " do Game.com instalada" +
+               (both ? ": os cartuchos de Game.com já abrem" : ": falta a outra (internal.bin e external.bin)"));
+      } else {
+        error("Não foi possível copiar a ROM do Game.com para:\n" + dataDir_);
+      }
+      return;
+    }
     if (indigo::ps1::isPs1Bios(rom)) {
       // BIOS do PlayStation (512 KB do usuário, por exemplo SCPH1001.BIN): fica guardada para os CDs e os .exe
       if (writeFile(dataDir_ + "ps1_bios.bin", rom)) {
@@ -470,6 +521,26 @@ public:
       }
       return;
     }
+    if (!indigo::tdo::isTdoBios(rom) && indigo::pcfx::isPcfxBios(rom, name)) {
+      // BIOS do PC-FX (1 MB do usuário, pcfx.rom; reconhecida pelo nome e tamanho): fica guardada para os CDs
+      if (writeFile(dataDir_ + "pcfx.rom", rom)) {
+        indigo::setFirmware("pcfx", rom);
+        status("BIOS do PC-FX instalada: os CDs de PC-FX já abrem");
+      } else {
+        error("Não foi possível copiar a BIOS do PC-FX para:\n" + dataDir_);
+      }
+      return;
+    }
+    if (indigo::saturn::isSaturnBios(rom)) {
+      // BIOS do Saturn (512 KB do usuário, por exemplo sega_101.bin): fica guardada para os CDs de Saturn
+      if (writeFile(dataDir_ + "saturn_bios.bin", rom)) {
+        indigo::setFirmware("saturn", rom);
+        status("BIOS do Saturn instalada: os CDs de Saturn já abrem");
+      } else {
+        error("Não foi possível copiar a BIOS do Saturn para:\n" + dataDir_);
+      }
+      return;
+    }
     if (indigo::neogeocd::isNeoGeoCdBios(rom)) {
       // BIOS do Neo Geo CD (512 KB, do usuário; reconhecida pelo conteúdo): fica guardada para os CDs
       if (writeFile(dataDir_ + "neocd.bin", rom)) {
@@ -479,6 +550,41 @@ public:
         error("Não foi possível copiar a BIOS do Neo Geo CD para:\n" + dataDir_);
       }
       return;
+    }
+    if (std::string low = name; true) {
+      for (char& c : low) c = static_cast<char>(SDL_tolower(static_cast<unsigned char>(c)));
+      if (indigo::fds::isFdsBios(rom, fileName(low))) {
+        // BIOS do Famicom Disk System (disksys.rom, 8 KB, do usuário): fica guardada para os discos .fds/.qd
+        if (writeFile(dataDir_ + "disksys.rom", rom)) {
+          indigo::setFirmware("fds", rom);
+          status("BIOS do Famicom Disk System instalada: os discos .fds e .qd já abrem");
+        } else {
+          error("Não foi possível copiar a BIOS do Famicom Disk System para:\n" + dataDir_);
+        }
+        return;
+      }
+      if (indigo::fds::isFdsDisk(rom, fileName(low)) && indigo::firmware("fds").empty()) {
+        error("O Famicom Disk System precisa da BIOS do console. Abra o arquivo da BIOS (disksys.rom, 8 KB) uma vez no Índigo.");
+        return;
+      }
+    }
+    {
+      // BIOS do Intellivision (do console do usuário): EXEC (exec.bin, 8 KB) e GROM (grom.bin, 2 KB)
+      std::string ln = fileName(name);
+      for (char& c : ln) c = static_cast<char>(SDL_tolower(static_cast<unsigned char>(c)));
+      if (const int k = indigo::intv::intvBiosKind(rom, ln)) {
+        const char* fw = k == 1 ? "intv_exec" : "intv_grom";
+        if (writeFile(dataDir_ + fw + ".bin", rom)) {
+          indigo::setFirmware(fw, rom);
+          const bool both = !indigo::firmware("intv_exec").empty() && !indigo::firmware("intv_grom").empty();
+          status(std::string(k == 1 ? "EXEC" : "GROM") + " do Intellivision instalada" +
+                 (both ? ": os jogos de Intellivision já abrem com a BIOS original"
+                       : (k == 1 ? ". Falta abrir também o grom.bin" : ". Falta abrir também o exec.bin")));
+        } else {
+          error("Não foi possível copiar a BIOS do Intellivision para:\n" + dataDir_);
+        }
+        return;
+      }
     }
     if (indigo::vectrex::isVectrexBios(rom)) {
       // BIOS do Vectrex: fica guardada para os cartuchos e já liga o console no Mine Storm (que vem nela)
@@ -512,6 +618,15 @@ public:
         status("BIOS do 32X instalada: com as três, os jogos de 32X usam as BIOS originais");
       } else {
         error("Não foi possível copiar a BIOS do 32X para:\n" + dataDir_);
+      }
+      return;
+    }
+    if (isA5200Bios(name, rom)) {
+      if (writeFile(dataDir_ + "5200.rom", rom)) {
+        indigo::setFirmware("a5200", rom);
+        status("BIOS do Atari 5200 instalada: os jogos de Atari 5200 já abrem");
+      } else {
+        error("Não foi possível copiar a BIOS do Atari 5200 para:\n" + dataDir_);
       }
       return;
     }
@@ -579,7 +694,7 @@ public:
     }
     if (!core) {
       error("Este arquivo não é um jogo de SNES, NES, Game Boy, Game Boy Color, Game Boy Advance, Master System, "
-            "Game Gear, SG-1000, Neo Geo Pocket, Pokémon Mini, Atari 2600, MSX, ColecoVision, WonderSwan, Atari 7800, Vectrex, Atari Lynx, Virtual Boy, PC Engine, Mega Drive, 32X, Neo Geo ou arcade Capcom (CPS1/CPS2). CDs: Sega CD, PC Engine CD, Neo Geo CD, PlayStation e 3DO em .cue, .chd ou .iso.");
+            "Game Gear, SG-1000, Neo Geo Pocket, Pokémon Mini, Atari 2600, Atari 5200, MSX, ColecoVision, WonderSwan, Atari 7800, Vectrex, Atari Lynx, Virtual Boy, Mega Duck, Watara Supervision, PC Engine, Mega Drive, 32X, Famicom Disk System, Intellivision, Neo Geo ou arcade Capcom (CPS1/CPS2). CDs: Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, PC-FX e Saturn em .cue, .chd ou .iso.");
       return;
     }
     // celular: guarda uma cópia (já descompactada) na biblioteca do app, para o jogo aparecer na tela inicial.
@@ -611,7 +726,7 @@ public:
       if (auto disc = indigo::cdrom::open(tmp, &err)) sys = indigo::cdrom::detectSystem(*disc);
       if (sys.empty()) {
         SDL_RemovePath(tmp.c_str());
-        error(err.empty() ? "Este CD não é de Sega CD, PC Engine CD, Neo Geo CD, PlayStation nem 3DO." : "Não foi possível abrir o CD: " + err);
+        error(err.empty() ? "Este CD não é de Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, PC-FX nem Saturn." : "Não foi possível abrir o CD: " + err);
         return;
       }
       SDL_RemovePath(lib.c_str());
@@ -623,7 +738,7 @@ public:
     if (!disc) { error("Não foi possível abrir o CD: " + err); return; }
     const std::string sys = indigo::cdrom::detectSystem(*disc);
     if (sys.empty()) {
-      error("Este CD não é de Sega CD, PC Engine CD, Neo Geo CD, PlayStation nem 3DO.");
+      error("Este CD não é de Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, PC-FX nem Saturn.");
       return;
     }
     flushSave();
@@ -636,7 +751,15 @@ public:
                           (sys == "ps1" && (readFile(withoutExt(path) + ".mcr", save) || readFile(withoutExt(path) + ".mcd", save)));
     std::unique_ptr<Core> core;
     try {
-      if (sys == "3do") {
+      if (sys == "pcfx") {
+        // PC-FX: o save é a memória de save interna + a do cartão FX-BMP (64 KB)
+        core = std::make_unique<indigo::pcfx::PcfxCore>(std::move(disc), haveSave ? &save : nullptr);
+      } else if (sys == "saturn") {
+        // Saturn: o save é a RAM de backup do console (32 KB)
+        if (indigo::firmware("saturn").empty()) throw std::runtime_error(
+            "o Saturn precisa da BIOS do console. Abra o arquivo da BIOS (por exemplo sega_101.bin) uma vez no Índigo.");
+        core = std::make_unique<indigo::saturn::SaturnCore>(std::move(disc), haveSave ? &save : nullptr);
+      } else if (sys == "3do") {
         // 3DO: o save é a NVRAM do console (32 KB)
         if (indigo::firmware("3do").empty()) throw std::runtime_error(
             "o 3DO precisa da BIOS do console. Abra o arquivo da BIOS (por exemplo panafz10.bin) uma vez no Índigo.");
@@ -721,6 +844,7 @@ public:
       if (core_ && !paused_ && !menuOpen_) {
         core_->setKeys(adaptKeys(keyboard_ | touch_.keys(), false) | adaptKeys(padKeys, true));
         if (auto* p = dynamic_cast<indigo::ps1::Ps1Core*>(core_.get())) ps1Input(*p, touch_.keys());
+        if (core_->system() == "gamecom") penInput();
         const bool turbo = turboKey_ || padTurbo_ || touch_.turbo() || fastOn_;
         const int frames = turbo ? 4 : 1;
         for (int i = 0; i < frames; i++) {
@@ -728,7 +852,7 @@ public:
           drainAudio(!turbo);
         }
         if (auto* p = dynamic_cast<indigo::ps1::Ps1Core*>(core_.get())) ps1Rumble(*p);
-        if (++frameCount_ % 120 == 0) flushSave();
+        if (++frameCount_ % 120 == 0) flushSave(true);
       } else {
         ++frameCount_;
       }
@@ -907,6 +1031,15 @@ private:
       for (SDL_Scancode k : keyMap_[a]) if (k == sc) return ACTION_BITS[a];
     return 0;
   }
+  // teclado numérico do PC = teclado do controle do Atari 5200 (0–9, * e #); nos outros consoles fica livre
+  uint32_t keypadFor(SDL_Scancode sc) const {
+    if (!core_ || core_->system() != "a5200") return 0;
+    if (sc == SDL_SCANCODE_KP_0) return indigo::KEY_KP0;
+    if (sc >= SDL_SCANCODE_KP_1 && sc <= SDL_SCANCODE_KP_9) return indigo::KEY_KP0 << (1 + (sc - SDL_SCANCODE_KP_1));
+    if (sc == SDL_SCANCODE_KP_MULTIPLY) return indigo::KEY_KPSTAR;
+    if (sc == SDL_SCANCODE_KP_DIVIDE || sc == SDL_SCANCODE_KP_PERIOD) return indigo::KEY_KPHASH;
+    return 0;
+  }
   bool isTurboKey(SDL_Scancode sc) const {
     for (SDL_Scancode k : keyMap_[ACT_TURBO]) if (k == sc) return true;
     return false;
@@ -944,6 +1077,7 @@ private:
         case SDL_SCANCODE_F: libToggleFav(); break;
         case SDL_SCANCODE_ESCAPE: showPage(P_SETTINGS); break;
         case SDL_SCANCODE_O: if (ctrl) showOpenDialog(); break;
+        case SDL_SCANCODE_F4: if (core_) nextDiskSide(); break;
         case SDL_SCANCODE_F11: toggleFullscreen(); break;
         default: break;
       }
@@ -966,6 +1100,10 @@ private:
       if (down) keyboard_ |= bit; else keyboard_ &= ~bit;
       return;
     }
+    if (const uint32_t bit = keypadFor(k.scancode); bit && !ctrl && !alt) {
+      if (down) keyboard_ |= bit; else keyboard_ &= ~bit;
+      return;
+    }
     if (isTurboKey(k.scancode)) { turboKey_ = down; return; }
     if (!down || k.repeat) return;
     switch (k.scancode) {
@@ -974,7 +1112,7 @@ private:
       case SDL_SCANCODE_F5: saveState(slot_); break;
       case SDL_SCANCODE_F8: loadState(slot_); break;
       case SDL_SCANCODE_F3:
-        if (core_ && core_->system() != "gb") { status("A paleta vale para o Game Boy clássico"); break; }
+        if (core_ && !monoPalette()) { status("A paleta vale para o Game Boy clássico, o Mega Duck e o Supervision"); break; }
         palette_ = (palette_ + 1) % NUM_PALETTES; applyPalette(); status(std::string("Paleta: ") + PALETTES[palette_].label);
         break;
       case SDL_SCANCODE_F11: toggleFullscreen(); break;
@@ -1075,6 +1213,7 @@ private:
       }
       return m;
     }
+    if (core_ && core_->system() == "a5200") return m;  // X faz de "shift" do teclado numérico (ver a5200.h)
     if (m & indigo::KEY_X) m |= indigo::KEY_A;
     if (m & indigo::KEY_Y) m |= indigo::KEY_B;
     return m & ~(indigo::KEY_X | indigo::KEY_Y);
@@ -1216,8 +1355,8 @@ private:
 
   void showOpenDialog() {
     static const SDL_DialogFileFilter filters[] = {
-      {"Jogos (SNES, NES, Game Boy, Game Boy Color, Game Boy Advance, Master System, Game Gear, Neo Geo Pocket, Pokémon Mini, Atari 2600, MSX, ColecoVision, SG-1000, WonderSwan, Atari 7800, Vectrex, Atari Lynx, Virtual Boy, PC Engine, Mega Drive, 32X, Neo Geo, arcade Capcom, Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO)",
-       "sfc;smc;nes;gb;gbc;dmg;gba;agb;sms;gg;sg;sc;ngp;ngc;npc;min;a26;rom;mx1;mx2;col;cv;ws;wsc;pc2;a78;vec;gam;lnx;lyx;vb;pce;sgx;md;gen;smd;32x;bin;neo;zip;cue;chd;iso;exe;psx;indigo"},
+      {"Jogos (SNES, NES, Famicom Disk System, Game Boy, Game Boy Color, Game Boy Advance, Master System, Game Gear, Neo Geo Pocket, Pokémon Mini, Atari 2600, Atari 5200, MSX, ColecoVision, SG-1000, WonderSwan, Atari 7800, Vectrex, Intellivision, Atari Lynx, Virtual Boy, Mega Duck, Watara Supervision, PC Engine, Mega Drive, 32X, Neo Geo, arcade Capcom, Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, Game.com, PC-FX, Saturn)",
+       "sfc;smc;nes;gb;gbc;dmg;sgb;gba;agb;sms;gg;sg;sc;ngp;ngc;npc;min;a26;a52;rom;mx1;mx2;col;cv;ws;wsc;pc2;a78;vec;gam;int;itv;lnx;lyx;vb;duck;md0;md1;md2;sv;pce;sgx;md;gen;smd;32x;fds;qd;bin;neo;zip;cue;chd;iso;exe;psx;tgc;indigo"},
       {"Todos os arquivos", "*"},
     };
     SDL_ShowOpenFileDialog(
@@ -1314,8 +1453,9 @@ private:
     indigo::shelf::pruneVersions(dataDir_, romKey_, HIST_MAX);
   }
 
-  void flushSave() {
-    if (!core_ || !core_->saveDirty()) return;
+  // periodica = gravação de rotina durante o jogo; o resto (fechar, trocar, perder o foco) grava tudo o que falta
+  void flushSave(bool periodica = false) {
+    if (!core_ || !(periodica ? core_->saveDirty() : core_->savePendente())) return;
     const auto data = core_->exportSave();
     if (data.empty()) return;
     snapshotSave(false);
@@ -1339,6 +1479,13 @@ private:
   }
 
   // ---------------- opções e jogos recentes
+  // consoles de 4 tons que usam a paleta do Game Boy clássico
+  bool monoPalette() const {
+    if (!core_) return false;
+    const std::string s = core_->system();
+    return s == "gb" || s == "duck" || s == "svision";
+  }
+
   void applyPalette() {
     if (!core_) return;
     const Palette& p = PALETTES[palette_];
@@ -1409,18 +1556,22 @@ private:
           integerScale_ = std::atoi(ln.c_str() + 8) != 0;
         } else if (ln.rfind("interface=", 0) == 0) {
           uiSize_ = std::clamp(std::atoi(ln.c_str() + 10), 0, 3);
+        } else if (ln.rfind("sgb=", 0) == 0) {
+          sgb_ = std::atoi(ln.c_str() + 4) != 0;
         } else if (ln.rfind("ps1res=", 0) == 0) {
           const int r = std::atoi(ln.c_str() + 7);
           ps1Res_ = (r == 1 || r == 2 || r == 4) ? r : 0;
         }
       }
     }
+    indigo::gb::setSgbEnabled(sgb_);
     loadMaps();
   }
   void saveSettings() {
     rememberWindow();
     std::string s = std::to_string(palette_) + "\n" + std::to_string(filter_) + "\n" + (startFullscreen_ ? "1" : "0") + "\n";
     s += std::string("inteira=") + (integerScale_ ? "1" : "0") + "\ninterface=" + std::to_string(uiSize_) + "\n";
+    if (!sgb_) s += "sgb=0\n";
     if (ps1Res_) s += "ps1res=" + std::to_string(ps1Res_) + "\n";
     if (winW_ > 0) s += "janela=" + std::to_string(winX_) + "," + std::to_string(winY_) + "," + std::to_string(winW_) + "," +
                         std::to_string(winH_) + "," + (winMax_ ? "1" : "0") + "\n";
@@ -1693,6 +1844,8 @@ private:
   // ---------------- backup (.indigo, o mesmo formato do site)
   void importBackup(const std::vector<uint8_t>& bytes) {
     flushSave();
+    std::vector<uint8_t> saveAntes;
+    if (core_ && core_->hasSave()) readFile(savePath_, saveAntes);
     indigo::shelf::ImportResult r;
     try {
       r = indigo::shelf::importBackup(dataDir_, bytes, allLocalRoms());
@@ -1716,9 +1869,10 @@ private:
     if (r.webStates) msg += "\nOs estados salvos do site não vêm junto: o formato é outro.";
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Índigo", msg.c_str(), win_);
     if (core_ && core_->hasSave()) {
-      // o jogo aberto pode ter recebido um save novo: recarrega
+      // o jogo aberto pode ter recebido um save novo: recarrega só se o arquivo do disco mudou com o backup
+      // (comparar com exportSave() falharia em núcleos cujo save muda a cada quadro, como o Game & Watch)
       std::vector<uint8_t> sv;
-      if (readFile(savePath_, sv) && sv != core_->exportSave()) { core_->importSave(sv); core_->reset(); status("Save do backup carregado; o jogo foi reiniciado"); }
+      if (readFile(savePath_, sv) && sv != saveAntes) { core_->importSave(sv); core_->reset(); status("Save do backup carregado; o jogo foi reiniciado"); }
     }
   }
 
@@ -1909,7 +2063,7 @@ private:
       if (aboutPage_ == 0 && indigo::platform::canAssociate())
         menu_.items.push_back({std::string("Abrir jogos com dois cliques: ") + (indigo::platform::filesAssociated() ? "sim" : "não"), M_ASSOCIATE});
       menu_.items.push_back({"Voltar", M_BACK});
-      menu_.hint = "Emulador de SNES, NES, GB, GBC, GBA, Master System, Game Gear, Neo Geo Pocket, Pokémon Mini, Atari 2600, MSX, ColecoVision, SG-1000, WonderSwan, Atari 7800, Vectrex, Atari Lynx, Virtual Boy, PC Engine e Mega Drive";
+      menu_.hint = "Emulador de SNES, NES, GB, GBC, GBA, Master System, Game Gear, Neo Geo Pocket, Pokémon Mini, Atari 2600, Atari 5200, MSX, ColecoVision, SG-1000, WonderSwan, Atari 7800, Vectrex, Atari Lynx, Virtual Boy, Mega Duck, Watara Supervision, PC Engine e Mega Drive";
     } else if (page_ == P_FOLDERS) {
       menu_.title = "Pastas de jogos";
       menu_.items.push_back({"Adicionar pasta...", M_FOLDER_ADD});
@@ -1936,11 +2090,14 @@ private:
       menu_.title = indigo::ui::toAscii(core_->title().empty() ? romBase_ : core_->title());
       menu_.items = {{"Voltar ao jogo", M_RESUME}, {"Salvar estado", M_SAVE_PAGE}, {"Carregar estado", M_LOAD_PAGE},
                      {std::string("Acelerar 4x: ") + (fastOn_ ? "ligado" : "desligado"), M_FAST}, {"Reiniciar o jogo", M_RESET}};
-      if (core_->system() == "gb")
+      const auto* gbc = dynamic_cast<indigo::gb::GBCore*>(core_.get());
+      if (monoPalette() && !(gbc && gbc->sgbActive()))
         menu_.items.push_back({"Paleta: " + indigo::ui::toAscii(PALETTES[palette_].label), M_PALETTE});
       menu_.items.push_back({std::string("Filtro de tela: ") + indigo::video::filterName(filter_), M_FILTER});
       menu_.items.push_back({std::string("Tamanho da imagem: ") + (integerScale_ ? "pixels perfeitos" : "preencher a tela"), M_INTEGER});
       if (core_->system() == "ps1") menu_.items.push_back({ps1ResLabel(), M_PS1_RES});
+      if (core_->diskSides() > 0)
+        menu_.items.push_back({"Disco: " + diskSideName(core_->diskSide()) + " (trocar: F4)", M_DISK_SIDE});
       if (auto* vbc = dynamic_cast<indigo::vb::VBCore*>(core_.get())) {
         static const char* const MODES[] = {"olho esquerdo", "3D anaglifo (óculos vermelho/ciano)", "lado a lado"};
         menu_.items.push_back({std::string("Tela do Virtual Boy: ") + MODES[std::clamp(vbc->stereoMode(), 0, 2)], M_VB_3D});
@@ -1963,6 +2120,7 @@ private:
       if (!mobile_) menu_.items.push_back({std::string("Tela cheia ao abrir: ") + (startFullscreen_ ? "sim" : "não"), M_START_FULL});
       menu_.items.push_back({std::string("Tamanho da imagem: ") + (integerScale_ ? "pixels perfeitos" : "preencher a tela"), M_INTEGER});
       menu_.items.push_back({ps1ResLabel(), M_PS1_RES});
+      menu_.items.push_back({std::string("Super Game Boy (cores e moldura): ") + (sgb_ ? "sim" : "não"), M_SGB});
       {
         static const char* const SIZES[] = {"automático", "pequeno", "grande", "maior"};
         menu_.items.push_back({std::string("Tamanho da interface: ") + SIZES[std::clamp(uiSize_, 0, 3)], M_UI_SIZE});
@@ -2076,7 +2234,7 @@ private:
   static bool romExtension(const std::string& name) {
     std::string n = name;
     for (char& c : n) c = static_cast<char>(SDL_tolower(static_cast<unsigned char>(c)));
-    for (const char* e : {".gb", ".gbc", ".dmg", ".gba", ".agb", ".sms", ".gg", ".sg", ".ngp", ".ngc", ".npc", ".nes", ".sfc", ".smc", ".min", ".a26", ".rom", ".mx1", ".mx2", ".col", ".cv", ".sc", ".ws", ".wsc", ".pc2", ".a78", ".vec", ".gam", ".lnx", ".lyx", ".vb", ".pce", ".sgx", ".md", ".gen", ".smd", ".32x", ".neo", ".zip", ".cue", ".chd", ".iso"}) {
+    for (const char* e : {".gb", ".gbc", ".dmg", ".sgb", ".gba", ".agb", ".sms", ".gg", ".sg", ".ngp", ".ngc", ".npc", ".nes", ".sfc", ".smc", ".min", ".a26", ".a52", ".rom", ".mx1", ".mx2", ".col", ".cv", ".sc", ".ws", ".wsc", ".pc2", ".a78", ".vec", ".gam", ".int", ".itv", ".lnx", ".lyx", ".vb", ".duck", ".md0", ".md1", ".md2", ".sv", ".pce", ".sgx", ".md", ".gen", ".smd", ".32x", ".fds", ".qd", ".tgc", ".j64", ".jag", ".abs", ".neo", ".zip", ".cue", ".chd", ".iso"}) {
       const size_t l = SDL_strlen(e);
       if (n.size() > l && n.compare(n.size() - l, l, e) == 0) return true;
     }
@@ -2104,7 +2262,7 @@ private:
     const std::string e = dot == std::string::npos ? "" : n.substr(dot);
     if (e == ".gba" || e == ".agb") return "GBA";
     if (e == ".gbc") return "GBC";
-    if (e == ".gb" || e == ".dmg") return "GB";
+    if (e == ".gb" || e == ".dmg" || e == ".sgb") return "GB";
     if (e == ".gg") return "GG";
     if (e == ".sms") return "SMS";
     if (e == ".sg" || e == ".sc") return "SG";
@@ -2112,23 +2270,30 @@ private:
     if (e == ".ws" || e == ".wsc" || e == ".pc2") return "WS";
     if (e == ".ngp" || e == ".ngc" || e == ".npc") return "NGP";
     if (e == ".nes") return "NES";
+    if (e == ".fds" || e == ".qd") return "FDS";
     if (e == ".sfc" || e == ".smc" || e == ".swc" || e == ".fig") return "SNES";
     if (e == ".min") return "PM";
-    if (e == ".zip") return "ARCADE";
+    if (e == ".zip") return n.rfind("gnw_", 0) == 0 ? "G&W" : "ARCADE";  // Game & Watch: pacotes gnw_* do MAME
     if (e == ".neo") return "ARCADE";
     if (e == ".cue" || e == ".chd" || e == ".iso") {
       const std::string d = discConsole(path);
-      return d == "ps1" ? "PS1" : d == "3do" ? "3DO" : "CD";
+      return d == "ps1" ? "PS1" : d == "3do" ? "3DO" : d == "pcfx" ? "PCFX" : d == "saturn" ? "SATURN" : "CD";
     }
     if (e == ".exe" || e == ".psx") return "PS1";
     if (e == ".a26") return "2600";
+    if (e == ".a52") return "5200";
     if (e == ".a78") return "7800";
     if (e == ".vec" || e == ".gam") return "VECTREX";
+    if (e == ".int" || e == ".itv") return "INTV";
     if (e == ".lnx" || e == ".lyx") return "LYNX";
     if (e == ".vb") return "VB";
+    if (e == ".duck" || e == ".md0" || e == ".md1" || e == ".md2") return "DUCK";
+    if (e == ".sv") return "SV";
     if (e == ".pce" || e == ".sgx") return "PCE";
     if (e == ".md" || e == ".gen" || e == ".smd") return "MD";
     if (e == ".32x") return "32X";
+    if (e == ".tgc") return "GAMECOM";
+    if (e == ".j64" || e == ".jag" || e == ".abs") return "JAGUAR";
     if (e == ".rom" || e == ".mx1" || e == ".mx2") return "MSX";
     return "outros";
   }
@@ -2220,6 +2385,14 @@ private:
         saveSettings();
         rebuildMenu();
         break;
+      case M_SGB:
+        // vale para os jogos abertos depois (a tela muda de tamanho)
+        sgb_ = !sgb_;
+        indigo::gb::setSgbEnabled(sgb_);
+        saveSettings();
+        rebuildMenu();
+        status(sgb_ ? "Super Game Boy ligado: vale ao abrir o jogo" : "Super Game Boy desligado: vale ao abrir o jogo");
+        break;
       case M_UI_SIZE:
         uiSize_ = (uiSize_ + 1) % 4;
         saveSettings();
@@ -2246,6 +2419,7 @@ private:
         rebuildMenu();
         break;
       }
+      case M_DISK_SIDE: nextDiskSide(); rebuildMenu(); break;
       case M_VB_3D:
         if (auto* vbc = dynamic_cast<indigo::vb::VBCore*>(core_.get())) { vbc->setStereoMode((vbc->stereoMode() + 1) % 3); rebuildMenu(); }
         break;
@@ -2371,6 +2545,11 @@ private:
       if (!core_) return;
       layoutTouch(ow, oh, true);
       const auto a = touch_.fingerDown(f.fingerID, x, y);
+      if (a == indigo::ui::TouchAction::None && core_->system() == "gamecom" && !penActive_) {
+        // tela de toque do Game.com: o dedo na imagem do jogo é a caneta
+        const SDL_FRect g = gameRect(ow, oh, true);
+        if (x >= g.x && y >= g.y && x < g.x + g.w && y < g.y + g.h) { penActive_ = true; penFinger_ = f.fingerID; penX_ = x; penY_ = y; }
+      }
       if (a == indigo::ui::TouchAction::Menu) { indigo::platform::haptic(); openMenu(); }
       else if (a == indigo::ui::TouchAction::Control) indigo::platform::haptic();
     } else if (type == SDL_EVENT_FINGER_MOTION) {
@@ -2385,6 +2564,7 @@ private:
         gLastX_ = x;
         return;
       }
+      if (penActive_ && f.fingerID == penFinger_) { penX_ = x; penY_ = y; }
       touch_.fingerMove(f.fingerID, x, y);
     } else {
       if (gActive_ && f.fingerID == gFinger_) {
@@ -2392,8 +2572,33 @@ private:
         if (type == SDL_EVENT_FINGER_UP && !gDrag_ && menuVisible()) uiTap(gx0_, gy0_);
         return;
       }
+      if (penActive_ && f.fingerID == penFinger_) penActive_ = false;
       touch_.fingerUp(f.fingerID);
     }
+  }
+
+  // caneta do Game.com: dedo na imagem do jogo ou, no PC, o botão esquerdo do mouse sobre ela
+  bool penActive_ = false;
+  SDL_FingerID penFinger_ = 0;
+  float penX_ = 0, penY_ = 0;
+  void penInput() {
+    int ow = 0, oh = 0;
+    SDL_GetCurrentRenderOutputSize(ren_, &ow, &oh);
+    float x = penX_, y = penY_;
+    bool down = penActive_;
+    if (!down && !mobile_) {
+      float wx = 0, wy = 0;
+      if (SDL_GetMouseState(&wx, &wy) & SDL_BUTTON_LMASK) {
+        SDL_RenderCoordinatesFromWindow(ren_, wx, wy, &x, &y);
+        down = true;
+      }
+    }
+    const SDL_FRect g = gameRect(ow, oh, touchUiInUse());
+    if (g.w <= 0 || g.h <= 0) return;
+    const int px = static_cast<int>((x - g.x) * static_cast<float>(core_->width()) / g.w);
+    const int py = static_cast<int>((y - g.y) * static_cast<float>(core_->height()) / g.h);
+    down = down && px >= 0 && py >= 0 && px < core_->width() && py < core_->height();
+    core_->setPointer(px, py, down);
   }
 
   // toque/clique em menu ou biblioteca; um segundo toque logo em seguida é ignorado (toque duplo sem querer)
@@ -2424,7 +2629,7 @@ private:
     auto add = [&](const std::string& p) { if (keys.insert(displayKey(p)).second) all.push_back(p); };
     for (const auto& p : library_) add(p);
     for (const auto& p : shelfAll_) add(p);
-    static const char* ORDER[] = {"SNES", "MD", "32X", "NES", "GB", "GBC", "GBA", "SMS", "GG", "NGP", "PCE", "PM", "2600", "7800", "LYNX", "MSX", "COLECO", "SG", "WS", "VECTREX", "VB", "ARCADE", "PS1", "3DO", "CD", "outros"};
+    static const char* ORDER[] = {"SNES", "MD", "32X", "NES", "FDS", "GB", "GBC", "GBA", "SMS", "GG", "NGP", "PCE", "PM", "2600", "5200", "7800", "LYNX", "MSX", "COLECO", "SG", "WS", "VECTREX", "INTV", "VB", "DUCK", "SV", "G&W", "GAMECOM", "JAGUAR", "ARCADE", "PS1", "3DO", "PCFX", "SATURN", "CD", "outros"};
     std::vector<std::string> tabs = {"Todos"};
     bool anyFav = false;
     for (const auto& p : all) if (favorites_.count(displayKey(p))) { anyFav = true; break; }
@@ -2678,7 +2883,8 @@ private:
   // tela e controles
   indigo::video::Screen screen_;
   int filter_ = indigo::video::NITIDO;
-  int ps1Res_ = 0;  // resolução do PlayStation escolhida (0 = a padrão do aparelho)
+  int ps1Res_ = 0;
+  bool sgb_ = true;  // Super Game Boy nos jogos que têm a marca (padrão: ligado)  // resolução do PlayStation escolhida (0 = a padrão do aparelho)
   std::array<std::vector<SDL_GamepadButton>, NUM_ACTIONS> padMap_, captureNewPad_;
   std::array<std::vector<SDL_Scancode>, NUM_ACTIONS> keyMap_, captureNewKeys_;
   bool padTriggerTurbo_ = true, hotkeyLatched_ = false, captureKeys_ = false, captureTrigger_ = false;

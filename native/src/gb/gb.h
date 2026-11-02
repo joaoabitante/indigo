@@ -11,6 +11,7 @@
 #include "apu.h"
 #include "cart.h"
 #include "ppu.h"
+#include "sgb.h"
 
 namespace indigo::gb {
 
@@ -27,14 +28,19 @@ public:
   PPU ppu;
   APU apu;
   std::unique_ptr<Cart> cart;
+  std::unique_ptr<SGB> sgb;  // Super Game Boy (jogo com a marca SGB, modo DMG e opção ligada)
   bool cgb = false;
   std::string title, gameCode;
   int frame = 0;
   int keys = 0;
   std::string serialOut;
   bool romLoaded = false;
+  // Mega Duck / Cougar Boy: mesma CPU e vídeo, registradores de I/O em outros endereços, início em $0000
+  bool duck = false;
 
-  void loadRom(const std::vector<uint8_t>& data, const std::vector<uint8_t>* saveBytes, Mode mode = Mode::Auto);
+  // duckKind: 0 = Game Boy; 1 = Mega Duck (MD1/MD2/sem mapeador); 2 = Mega Duck MD0
+  void loadRom(const std::vector<uint8_t>& data, const std::vector<uint8_t>* saveBytes, Mode mode = Mode::Auto,
+               int duckKind = 0);
   void reset();
   void requestIrq(int bits) { if_ |= bits; }
   void setKeys(int mask);
@@ -52,6 +58,8 @@ private:
   void incTima();
   int readIO(int a);
   void writeIO(int a, int v);
+  int readGbIO(int a);
+  void writeGbIO(int a, int v);
   void hdmaBlock();
 
   int rd(int addr) { tick(); return read(addr); }
@@ -100,20 +108,25 @@ private:
   int frameDots = 0;
 };
 
+// Mega Duck: .duck, .md0, .md1, .md2 (a extensão diz o mapeador; .bin fica para os outros consoles).
+// Devolve 0 se não for, 1 ou 2 (o duckKind de GB::loadRom).
+int duckKind(const std::vector<uint8_t>& rom, const std::string& lowerName);
+
 // adaptador para a interface comum
 class GBCore : public Core {
 public:
-  GBCore(const std::vector<uint8_t>& rom, const std::vector<uint8_t>* save, Mode mode = Mode::Auto);
+  GBCore(const std::vector<uint8_t>& rom, const std::vector<uint8_t>* save, Mode mode = Mode::Auto, int duckKind = 0);
   GB& gb() { return *gb_; }
+  bool sgbActive() const { return gb_->sgb != nullptr; }
 
-  std::string system() const override { return gb_->cgb ? "gbc" : "gb"; }
+  std::string system() const override { return gb_->duck ? "duck" : gb_->cgb ? "gbc" : "gb"; }
   std::string title() const override { return gb_->title; }
   void runFrame() override { gb_->runFrame(); }
   void reset() override { gb_->reset(); }
   void setKeys(uint32_t mask) override { gb_->setKeys(static_cast<int>(mask & 0xFF)); }
-  const uint32_t* framebuffer() const override { return gb_->ppu.fb; }
-  int width() const override { return 160; }
-  int height() const override { return 144; }
+  const uint32_t* framebuffer() const override { return gb_->sgb ? gb_->sgb->out : gb_->ppu.fb; }
+  int width() const override { return gb_->sgb ? SGB::W : 160; }
+  int height() const override { return gb_->sgb ? SGB::H : 144; }
   double fps() const override { return 4194304.0 / FRAME_DOTS; }
   void setSampleRate(int rate) override { gb_->apu.setSampleRate(rate); }
   size_t audioAvailable() const override { return gb_->apu.available(); }
@@ -121,6 +134,7 @@ public:
   bool hasSave() const override { return gb_->cart->hasSave(); }
   bool saveDirty() const override { return gb_->cart->dirty && gb_->cart->hasSave(); }
   std::vector<uint8_t> exportSave() override;
+  std::string note() const override;
   void importSave(const std::vector<uint8_t>& bytes) override { gb_->cart->importSave(bytes); }
   void setDmgPalette(const uint32_t* bg, const uint32_t* obj0, const uint32_t* obj1) override;
   std::vector<uint8_t> saveState() override { return gb_->saveState(); }

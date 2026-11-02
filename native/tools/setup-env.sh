@@ -54,6 +54,8 @@ fi
 [ -d roms/tms ] || bash "$REPO/native/tools/t7_tms.sh"
 # WonderSwan: SingleStepTests do V20 (~560 MB), WSCPUTest e WSHWTest (montadas com o nasm)
 [ -d roms/ws ] || bash "$REPO/native/tools/t7_ws.sh"
+# Atari 5200: BIOS e cartucho de teste próprios (montados com o dasm) e a BIOS livre do Altirra
+[ -d roms/a5200 ] || sh "$REPO/native/tools/t7_a5200.sh"
 # Atari 7800: exemplos do 7800basic montados aqui (precisa de gcc e flex)
 [ -d roms/a7800 ] || bash "$REPO/native/tools/t7_a7800.sh"
 # Vectrex: cputest do 6809, tabela de ciclos, vecx como régua (a BIOS, com direitos autorais, só para o teste local)
@@ -63,8 +65,14 @@ fi
 # (opcional) ROM de partida do Lynx do João em roms/lynx/bios/lynxboot.img: liga o teste da partida verdadeira
 # Virtual Boy: homebrew, v810-gcc, ROMs de teste e o Mednafen (beetle-vb) como régua
 [ -d roms/vb ] || bash "$REPO/native/tools/t7_vb.sh"
+# Mega Duck e Watara Supervision: ROMs de teste próprias (o Supervision também compila um programa com o cc65)
+[ -d roms/duck ] || bash "$REPO/native/tools/t7_duck.sh"
+[ -f roms/svision/cc65demo.sv ] || bash "$REPO/native/tools/t7_svision.sh"
+[ -d roms/pcfx ] || bash "$REPO/native/tools/t7_pcfx.sh"  # precisa do v810-gcc baixado pelo t7_vb.sh
 # PC Engine: SingleStepTests do HuC6280, HuC, Mesen 2 e Geargrafx como réguas
 [ -d roms/pce ] || bash "$REPO/native/tools/t7_pce.sh"
+# Famicom Disk System: BIOS e discos de teste próprios (ca65/ld65 do cc65; régua do Mesen 2 do t7_pce.sh)
+[ -f roms/fds/teste.fds ] || bash "$REPO/native/tools/t7_fds.sh" "$PWD/roms/fds"
 # Mega Drive: SingleStepTests do 68000, ROMs do SGDK e o Genesis Plus GX como régua
 [ -d roms/md ] || bash "$REPO/native/tools/t7_md.sh"
 # 32X: gcc do SH-2, homebrew do Marsdev e programas de teste próprios, PicoDrive como régua
@@ -94,6 +102,12 @@ fi
 [ -f roms/ps1int/disco/teste.cue ] || sh "$REPO/native/tools/t9_ps1int.sh" "$PWD/roms/ps1int"
 # 3DO: SingleStepTests ARM7TDMI (régua da CPU), BIOS de teste e homebrew próprios no disco Opera (binutils do ARM)
 [ -f roms/3do/disco/homebrew.cue ] || sh "$REPO/native/tools/t9b_3do.sh" "$PWD/roms/3do"
+# Game & Watch: núcleo SM510 do MAME (BSD-3-Clause) compilado fora do repositório como régua da CPU
+[ -f roms/gnw/vetores.txt ] || bash "$REPO/native/tools/t7_gnw.sh" "$PWD/roms/gnw"
+# Atari Jaguar: cartuchos de teste próprios (68000 + GPU/DSP), montados com o binutils do m68k
+[ -f roms/jaguar/teste2.j64 ] || bash "$REPO/native/tools/t7_jaguar.sh" "$PWD/roms/jaguar"
+# Saturn: BIOS de teste e CD homebrew próprios (precisa do sh-elf-gcc do 32X, montado acima)
+[ -f roms/saturn/disco/homebrew.cue ] || sh "$REPO/native/tools/t7_saturn.sh" "$PWD/roms/saturn"
 cp -rn "$REPO/native/tests/roms/smsroms" "$REPO/native/tests/roms/ngproms" roms/ 2>/dev/null || true
 cp -n "$REPO/native/tests/roms/zexall.com" "$REPO/native/tests/roms/zexdoc.com" roms/ 2>/dev/null || true
 

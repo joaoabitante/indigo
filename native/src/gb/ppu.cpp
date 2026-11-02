@@ -35,6 +35,7 @@ void PPU::reset() {
   for (int k = 0; k < 64; k++) { bgPal[k] = 0xFF; objPal[k] = 0; }
   for (int k = 0; k < 32; k++) { bgRGB[k] = rgb(0x7FFF); objRGB[k] = rgb(0); }
   std::fill(fb, fb + 160 * 144, 0xFFFFFFFFu);
+  std::fill(shade, shade + 160 * 144, 0);
 }
 
 uint32_t PPU::rgb(int c) {
@@ -160,6 +161,7 @@ void PPU::writeLcdc(int v) {
     ly = 0; dot = 0; mode = 0; statLine = false;
     winLine = 0; wyHit = false;
     std::fill(fb, fb + 160 * 144, gb.cgb ? 0xFFFFFFFFu : dmgBg[0]);
+    std::fill(shade, shade + 160 * 144, 0);
     frameDone = true;
   } else if (!was && (v & 0x80)) {
     // ao religar, a primeira linha começa sem a busca de OAM e o primeiro quadro não aparece
@@ -200,7 +202,7 @@ void PPU::renderLine(int ly_) {
     drawTiles(row, 0, bgEnd, mapBase, y, scx);
   } else {
     const uint32_t c = dmgBg[0];
-    for (int x = 0; x < 160; x++) { fb[row + x] = c; lineIdx[x] = 0; linePri[x] = 0; }
+    for (int x = 0; x < 160; x++) { fb[row + x] = c; shade[row + x] = 0; lineIdx[x] = 0; linePri[x] = 0; }
   }
   if (winOn) {
     const int mapBase = (lcdc & 0x40) ? 0x1C00 : 0x1800;
@@ -234,7 +236,8 @@ void PPU::drawTiles(int row, int x0, int x1, int mapBase, int y, int sx) {
       const int ci = ((lo >> bit) & 1) | (((hi >> bit) & 1) << 1);
       lineIdx[x] = static_cast<uint8_t>(ci);
       linePri[x] = static_cast<uint8_t>(attr & 0x80);
-      fb[row + x] = cgb ? bgRGB[palBase + ci] : dmgBg[(bgp >> (ci << 1)) & 3];
+      if (cgb) fb[row + x] = bgRGB[palBase + ci];
+      else { const int sh = (bgp >> (ci << 1)) & 3; fb[row + x] = dmgBg[sh]; shade[row + x] = static_cast<uint8_t>(sh); }
     }
   }
 }
@@ -277,7 +280,9 @@ void PPU::drawSprites(int ly_, int row) {
       if (cgb) fb[row + x] = objRGB[((attr & 7) << 2) + ci];
       else {
         const int pal = (attr & 0x10) ? obp1 : obp0;
-        fb[row + x] = ((attr & 0x10) ? dmgObj1 : dmgObj0)[(pal >> (ci << 1)) & 3];
+        const int sh = (pal >> (ci << 1)) & 3;
+        fb[row + x] = ((attr & 0x10) ? dmgObj1 : dmgObj0)[sh];
+        shade[row + x] = static_cast<uint8_t>(sh);
       }
     }
   }

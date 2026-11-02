@@ -49,6 +49,17 @@ public:
     pc = lo | (rd(0xFFFF) << 8);
   }
 
+  // NMI (não existe no Lynx; usado pelo Watara Supervision): mesma sequência da IRQ, vetor $FFFA
+  void nmi() {
+    rd(pc); rd(pc);
+    push(pc >> 8);
+    push(pc & 0xFF);
+    push((p | U) & ~B);
+    p = (p | I) & ~D;
+    const uint8_t lo = rd(0xFFFA);
+    pc = lo | (rd(0xFFFB) << 8);
+  }
+
   void step();
 
   void sync(StateIO& io) {

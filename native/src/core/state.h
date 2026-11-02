@@ -17,6 +17,7 @@ public:
   explicit StateIO(const std::vector<uint8_t>& src) : reading_(true), src_(&src) {}
 
   bool reading() const { return reading_; }
+  bool atEnd() const { return reading_ && pos_ >= src_->size(); }
   const std::vector<uint8_t>& data() const { return out_; }
 
   // bool vem de um byte do arquivo: qualquer valor diferente de 0 vira true (um byte inválido num bool é

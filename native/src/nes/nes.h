@@ -3,6 +3,7 @@
 // Núcleo próprio do Índigo nativo (a versão web não tem NES): a régua são as ROMs de teste públicas.
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -195,7 +196,8 @@ private:
 // ------------------------------------------------------------------ máquina
 class NES : public CpuBus {
 public:
-  explicit NES(Cart cart);
+  // fazMapeador: cria um mapeador que não vem de um cabeçalho iNES (o adaptador do Famicom Disk System, src/fds)
+  explicit NES(Cart cart, const std::function<std::unique_ptr<Mapper>(Cart&)>& fazMapeador = {});
   Cart cart;
   CPU cpu;
   PPU ppu;

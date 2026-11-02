@@ -44,7 +44,7 @@ struct PceExpansion {
   virtual int64_t nextEvent() const = 0;                           // próximo instante em que pode mudar a IRQ2
 };
 
-class Pce : public CpuBus {
+class Pce : public CpuBus, public VdcHost {
 public:
   Pce(const std::vector<uint8_t>& rom, const std::vector<uint8_t>* save, bool sgxByName);
 
@@ -80,10 +80,10 @@ public:
   uint8_t rawDiv(int r) const { return lineDiv_[r]; }
 
   // chamados pelo VDC
-  void stall();
-  void lineBegin(int idx, int scanline);
-  void lineDone(int idx, int scanline);
-  void frameDone(int idx);
+  void stall() override;
+  void lineBegin(int idx, int scanline) override;
+  void lineDone(int idx, int scanline) override;
+  void frameDone(int idx) override;
 
   // CpuBus
   uint8_t slowRead(uint8_t bank, uint16_t off) override;

@@ -159,8 +159,8 @@ uint32_t u32(const std::vector<uint8_t>& b, size_t o) {
 }
 bool romExt(std::string n) {
   for (char& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  static const char* EXT[] = {".gba", ".agb", ".gbc", ".gb", ".sgb", ".cgb", ".gg", ".sms", ".sg", ".ngp", ".ngc", ".npc", ".nes", ".sfc", ".smc", ".min", ".a26", ".mx1", ".mx2", ".rom", ".col", ".cv", ".sc", ".ws", ".wsc", ".pc2", ".a78", ".vec", ".gam", ".lnx", ".lyx", ".vb", ".pce", ".sgx", ".md", ".gen", ".smd",
-                              ".neo", ".img", ".bin"};  // por último: ROM de partida do Lynx (lynxboot.img), BIOS e cartuchos .bin
+  static const char* EXT[] = {".gba", ".agb", ".gbc", ".gb", ".sgb", ".cgb", ".gg", ".sms", ".sg", ".ngp", ".ngc", ".npc", ".nes", ".sfc", ".smc", ".min", ".a26", ".a52", ".mx1", ".mx2", ".rom", ".col", ".cv", ".sc", ".ws", ".wsc", ".pc2", ".a78", ".vec", ".gam", ".int", ".itv", ".lnx", ".lyx", ".vb", ".duck", ".md0", ".md1", ".md2", ".sv", ".pce", ".sgx", ".md", ".gen", ".smd", ".fds", ".qd", ".j64", ".jag", ".abs",
+                              ".tgc", ".neo", ".img", ".bin"};  // por último: ROM de partida do Lynx (lynxboot.img), BIOS e cartuchos .bin
   for (const char* e : EXT) {
     const size_t l = std::char_traits<char>::length(e);
     if (n.size() >= l && n.compare(n.size() - l, l, e) == 0) return true;

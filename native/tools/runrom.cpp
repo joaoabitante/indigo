@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
+#include <stdexcept>
 #include <cstring>
 #include <ctime>
 #include <fstream>
@@ -48,6 +49,19 @@ std::unique_ptr<Core> makeCore(const std::vector<uint8_t>& rom, const std::strin
     const char* bp = std::getenv("INDIGO_GBA_BIOS");
     const auto bios = bp ? readFile(bp) : std::vector<uint8_t>{};
     return std::make_unique<gba::GBACore>(rom, nullptr, bios.size() >= 0x4000 ? &bios : nullptr);
+  }
+  // INDIGO_FW="nome=arquivo;nome=arquivo": arquivos de console (ex.: gamecom_int=internal.bin;gamecom_ext=external.bin)
+  if (const char* fw = std::getenv("INDIGO_FW")) {
+    std::string all = fw;
+    size_t p = 0;
+    while (p < all.size()) {
+      size_t e = all.find(';', p);
+      if (e == std::string::npos) e = all.size();
+      const std::string item = all.substr(p, e - p);
+      const size_t eq = item.find('=');
+      if (eq != std::string::npos) setFirmware(item.substr(0, eq), readFile(item.substr(eq + 1).c_str()));
+      p = e + 1;
+    }
   }
   return createCore(rom, path, nullptr);
 }
@@ -103,7 +117,13 @@ int main(int argc, char** argv) {
   const std::string mode = argc > 3 ? argv[3] : "auto";
   const int every = argc > 4 ? std::atoi(argv[4]) : 0;
 
-  auto core = makeCore(rom, argv[1], mode);
+  std::unique_ptr<Core> core;
+  try {
+    core = makeCore(rom, argv[1], mode);
+  } catch (const std::exception& e) {  // ex.: console que precisa da BIOS do usuário
+    std::fprintf(stderr, "erro: %s\n", e.what());
+    return 2;
+  }
   if (!core) { std::fprintf(stderr, "ROM não reconhecida\n"); return 2; }
   const size_t px = size_t(core->width()) * core->height();
   std::vector<float> L, R, wav;

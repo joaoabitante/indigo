@@ -251,7 +251,7 @@ void Vdc::vblank() {
 
 void Vdc::endOfLine() {
   draw();
-  if (st_.scanline >= 14 && st_.scanline < 256) {
+  if (st_.scanline >= drawFirst && st_.scanline < drawEnd) {
     sys->lineDone(index, st_.scanline);
     std::memset(row, 0, sizeof row);
   }
@@ -259,7 +259,7 @@ void Vdc::endOfLine() {
   st_.lineStart = st_.now;
   st_.scanline++;
   st_.latchClkX = st_.latchClkY = NEVER;
-  if (st_.scanline == 256) {
+  if (st_.scanline == drawEnd) {
     st_.frameCount++;
     sys->frameDone(index);
   } else if (st_.scanline >= vce->lines) {
@@ -409,7 +409,7 @@ void Vdc::loadTiles() {
 }
 
 void Vdc::draw() {
-  if (st_.scanline < 14 || st_.scanline >= 256) return;
+  if (st_.scanline < drawFirst || st_.scanline >= drawEnd) return;
   evalSprites();
   loadTiles();
   drawPixels();
@@ -504,7 +504,7 @@ void Vdc::vdmaStep() {
       st_.vdmaRead = 0;
     } else {
       st_.lenr--;
-      if (st_.desr < 0x8000) vram[st_.desr] = st_.vdmaBuf;
+      if (st_.desr < vramWords) vram[st_.desr] = st_.vdmaBuf;
       st_.sour = static_cast<uint16_t>(st_.sour + (st_.dmaDecSrc ? -1 : 1));
       st_.desr = static_cast<uint16_t>(st_.desr + (st_.dmaDecDst ? -1 : 1));
       st_.vdmaRead = 1;
@@ -527,7 +527,7 @@ void Vdc::vramAccess() {
   }
   st_.transferDelay = 0;
   const int d = div();
-  const bool inBg = !st_.burst && st_.hclock >= st_.bgStart && st_.hclock < st_.bgEnd && st_.scanline >= 14 && st_.scanline < 256;
+  const bool inBg = !st_.burst && st_.hclock >= st_.bgStart && st_.hclock < st_.bgEnd && st_.scanline >= drawFirst && st_.scanline < drawEnd;
   bool blocked;
   if (st_.vMode != V_VDW || st_.burst || ((!st_.sprOn || st_.sprCount == 0) && !inBg)) {
     blocked = st_.satbRunning || st_.vdmaRunning || ((st_.hclock / d) & 1);
@@ -558,7 +558,7 @@ void Vdc::vramAccess() {
     st_.marR = static_cast<uint16_t>(st_.marR + st_.incr);
     st_.pendRead = 0;
   } else if (st_.pendWrite) {
-    if (st_.marW < 0x8000) vram[st_.marW] = st_.vwr;
+    if (st_.marW < vramWords) vram[st_.marW] = st_.vwr;
     st_.marW = static_cast<uint16_t>(st_.marW + st_.incr);
     st_.pendWrite = 0;
   }
@@ -677,7 +677,7 @@ void Vdc::write(int a, uint8_t v) {
 
 // ------------------------------------------------------------ save state
 void Vdc::sync(StateIO& io) {
-  io.raw(vram, sizeof vram);
+  io.raw(vram, vramWords * 2);
   io.raw(sat, sizeof sat);
   io.raw(row, sizeof row);
   io.raw(&st_, sizeof st_);

@@ -4,21 +4,24 @@
 **Linux** e **Android** (o mesmo código em C++20 + SDL3), do Atari 2600 ao PlayStation, com um emulador que também roda no
 navegador. Site e downloads: **https://indigo.nexus**
 
-Versão 2.3.0. Um projeto do [Autista Empreende](https://autistaempreende.com.br), criado pelo João Abitante com a
+Versão 2.4.0. Um projeto do [Autista Empreende](https://autistaempreende.com.br), criado pelo João Abitante com a
 ajuda de inteligência artificial (Claude).
 
 ## Consoles
 
-Game Boy, Game Boy Color, Game Boy Advance, NES, SNES (com Super FX, SA-1, DSP-1, S-DD1 e SPC7110), Master System,
-Game Gear, SG-1000, Mega Drive, 32X, Sega CD, PC Engine e PC Engine CD, Neo Geo (MVS/AES) e Neo Geo CD, Capcom
-CPS1/CPS2, Atari 2600/7800, Lynx, WonderSwan/Color, Virtual Boy, Neo Geo Pocket/Color, Pokémon Mini, MSX,
-ColecoVision, Vectrex, PlayStation e Panasonic 3DO (experimental).
+Game Boy, Game Boy Color, Super Game Boy, Game Boy Advance, NES, Famicom Disk System, SNES (com Super FX, SA-1,
+DSP-1, S-DD1 e SPC7110), Master System, Game Gear, SG-1000, Mega Drive, 32X, Sega CD, PC Engine, SuperGrafx e PC
+Engine CD, Neo Geo (MVS/AES) e Neo Geo CD, Capcom CPS1/CPS2, Atari 2600/7800, Lynx, WonderSwan/Color, Virtual Boy,
+Neo Geo Pocket/Color, Pokémon Mini, MSX, ColecoVision, Vectrex, Mega Duck, Watara Supervision, Game & Watch e
+PlayStation. Experimentais: Panasonic 3DO, Atari 5200, Intellivision, Tiger Game.com, PC-FX, Atari Jaguar e Sega
+Saturn.
 
 ## Jogos e BIOS
 
 O Índigo **não traz jogos nem BIOS** de nenhum fabricante. Use cópias dos seus próprios cartuchos e discos. Os
-consoles que precisam de BIOS (PlayStation, Sega CD, Neo Geo, Neo Geo CD, PC Engine CD, ColecoVision e 3DO) pedem o
-arquivo do seu console na primeira vez.
+consoles que precisam de BIOS (PlayStation, Sega CD, Neo Geo, Neo Geo CD, PC Engine CD, ColecoVision, 3DO, Famicom
+Disk System, Atari 5200, Intellivision, Game.com, PC-FX e Saturn) pedem o arquivo do seu console na primeira vez. O
+Game & Watch usa o .zip do MAME do próprio usuário, que traz o desenho da tela.
 
 ## Compilar
 

@@ -26,6 +26,7 @@
 
 #include "../core/core.h"
 #include "../core/state.h"
+#include "../atari/pokey.h"
 #include "../nes/cpu.h"
 
 namespace indigo::a7800 {
@@ -85,27 +86,7 @@ private:
   uint8_t bit[2] = {};
 };
 
-class Pokey {
-public:
-  void reset();
-  void write(int r, uint8_t v, uint64_t now);
-  uint8_t read(int r, uint64_t now);
-  uint64_t nextEvent() const;           // ciclo (1,79 MHz) do próximo pulso de canal
-  void fire(uint64_t now);              // processa os pulsos que vencem em "now"
-  int level() const;
-  void sanitize(uint64_t now);  // depois de ler um estado
-  bool irqEnabled() const { return irqen & 7; }
-  bool irq() const { return (~irqst & irqen & 0x07) != 0; }
-  void sync(StateIO& io);
-
-private:
-  void recalc(uint64_t now);
-  uint8_t audf[4] = {}, audc[4] = {}, audctl = 0, skctl = 0, irqen = 0, irqst = 0xFF;
-  uint32_t period[4] = {1, 1, 1, 1};
-  uint64_t next[4] = {};
-  uint8_t out[4] = {}, hp[2] = {};
-  bool active[4] = {};
-};
+using atari::Pokey;  // POKEY comum (src/atari/pokey.h)
 
 // ------------------------------------------------------------------ máquina
 class A7800 : public nes::CpuBus {

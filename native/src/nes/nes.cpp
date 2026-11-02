@@ -8,8 +8,9 @@
 
 namespace indigo::nes {
 
-NES::NES(Cart c) : cart(std::move(c)), ppu(*this), apu(*this) {
-  mapper = Mapper::create(cart);
+NES::NES(Cart c, const std::function<std::unique_ptr<Mapper>(Cart&)>& fazMapeador)
+    : cart(std::move(c)), ppu(*this), apu(*this) {
+  mapper = fazMapeador ? fazMapeador(cart) : Mapper::create(cart);
   if (!mapper) throw std::runtime_error("Este jogo de NES usa o mapeador " + std::to_string(cart.mapper) + ", que o Índigo ainda não tem.");
   mapper->nes = this;
   mapper->ciram = ppu.vram();

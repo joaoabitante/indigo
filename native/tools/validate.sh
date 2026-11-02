@@ -187,6 +187,11 @@ echo "== Pokémon Mini: CPU (exemplos da documentação e 300 mil vetores do Pok
 if "$B/indigo-t7_pm" "$R/pm" > "$TMP/pm"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falha" "$TMP/pm" | head -5; fi
 grep "RESULTADO" "$TMP/pm" | sed 's/^/  /'
 
+echo "== Super Game Boy: pacotes, paletas por área, máscara, transferências pela imagem, moldura, MLT_REQ, save state (ROM própria)"
+[ -f "$R/sgb/sgb_teste.gb" ] || "$HERE/t7_sgb.sh" "$R/sgb" > /dev/null
+if "$B/indigo-t7_sgb" "$R/sgb" > "$TMP/sgb"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/sgb" | head -5; fi
+grep "RESULTADO" "$TMP/sgb" | sed 's/^/  /'
+
 echo "== Atari 2600: CPU (Klaus Dormann, modo decimal), telas de 81 ROMs iguais ao Stella, bancos, save state"
 if "$B/indigo-t7_a2600" "$R/a2600" > "$TMP/a26"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/a26" | head -5; fi
 grep "RESULTADO" "$TMP/a26" | sed 's/^/  /'
@@ -209,9 +214,17 @@ echo "== Atari 7800: MARIA (DMA por linha, DLI, WSYNC), som TIA/POKEY, 36 exempl
 if "$B/indigo-t7_a7800" "$R/a7800" > "$TMP/a78"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/a78" | head -5; fi
 grep "RESULTADO" "$TMP/a78" | sed 's/^/  /'
 
+echo "== Atari 5200: ANTIC (400 telas contra a referência, DLI, WSYNC, ciclos roubados), GTIA, POKEY, BIOS de teste e do Altirra, save state"
+if "$B/indigo-t7_a5200" "$R/a5200" > "$TMP/a52"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/a52" | head -5; fi
+grep "RESULTADO" "$TMP/a52" | sed 's/^/  /'
+
 echo "== Vectrex: 6809 (cputest, ciclos medidos no hardware, 15 milhões de instruções iguais ao vecx), feixe, som, save state"
 if "$B/indigo-t7_vectrex" "$R/vectrex" > "$TMP/vec"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/vec" | head -5; fi
 grep "RESULTADO" "$TMP/vec" | sed 's/^/  /'
+
+echo "== Intellivision: CP1610 (instruções, flags, SDBD, ciclos), STIC (fundo, MOBs, colisões, janela de acesso), AY-3-8914, formatos, save state"
+if "$B/indigo-t7_intv" "$R" > "$TMP/intv"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/intv" | head -5; fi
+grep "RESULTADO" "$TMP/intv" | sed 's/^/  /'
 
 echo "== Atari Lynx: 65SC02 (SingleStepTests), sprites e matemática da Suzy, telas iguais ao Handy, EEPROM, save state"
 if "$B/indigo-t7_lynx" "$R/lynx" > "$TMP/lynx"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/lynx" | head -5; fi
@@ -222,6 +235,18 @@ grep -E "RESULTADO|pulado" "$TMP/lynxb" | sed 's/^/  /'
 echo "== Virtual Boy: V810 (instruções à mão e contra o PC), telas dos dois olhos iguais ao Mednafen, save state"
 if "$B/indigo-t7_vb" "$R/vb" > "$TMP/vb"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/vb" | head -5; fi
 grep "RESULTADO" "$TMP/vb" | sed 's/^/  /'
+
+echo "== Famicom Disk System: BIOS e discos de teste próprios (.fds/.qd), CRC, gravação no disco, troca de lado, som de onda, save state"
+if "$B/indigo-t7_fds" "$R/fds" > "$TMP/fds"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/fds" | head -5; fi
+grep "RESULTADO" "$TMP/fds" | sed 's/^/  /'
+
+echo "== Mega Duck: mesmo programa no Game Boy e no Duck (telas e som iguais), bancos MD0/MD1/MD2, save state"
+if "$B/indigo-t7_duck" "$R/duck" > "$TMP/duck"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/duck" | head -5; fi
+grep "RESULTADO" "$TMP/duck" | sed 's/^/  /'
+
+echo "== Watara Supervision: bancos, LCD, timer, NMI, som (tons, ruído, DMA), ROM do cc65, save state"
+if "$B/indigo-t7_svision" "$R/svision" > "$TMP/svision"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/svision" | head -5; fi
+grep "RESULTADO" "$TMP/svision" | sed 's/^/  /'
 
 echo "== PC Engine e SuperGrafx: HuC6280 (SingleStepTests), testes do HuC, 30 casos iguais ao Mesen 2, BRAM, save state"
 if "$B/indigo-t7_pce" "$R/pce" > "$TMP/pce"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/pce" | head -5; fi
@@ -270,6 +295,10 @@ echo "== PC Engine CD: System Cards de teste (SCSI, CD-DA, ADPCM, Arcade Card) e
 if "$B/indigo-t7_pcecd" "$R/pcecd" > "$TMP/pcecd"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/pcecd" | head -5; fi
 grep "RESULTADO" "$TMP/pcecd" | sed 's/^/  /'
 
+echo "== PC-FX: BIOS de teste própria dá a partida no CD, CPU V810 igual ao PC, CD por DMA/PIO, interrupções, tela calculada ponto a ponto (2 VDCs + KING + HuC6261), PSG/CD-DA/ADPCM, save state"
+if "$B/indigo-t7_pcfx" "$R/pcfx" > "$TMP/pcfx"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/pcfx" | head -5; fi
+grep "RESULTADO" "$TMP/pcfx" | sed 's/^/  /'
+
 echo "== PlayStation: CPU (PeterLemon), BIOS de teste, SIO0 (controle, vibração, cartão), save state; com a BIOS do usuário: menu, ps1-tests (psx.log e VRAM do console) e Beetle PSX"
 if "$B/indigo-t9_ps1" "$R/ps1" > "$TMP/ps1"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/ps1" | head -5; fi
 grep "RESULTADO\|pulados" "$TMP/ps1" | sed 's/^/  /'
@@ -288,6 +317,22 @@ grep -E "RESULTADO|pulados|velocidade" "$TMP/ps1int" | sed 's/^/  /'
 echo "== 3DO: CPU ARM60 (SingleStepTests), cels x imagens esperadas, matrizes, VDL, CLIO, DSP, CD sintético, save state, BIOS de teste e homebrew próprio"
 if "$B/indigo-t9b_3do" "$R/3do" > "$TMP/3do"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/3do" | head -5; fi
 grep -E "RESULTADO|velocidade|^  total:" "$TMP/3do" | sed 's/^/  /'
+echo "== Saturn: SCU (interrupções, DMA, DSP), SMPC, VDP1, VDP2, SCSP e 68000, bloco de CD sintético, save state, BIOS de teste e homebrew próprio"
+if "$B/indigo-t7_saturn" "$R/saturn" > "$TMP/saturn"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/saturn" | head -5; fi
+grep -E "RESULTADO|homebrew:" "$TMP/saturn" | sed 's/^/  /'
+
+echo "== Game & Watch: CPUs SM510/SM5A/SM511 (programas próprios), tela pelo .svg, teclas, piezo e melodia, pacotes da lista do MAME, save state"
+mkdir -p "$R/gnw"
+if "$B/indigo-t7_gnw" "$R/gnw" > "$TMP/gnw"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/gnw" | head -5; fi
+grep "RESULTADO" "$TMP/gnw" | sed 's/^/  /'
+
+echo "== Game.com: SM8500 instrução a instrução (resultados calculados à mão), BIOS e cartucho de teste próprios (vídeo, DMA, timers, som, teclas, caneta), save state"
+if "$B/indigo-t7_gamecom" "$R/gamecom" > "$TMP/gamecom"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/gamecom" | head -5; fi
+grep "RESULTADO" "$TMP/gamecom" | sed 's/^/  /'
+
+echo "== Atari Jaguar: Object Processor, Blitter, GPU e DSP (cartuchos de teste próprios), interrupções, som I2S, controle, EEPROM, programas para a RAM, save state"
+if "$B/indigo-t7_jaguar" "$R/jaguar" > "$TMP/jag"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/jag" | head -5; fi
+grep -E "RESULTADO|conferidos" "$TMP/jag" | sed 's/^/  /'
 
 echo "== CPU Z80: ZEXDOC e ZEXALL"
 for z in zexdoc zexall; do

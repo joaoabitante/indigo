@@ -1,4 +1,4 @@
-// Leitor de imagens de CD comum aos consoles de CD (Sega CD, PC Engine CD, Neo Geo CD e, adiante, PS1/Saturn).
+// Leitor de imagens de CD comum aos consoles de CD (Sega CD, PC Engine CD, Neo Geo CD, PS1, 3DO e Saturn).
 // Formatos: .cue + .bin (um ou vários .bin), .iso (só dados, 2048 bytes por setor) e .chd (MAME, versão 5).
 // A imagem é lida do arquivo sob demanda (não carrega o CD inteiro na memória).
 //
@@ -61,12 +61,14 @@ inline void lbaToMsf(uint32_t lba, uint8_t& m, uint8_t& s, uint8_t& f) {
 inline uint32_t msfToLba(int m, int s, int f) { return uint32_t((m * 60 + s) * 75 + f - 150); }
 
 // Qual console é o disco (olha o primeiro setor de dados):
+//   "pcfx"    -> "PC-FX:Hu_CD-ROM" no início do primeiro setor de dados (PC-FX)
 //   "segacd"  -> "SEGADISCSYSTEM" ou "SEGABOOTDISC" no início do LBA 0 (Sega CD / Mega-CD)
 //   "pcecd"   -> "PC Engine CD-ROM SYSTEM" no setor 1 da primeira faixa de dados (PC Engine CD)
 //   "neogeocd"-> ISO 9660 com IPL.TXT na raiz (Neo Geo CD)
 //   "ps1"     -> ISO 9660 com SYSTEM.CNF ou PSX.EXE na raiz, ou "Licensed by ... Sony Computer Entertainment" no
 //                setor 4 (PlayStation)
 //   "3do"     -> rótulo de volume do sistema de arquivos Opera no setor 0 (tipo 1, 5x 0x5A, versão 1, "CD-ROM")
+//   "saturn"  -> "SEGA SEGASATURN " no início do LBA 0 (Sega Saturn)
 //   ""        -> não reconhecido
 std::string detectSystem(Disc& d);
 

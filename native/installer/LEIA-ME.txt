@@ -16,6 +16,15 @@ Licença
 - O Índigo é software livre (GNU GPL versão 3). Ele não traz jogos nem BIOS: use cópias dos seus.
   Créditos de terceiros: veja TERCEIROS.md no código-fonte (github.com/joaoabitante, em breve público).
 
+Novo na 2.4
+- 11 consoles novos: Famicom Disk System (.fds, .qd; troca de lado do disco com F4), Super Game Boy (molduras e
+  cores dos jogos com suporte), Mega Duck, Watara Supervision e Game & Watch (o .zip do MAME do próprio usuário,
+  que traz o desenho da tela).
+- Experimentais (podem ter falhas e ficar lentos): Atari 5200, Intellivision, Tiger Game.com, PC-FX, Atari
+  Jaguar e Sega Saturn.
+- Famicom Disk System, Atari 5200, Intellivision, Game.com, PC-FX e Saturn pedem a BIOS do seu console: abra o
+  arquivo uma vez no Índigo. O Índigo não traz nenhuma BIOS.
+
 Novo na 2.3
 - Segurança: arquivos .zip, .chd, .cue e backups .indigo estragados ou maliciosos agora são recusados sem
   fechar o app nem gravar fora da pasta do Índigo. No Android, o PIN da nuvem não vai mais para o backup do

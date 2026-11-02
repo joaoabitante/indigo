@@ -68,7 +68,7 @@ CartInfo cartInfo(const std::vector<uint8_t>& rom) {
   return i;
 }
 
-Cart::Cart(const std::vector<uint8_t>& src) {
+Cart::Cart(const std::vector<uint8_t>& src, int duck) : duckKind(duck) {
   // ROM com tamanho potência de 2 (mínimo 32 KB) para as máscaras de banco
   size_t size = 0x8000;
   while (size < src.size()) size <<= 1;
@@ -76,6 +76,12 @@ Cart::Cart(const std::vector<uint8_t>& src) {
   std::copy(src.begin(), src.end(), rom.begin());
   romBanks = static_cast<int>(size >> 14);
   info = cartInfo(rom);
+  if (duckKind) {
+    // Mega Duck: não tem cabeçalho; sem RAM no cartucho (os cartuchos de memória do laptop não são emulados)
+    info = CartInfo{};
+    info.mbc = Mbc::Duck;
+    bank1 = 0; romBank = 1;
+  }
   ram.assign(std::max(info.ramSize, 0), 0xFF);
   ramBanks = std::max(1, info.ramSize >> 13);
   // MBC1 multicart (coletâneas de 1 MB): o logo da Nintendo se repete no início do 2º jogo (banco 0x10)
@@ -105,6 +111,10 @@ void Cart::update() {
       rom0 = 0; romX = (romBank & mask) << 14;
       ramOff = ((ramBank & (info.rumble ? 7 : 0xF)) % ramBanks) << 13;
       break;
+    case Mbc::Duck:
+      // bank1 = banco de 32 KB em $0000; romBank = banco de 16 KB em $4000
+      rom0 = ((bank1 * 2) & mask) << 14; romX = (romBank & mask) << 14; ramOff = 0;
+      break;
     default:
       rom0 = 0; romX = 0x4000 & ((romBanks << 14) - 1); ramOff = 0;
       break;
@@ -119,6 +129,13 @@ bool Cart::sameLogo(size_t off) const {
 
 void Cart::writeRom(int a, int v) {
   switch (info.mbc) {
+    case Mbc::Duck:
+      if (duckKind == 2) {
+        if (a == 0x1000) { bank1 = v & 0x0F; romBank = bank1 * 2 + 1; }
+      } else if (a == 0x0001) {
+        romBank = v;  // MD2: só a metade de cima
+      }
+      break;
     case Mbc::Mbc1:
       if (a < 0x2000) ramOn = (v & 0xF) == 0xA;
       else if (a < 0x4000) bank1 = (v & 0x1F) ? (v & 0x1F) : 1;
@@ -171,6 +188,11 @@ int Cart::readRam(int a) {
 }
 
 void Cart::writeRam(int a, int v) {
+  if (info.mbc == Mbc::Duck) {
+    // MD1: $B000 troca os 32 KB inteiros
+    if (duckKind == 1 && a == 0xB000) { bank1 = v & 0x0F; romBank = bank1 * 2 + 1; update(); }
+    return;
+  }
   if (!ramOn) return;
   if (info.mbc == Mbc::Mbc2) { ram[a & 0x1FF] = v & 0xF; dirty = true; return; }
   if (info.mbc == Mbc::Mbc3 && ramBank >= 8) {

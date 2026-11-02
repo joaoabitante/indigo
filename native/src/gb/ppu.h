@@ -15,6 +15,7 @@ public:
   explicit PPU(GB& gb);
 
   uint32_t fb[160 * 144];
+  uint8_t shade[160 * 144];  // tom de cinza de cada ponto no modo DMG (0-3, depois do BGP/OBP): o que o Super Game Boy recebe
   std::vector<uint8_t> vram, oam;
   uint8_t bgPal[64], objPal[64];
   uint32_t bgRGB[32], objRGB[32];

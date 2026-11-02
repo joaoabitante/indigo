@@ -11,6 +11,16 @@ struct Versão {
 };
 
 inline constexpr Versão VERSOES[] = {
+    {"2.4", "02/11/2026",
+     {"11 consoles novos: Famicom Disk",
+      "System, Super Game Boy (molduras",
+      "e cores), Mega Duck, Watara",
+      "Supervision e Game & Watch",
+      "Experimentais: Atari 5200,",
+      "Intellivision, Game.com, PC-FX,",
+      "Atari Jaguar e Sega Saturn",
+      "Alguns pedem a BIOS do console:",
+      "abra o arquivo uma vez no Índigo", nullptr}},
     {"2.3", "01/11/2026",
      {"Segurança: arquivos estragados",
       "ou maliciosos (.zip, .chd, .cue,",

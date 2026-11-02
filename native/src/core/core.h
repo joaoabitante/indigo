@@ -14,13 +14,16 @@ enum Key : uint32_t {
   KEY_RIGHT = 1u << 4, KEY_LEFT = 1u << 5, KEY_UP = 1u << 6, KEY_DOWN = 1u << 7,
   KEY_R = 1u << 8, KEY_L = 1u << 9,
   KEY_X = 1u << 10, KEY_Y = 1u << 11,  // só no SNES
+  // teclado numérico do controle (Atari 5200): vem do teclado numérico do PC; os outros núcleos ignoram
+  KEY_KP0 = 1u << 16,  // KEY_KP0 + n = tecla n (0–9)
+  KEY_KPSTAR = 1u << 26, KEY_KPHASH = 1u << 27,
 };
 
 class Core {
 public:
   virtual ~Core() = default;
 
-  // sistema: "gb", "gbc", "gba", "gg", "sms", "ngp", "ngpc", "nes"
+  // sistema: "gb", "gbc", "gba", "gg", "sms", "ngp", "ngpc", "nes", "fds"...
   virtual std::string system() const = 0;
   virtual std::string title() const = 0;
 
@@ -42,14 +45,26 @@ public:
   // save do cartucho (bateria)
   virtual bool hasSave() const = 0;
   virtual bool saveDirty() const = 0;
+  // mudança ainda não gravada, mesmo que saveDirty() a esteja segurando para gravar de tempos em tempos
+  // (vale ao fechar, trocar de jogo ou perder o foco)
+  virtual bool savePendente() const { return saveDirty(); }
   virtual std::vector<uint8_t> exportSave() = 0;
   virtual void importSave(const std::vector<uint8_t>& bytes) = 0;
 
   // paleta do Game Boy clássico (4 cores 0xAABBGGRR cada); obj0/obj1 nulos = mesmas cores do fundo
   virtual void setDmgPalette(const uint32_t* bg, const uint32_t* obj0, const uint32_t* obj1) {}
 
+  // caneta/toque na tela do jogo, em pixels da imagem do núcleo (só consoles com tela de toque, ex.: Game.com)
+  virtual void setPointer(int x, int y, bool down) {}
+
   // observação para mostrar ao abrir o jogo (por exemplo, como roda um chip do cartucho); vazio = nada
   virtual std::string note() const { return ""; }
+
+  // discos com lados (Famicom Disk System): quantos lados há (0 = o console não tem disco), qual está no drive
+  // (-1 = nenhum) e a troca: setDiskSide ejeta o disco e põe o lado pedido um instante depois (-1 = só ejeta)
+  virtual int diskSides() const { return 0; }
+  virtual int diskSide() const { return -1; }
+  virtual void setDiskSide(int side) {}
 
   // save state
   virtual std::vector<uint8_t> saveState() = 0;

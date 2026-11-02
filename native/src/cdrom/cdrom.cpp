@@ -307,6 +307,8 @@ std::string detectSystem(Disc& d) {
   const uint32_t s0 = d.tracks()[size_t(first)].start;
   uint8_t buf[DATA_SECTOR], raw[RAW_SECTOR];
   if (d.readData(s0, buf)) {
+    if (std::memcmp(buf, "PC-FX:Hu_CD-ROM", 15) == 0) return "pcfx";
+    if (std::memcmp(buf, "SEGA SEGASATURN ", 16) == 0) return "saturn";
     if (std::memcmp(buf, "SEGADISCSYSTEM", 14) == 0 || std::memcmp(buf, "SEGABOOTDISC", 12) == 0) return "segacd";
     // 3DO: rótulo do volume do sistema de arquivos Opera (tipo 1, cinco bytes 0x5A, versão 1, "CD-ROM")
     if (buf[0] == 1 && buf[1] == 0x5A && buf[2] == 0x5A && buf[3] == 0x5A && buf[4] == 0x5A && buf[5] == 0x5A &&

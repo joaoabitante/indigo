@@ -61,6 +61,7 @@
                 <data android:mimeType="application/x-gameboy-color-rom" />
                 <data android:mimeType="application/x-gba-rom" />
                 <data android:mimeType="application/x-nes-rom" />
+                <data android:mimeType="application/x-fds-disk" />
                 <data android:mimeType="application/x-snes-rom" />
                 <data android:mimeType="application/x-genesis-rom" />
                 <data android:mimeType="application/x-sms-rom" />

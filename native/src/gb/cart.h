@@ -9,7 +9,9 @@
 
 namespace indigo::gb {
 
-enum class Mbc { None, Mbc1, Mbc2, Mbc3, Mbc5 };
+// Duck: cartuchos do Mega Duck (sem cabeçalho); duckKind 1 = MD1 ($B000, 32 KB) e MD2 ($0001, 16 KB) juntos,
+// 2 = MD0 ($1000, 32 KB)
+enum class Mbc { None, Mbc1, Mbc2, Mbc3, Mbc5, Duck };
 
 struct CartInfo {
   std::string title;
@@ -25,7 +27,7 @@ CartInfo cartInfo(const std::vector<uint8_t>& rom);
 
 class Cart {
 public:
-  explicit Cart(const std::vector<uint8_t>& rom);
+  explicit Cart(const std::vector<uint8_t>& rom, int duckKind = 0);
 
   CartInfo info;
   std::vector<uint8_t> rom, ram;
@@ -55,6 +57,7 @@ private:
   int romBank = 1, ramBank = 0;
   int rom0 = 0, romX = 0x4000, ramOff = 0;
   bool multicart = false;
+  int duckKind = 0;
   int32_t rtc[5] = {}, rtcLatched[5] = {};
   bool rtcLatchArm = false;
   double rtcStamp = 0;  // milissegundos desde a época (como Date.now())

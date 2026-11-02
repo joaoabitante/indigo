@@ -5,24 +5,32 @@
 #include <cstdio>
 #include <cstring>
 
+#include "../gamecom/gamecom.h"
 #include "../nes/nes.h"
+#include "../fds/fds.h"
 #include "../snes/snes.h"
 #include "../pce/pce.h"
 #include "../pm/pm.h"
 #include "../tms/coleco.h"
 #include "../vectrex/vectrex.h"
+#include "../intv/intv.h"
 #include "../tms/sg1000.h"
 #include "../ws/ws.h"
 #include "../md/md.h"
 #include "../msx/msx.h"
 #include "../a2600/a2600.h"
+#include "../a5200/a5200.h"
 #include "../a7800/a7800.h"
+#include "../jaguar/jaguar.h"
 #include "../cps/cps.h"
 #include "../neogeo/neogeo.h"
+#include "../gnw/gnw.h"
 #include "safe.h"
 #include "zip.h"
 #include "../lynx/lynx.h"
 #include "../vb/vb.h"
+#include "../gb/gb.h"
+#include "../svision/svision.h"
 #include "../ngp/ngp.h"
 #include "../sms/sms.h"
 
@@ -266,12 +274,18 @@ std::string detectSystem(const std::vector<uint8_t>& b, const std::string& name)
   const bool gbaLogo = b.size() >= 0xC0 && b[4] == 0x24 && b[5] == 0xFF && b[6] == 0xAE && b[7] == 0x51;
   if (zip::isZip(b) && cps::isCpsSet(b, n)) return "cps";  // arcade: o .zip inteiro é o jogo
   if (!(zip::isZip(b) && neogeo::isNeoGeoBiosZip(b, n)) && neogeo::isNeoGeoRom(b, n)) return "neogeo";
+  if (zip::isZip(b) && gnw::isGnwSet(b)) return "gnw";  // Game & Watch: .zip com o desenho .svg da tela
+  if (gamecom::isGamecomRom(b, n)) return "gamecom";
+  if (jaguar::isJaguarRom(b, n)) return "jaguar";
   if (nes::isNesRom(b)) return "nes";
+  if (!fds::isFdsBios(b, n) && fds::isFdsDisk(b, n)) return "fds";
   if (snes::isSnesRom(b, n)) return "snes";
   if (ngp::isNgpRom(b)) return ngp::ngpInfo(b).color ? "ngpc" : "ngp";
+  if (const int dk = gb::duckKind(b, n)) return dk == 2 ? "duck0" : "duck";  // Mega Duck (o .md0 tem outro mapeador)
   if (md::isMdRom(b, n)) return "md";
   if (pm::isPMRom(b, n)) return "pm";
   if (pce::isPceRom(b, n)) return ends(n, ".sgx") ? "sgx" : "pce";
+  if (sv::isSvRom(b, n)) return "svision";
   if (vb::isVbRom(b, n)) return "vb";
   if (lynx::isLynxRom(b, n)) return "lynx";
   if (vectrex::isVectrexRom(b, n)) return "vectrex";
@@ -279,9 +293,11 @@ std::string detectSystem(const std::vector<uint8_t>& b, const std::string& name)
   if (ws::isWsRom(b, n)) return (b.size() >= 10 && (b[b.size() - 9] & 1)) ? "wsc" : "ws";
   if (tms::isColecoRom(b, n)) return "coleco";
   if (tms::isSg1000Rom(b, n)) return "sg1000";
+  if (intv::isIntvRom(b, n)) return "intv";  // antes do MSX (.rom) e do Atari 2600 (.bin)
   if (msx::isMsxRom(b, n)) return "msx";
   if (b.size() >= 0x200 && b[0x15C] == 0x56 && b[0x15D] == 0xCF) return "nds";
   if (ends(n, ".nds")) return "nds";
+  if (a5200::isA5200Rom(b, n) && !gbLogo && sms::smsKind(b, "").empty()) return "a5200";
   if (gbaLogo || (at(b, 0xB2) == 0x96 && (ends(n, ".gba") || ends(n, ".agb") || ends(n, ".bin")))) return "gba";
   if (gbLogo) return (b[0x143] & 0x80) ? "gbc" : "gb";
   const std::string sk = sms::smsKind(b, n);
@@ -303,16 +319,23 @@ std::string extensionFor(const std::string& sys) {
   if (sys == "ngpc") return ".ngc";
   if (sys == "ngp") return ".ngp";
   if (sys == "nes") return ".nes";
+  if (sys == "fds") return ".fds";
   if (sys == "snes") return ".sfc";
   if (sys == "pm") return ".min";
   if (sys == "cps") return ".zip";
   if (sys == "neogeo") return ".zip";
+  if (sys == "gnw") return ".zip";
   if (sys == "md") return ".md";
   if (sys == "coleco") return ".col";
+  if (sys == "a5200") return ".a52";
   if (sys == "a7800") return ".a78";
   if (sys == "vectrex") return ".vec";
+  if (sys == "intv") return ".int";  // o núcleo reconhece o formato .rom pelo conteúdo também em .int
   if (sys == "lynx") return ".lnx";
   if (sys == "vb") return ".vb";
+  if (sys == "duck") return ".duck";
+  if (sys == "duck0") return ".md0";
+  if (sys == "svision") return ".sv";
   if (sys == "pce") return ".pce";
   if (sys == "sgx") return ".sgx";
   if (sys == "ws") return ".ws";
@@ -320,6 +343,8 @@ std::string extensionFor(const std::string& sys) {
   if (sys == "sg1000") return ".sg";
   if (sys == "msx") return ".rom";
   if (sys == "a2600") return ".a26";
+  if (sys == "gamecom") return ".tgc";
+  if (sys == "jaguar") return ".j64";
   return ".bin";
 }
 
@@ -352,8 +377,22 @@ RomIdentity identify(const std::vector<uint8_t>& b, const std::string& fileName)
       for (size_t k = 10; k < 42; k++) { const int c = at(b, k); if (c >= 0x20 && c < 0x7F) r.title += static_cast<char>(c); else if (c == 0) break; }
     while (!r.title.empty() && r.title.back() == ' ') r.title.pop_back();
     r.gameCode = "LYNX";
+  } else if (r.sys == "duck" || r.sys == "duck0") {
+    r.gameCode = "DUCK";  // os cartuchos do Mega Duck não têm cabeçalho
+  } else if (r.sys == "svision") {
+    r.gameCode = "SVISION";
   } else if (r.sys == "vectrex") {
     r.gameCode = "VECTREX";
+  } else if (r.sys == "a5200") {
+    // título do cartucho: 20 caracteres em $BFE8 (24 bytes antes do fim), em códigos de tela do ANTIC
+    if (b.size() >= 24)
+      for (size_t k = b.size() - 24; k < b.size() - 4; k++) { const int c = (at(b, k) & 0x3F) + 0x20; r.title += static_cast<char>(c < 0x60 ? c : ' '); }
+    while (!r.title.empty() && r.title.back() == ' ') r.title.pop_back();
+    while (!r.title.empty() && r.title.front() == ' ') r.title.erase(r.title.begin());
+    r.gameCode = "A5200";
+  } else if (r.sys == "intv") {
+    r.title = intv::intvTitle(b, fileName);  // texto do título apontado pelo cabeçalho em $5000
+    r.gameCode = "INTV";
   } else if (r.sys == "a7800") {
     // título do cabeçalho .a78 (bytes 17 a 48), quando tem
     if (b.size() >= 128 && std::memcmp(&b[1], "ATARI7800", 9) == 0)
@@ -374,6 +413,8 @@ RomIdentity identify(const std::vector<uint8_t>& b, const std::string& fileName)
     r.gameCode = "NEOGEO";
   } else if (r.sys == "cps") {
     r.gameCode = "CPS";
+  } else if (r.sys == "gnw") {
+    r.gameCode = "GNW";
   } else if (r.sys == "md") {
     // título do cabeçalho (nome internacional em 0x150, 48 letras; .smd desintercalado antes)
     const auto m = md::mdNormalize(b);
@@ -386,6 +427,12 @@ RomIdentity identify(const std::vector<uint8_t>& b, const std::string& fileName)
     for (size_t k = 0x21B0; k < 0x21BC; k++) { const int c = at(b, k); if (c >= 0x20 && c < 0x7F) r.title += static_cast<char>(c); }
     while (!r.title.empty() && r.title.back() == ' ') r.title.pop_back();
     r.gameCode = "PM";
+  } else if (r.sys == "fds") {
+    // nome do jogo no bloco 1 do disco (3 letras); código "FDS" + tamanho + hash, como no NES
+    const size_t o = (b.size() >= 16 && b[0] == 'F' && b[1] == 'D' && b[2] == 'S') ? 16 : 0;
+    for (size_t k = o + 16; k < o + 19; k++) { const int c = at(b, k); if (c >= 0x20 && c < 0x7F) r.title += static_cast<char>(c); }
+    while (!r.title.empty() && r.title.back() == ' ') r.title.pop_back();
+    r.gameCode = "FDS";
   } else if (r.sys == "nes") {
     // o cartucho de NES não tem título nem código: fica "NES" + tamanho + hash (o site ainda não tem NES)
     r.gameCode = "NES";

@@ -16,11 +16,15 @@ inline int ctz(int v) { return __builtin_ctz(static_cast<unsigned>(v)); }
 
 GB::GB() : ppu(*this), apu(*this), wram(0x8000), hram(0x7F) {}
 
-void GB::loadRom(const std::vector<uint8_t>& data, const std::vector<uint8_t>* saveBytes, Mode mode) {
-  cart = std::make_unique<Cart>(data);
+void GB::loadRom(const std::vector<uint8_t>& data, const std::vector<uint8_t>* saveBytes, Mode mode, int duckKind) {
+  cart = std::make_unique<Cart>(data, duckKind);
+  duck = duckKind != 0;
   const CartInfo& info = cart->info;
-  cgb = mode == Mode::Cgb ? true : mode == Mode::Dmg ? false : info.cgb;
+  cgb = duck ? false : mode == Mode::Cgb ? true : mode == Mode::Dmg ? false : info.cgb;
   if (info.cgbOnly) cgb = true;
+  // Super Game Boy: só jogos com a marca no cabeçalho rodando como Game Boy clássico
+  if (!cgb && mode != Mode::Dmg && sgbEnabled() && isSgbCart(cart->rom)) sgb = std::make_unique<SGB>();
+  else sgb.reset();
   title = info.title;
   gameCode = info.code;
   if (saveBytes) cart->importSave(*saveBytes);
@@ -34,8 +38,15 @@ void GB::reset() {
   apu.reset();
   // registradores como o boot ROM deixa
   if (cgb) { a = 0x11; f = 0x80; b = 0x00; c = 0x00; d = 0xFF; e = 0x56; h = 0x00; l = 0x0D; }
+  else if (sgb) { a = 0x01; f = 0x00; b = 0x00; c = 0x14; d = 0x00; e = 0x00; h = 0xC0; l = 0x60; }
   else { a = 0x01; f = 0xB0; b = 0x00; c = 0x13; d = 0x00; e = 0xD8; h = 0x01; l = 0x4D; }
+  if (sgb) sgb->reset();
   sp = 0xFFFE; pc = 0x0100;
+  if (duck) {
+    // sem ROM de boot: a CPU começa em $0000 (registros aleatórios no aparelho; aqui zerados, para repetir igual)
+    a = f = b = c = d = e = h = l = 0;
+    pc = 0x0000;
+  }
   ime = false; eiDelay = false; halted = false; haltBug = false; stopped = false; locked = false;
   ie = 0; if_ = 0x01;
   div = cgb ? 0x1EA0 : 0xABCC;
@@ -123,11 +134,65 @@ void GB::write(int addr, int v) {
   ie = v;
 }
 
+// ------------------------------------------------------------ Mega Duck: registradores trocados de lugar
+namespace {
+// endereço do Mega Duck -> endereço do Game Boy (-1 = nada ali). Fonte: megaduck-info (bbbbbr, CC0).
+int duckToGb(int a) {
+  if (a < 0xFF10 || (a >= 0xFF30 && a < 0xFF40)) return a;  // joypad, serial, timer, IF; RAM de onda
+  switch (a) {
+    case 0xFF10: return 0xFF40; case 0xFF11: return 0xFF41; case 0xFF12: return 0xFF42; case 0xFF13: return 0xFF43;
+    case 0xFF14: return 0xFF48; case 0xFF15: return 0xFF49; case 0xFF16: return 0xFF4A; case 0xFF17: return 0xFF4B;
+    case 0xFF18: return 0xFF44; case 0xFF19: return 0xFF45; case 0xFF1A: return 0xFF46; case 0xFF1B: return 0xFF47;
+    case 0xFF20: return 0xFF10; case 0xFF21: return 0xFF12; case 0xFF22: return 0xFF11; case 0xFF23: return 0xFF13;
+    case 0xFF24: return 0xFF14; case 0xFF25: return 0xFF16; case 0xFF27: return 0xFF17; case 0xFF28: return 0xFF18;
+    case 0xFF29: return 0xFF19; case 0xFF2A: return 0xFF1A; case 0xFF2B: return 0xFF1B; case 0xFF2C: return 0xFF1C;
+    case 0xFF2D: return 0xFF1E; case 0xFF2E: return 0xFF1D;
+    case 0xFF40: return 0xFF20; case 0xFF41: return 0xFF22; case 0xFF42: return 0xFF21; case 0xFF43: return 0xFF23;
+    case 0xFF44: return 0xFF24; case 0xFF45: return 0xFF26; case 0xFF46: return 0xFF25;
+  }
+  return -1;
+}
+// LCDC: bits 0, 1, 2, 3 e 6 em outra ordem (o Duck tem BG em 6, objetos em 0, tamanho em 1, mapas em 2 e 3)
+int lcdcFromDuck(int v) {
+  return (v & 0xB0) | ((v >> 6) & 1) | ((v & 1) << 1) | ((v & 2) << 1) | ((v & 4) << 1) | ((v & 8) << 3);
+}
+int lcdcToDuck(int v) {
+  return (v & 0xB0) | ((v & 1) << 6) | ((v >> 1) & 1) | ((v >> 1) & 2) | ((v >> 1) & 4) | ((v >> 3) & 8);
+}
+// dados do som: NR12, NR22, NR42 e NR43 com as metades trocadas; NR32 com o volume em outra ordem
+int duckSoundData(int gbAddr, int v) {
+  if (gbAddr == 0xFF12 || gbAddr == 0xFF17 || gbAddr == 0xFF21 || gbAddr == 0xFF22) return ((v << 4) | (v >> 4)) & 0xFF;
+  if (gbAddr == 0xFF1C) return v ^ ((v << 1) & 0x40);
+  return v;
+}
+}  // namespace
+
 int GB::readIO(int addr) {
+  if (!duck) return readGbIO(addr);
+  const int g = duckToGb(addr);
+  if (g < 0) return 0xFF;
+  const int v = readGbIO(g);
+  if (g == 0xFF40) return lcdcToDuck(v);
+  return duckSoundData(g, v);
+}
+
+void GB::writeIO(int addr, int v) {
+  if (!duck) { writeGbIO(addr, v); return; }
+  const int g = duckToGb(addr);
+  if (g < 0) return;
+  writeGbIO(g, g == 0xFF40 ? lcdcFromDuck(v) : duckSoundData(g, v));
+}
+
+int GB::readGbIO(int addr) {
   PPU& p = ppu;
   switch (addr) {
     case 0xFF00: {
       int low = 0xF;
+      if (sgb && sgb->multi()) {
+        // vários controles: com P14 e P15 em 1 aparece o número do controle; só o 1º tem botões aqui
+        if ((p1 & 0x30) == 0x30) return 0xC0 | 0x30 | (0xF - sgb->player);
+        if (sgb->player) return 0xC0 | (p1 & 0x30) | 0xF;
+      }
       if (!(p1 & 0x10)) low &= ~((keys >> 4) & 0xF);
       if (!(p1 & 0x20)) low &= ~(keys & 0xF);
       return 0xC0 | (p1 & 0x30) | low;
@@ -171,10 +236,10 @@ int GB::readIO(int addr) {
   return 0xFF;
 }
 
-void GB::writeIO(int addr, int v) {
+void GB::writeGbIO(int addr, int v) {
   PPU& p = ppu;
   switch (addr) {
-    case 0xFF00: p1 = v & 0x30; return;
+    case 0xFF00: p1 = v & 0x30; if (sgb) sgb->writeJoyp(p1, ppu.ly, ppu.lcdOn()); return;
     case 0xFF01: sb = v; return;
     case 0xFF02:
       sc = v;
@@ -506,6 +571,7 @@ void GB::runFrame() {
   const int limit = ppu.lcdOn() ? FRAME_DOTS + 456 : FRAME_DOTS;
   while (!ppu.frameDone && frameDots < limit) step();
   apu.catchUp();
+  if (sgb) sgb->frameEnd(ppu.shade, ppu.lcdOn());
   frame++;
 }
 
@@ -530,6 +596,8 @@ void GB::sync(StateIO& io) {
   ppu.sync(io);
   apu.sync(io);
   cart->sync(io);
+  // bloco do Super Game Boy no fim (um estado antigo, sem ele, ainda carrega)
+  if (sgb && !(io.reading() && io.atEnd())) sgb->sync(io);
   if (io.reading()) {
     for (int* p : {&a, &f, &b, &c, &d, &e, &h, &l, &ie, &tima, &tma, &tac, &sb, &sc, &dmaReg}) *p &= 0xFF;
     sp &= 0xFFFF; pc &= 0xFFFF; div &= 0xFFFF; if_ &= 0x1F; p1 &= 0x30; key1 &= 1;
@@ -560,9 +628,17 @@ void GB::loadState(const std::vector<uint8_t>& s) {
 }
 
 // ------------------------------------------------------------ adaptador
-GBCore::GBCore(const std::vector<uint8_t>& rom, const std::vector<uint8_t>* save, Mode mode)
+GBCore::GBCore(const std::vector<uint8_t>& rom, const std::vector<uint8_t>* save, Mode mode, int duckKind)
     : gb_(std::make_unique<GB>()) {
-  gb_->loadRom(rom, save, mode);
+  gb_->loadRom(rom, save, mode, duckKind);
+}
+
+int duckKind(const std::vector<uint8_t>& rom, const std::string& n) {
+  if (rom.size() < 0x100 || rom.size() > (4u << 20)) return 0;
+  auto ends = [&](const char* x) { const size_t l = std::char_traits<char>::length(x); return n.size() >= l && n.compare(n.size() - l, l, x) == 0; };
+  if (ends(".md0")) return 2;
+  if (ends(".duck") || ends(".md1") || ends(".md2")) return 1;
+  return 0;
 }
 
 void GBCore::setDmgPalette(const uint32_t* bg, const uint32_t* obj0, const uint32_t* obj1) {
@@ -572,6 +648,10 @@ void GBCore::setDmgPalette(const uint32_t* bg, const uint32_t* obj0, const uint3
   std::copy(bg, bg + 4, gb_->ppu.dmgBg);
   std::copy(o0, o0 + 4, gb_->ppu.dmgObj0);
   std::copy(o1, o1 + 4, gb_->ppu.dmgObj1);
+}
+
+std::string GBCore::note() const {
+  return gb_->sgb ? "Super Game Boy: cores e moldura do jogo (os sons do SNES não tocam)." : "";
 }
 
 std::vector<uint8_t> GBCore::exportSave() {

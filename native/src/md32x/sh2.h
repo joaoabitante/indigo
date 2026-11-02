@@ -30,6 +30,8 @@ public:
   virtual void wr32(Sh2& c, uint32_t a, uint32_t v) { wr16(c, a, uint16_t(v >> 16)); wr16(c, a + 2, uint16_t(v)); }
   // nível da interrupção externa (IRL) foi aceito: vetor automático 64 + nível/2
   virtual void irlAck(Sh2&, int) {}
+  // vetor da interrupção externa dado pelo barramento (modo de vetor externo, como a SCU do Saturn); -1 = automático
+  virtual int irlVector(Sh2&, int /*nível*/) { return -1; }
   // o SH-2 escreveu no canal de DMA (pode ter um pedido DREQ esperando)
   virtual void dmaKick(Sh2&, int /*canal*/) {}
 };
@@ -45,6 +47,7 @@ public:
   int64_t clock = 0;         // ciclos do SH-2 desde o começo
   bool sleeping = false;     // SLEEP: parado até uma interrupção
   Sh2* other = nullptr;      // o outro SH-2 (serial)
+  bool slaveMode = false;    // pino de modo escravo (BCR1 bit 15 lido como 1); o 32X não usa
 
   // mapa rápido de leitura/escrita por bloco de 16 MB do endereço físico (nulo = barramento)
   const uint8_t* rpage[32] = {};
@@ -65,6 +68,8 @@ public:
   bool stop = false;         // o barramento pede para sair de run() depois desta instrução (laço de espera)
   // pedido DREQ externo no canal (devolve true se o canal aceitou e transferiu)
   bool dreq(int ch, int maxUnits);
+  // pulso no pino FTI: captura do temporizador livre (o Saturn liga os dois SH-2 por aqui)
+  void inputCapture();
   bool dmaActive(int ch) const;
   uint32_t dmaSource(int ch) const { return dma_[ch].sar; }
   uint32_t dmaDest(int ch) const { return dma_[ch].dar; }

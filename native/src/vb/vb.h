@@ -64,6 +64,16 @@ public:
     else ioWrite16(a, v);
   }
   void write32(uint32_t a, uint32_t v) { write16(a, static_cast<uint16_t>(v)); write16(a | 2, static_cast<uint16_t>(v >> 16)); }
+  // no Virtual Boy, IN/OUT e a busca de instruções usam o mesmo barramento da memória
+  uint8_t in8(uint32_t a) { return read8(a); }
+  uint16_t in16(uint32_t a) { return read16(a); }
+  uint32_t in32(uint32_t a) { return read32(a); }
+  void out8(uint32_t a, uint8_t v) { write8(a, v); }
+  void out16(uint32_t a, uint16_t v) { write16(a, v); }
+  void out32(uint32_t a, uint32_t v) { write32(a, v); }
+  uint16_t fetch16(uint32_t a) { return read16(a); }
+  static constexpr uint32_t V810_PIR = 0x00005346;  // "NVC"
+  static constexpr bool V810_NINTENDO = true;
 
   std::vector<uint8_t> saveState();
   void loadState(const std::vector<uint8_t>& s);

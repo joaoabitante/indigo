@@ -20,7 +20,15 @@ struct Vce {
   bool gray = false;
 };
 
-class Pce;
+// quem hospeda o VDC (o PC Engine, ou o PC-FX com dois VDCs): recebe as linhas prontas e segura a CPU
+class VdcHost {
+public:
+  virtual ~VdcHost() = default;
+  virtual void stall() = 0;                          // a CPU espera 3 ciclos mestres por um acesso à VRAM
+  virtual void lineBegin(int idx, int scanline) = 0;
+  virtual void lineDone(int idx, int scanline) = 0;  // row[] tem a linha pronta
+  virtual void frameDone(int idx) = 0;
+};
 
 class Vdc {
 public:
@@ -28,12 +36,14 @@ public:
   static constexpr int ROW = 683;               // pixels por linha no modo mais fino (1365/2)
   static constexpr uint16_t SPR_FLAG = 0x8000, TRANSP_FLAG = 0x4000;
 
-  uint16_t vram[0x8000] = {};
+  uint16_t vram[0x10000] = {};  // o PC Engine usa só 32 K palavras (vramWords); o PC-FX tem 64 K
+  uint32_t vramWords = 0x8000;
+  int drawFirst = 14, drawEnd = 256;  // linhas (contagem do VCE) em que o VDC desenha
   uint16_t sat[256] = {};
   uint16_t row[ROW + 1] = {};  // linha sendo desenhada
 
   Vce* vce = nullptr;
-  Pce* sys = nullptr;
+  VdcHost* sys = nullptr;
   int index = 0;               // 0 = VDC1, 1 = VDC2 (SuperGrafx)
 
   void power();
@@ -119,7 +129,7 @@ private:
 
   int div() const { return vce->div; }
   int dots(int n) const { return n * vce->div; }
-  uint16_t vramRead(uint16_t a) { if (a < 0x8000) return st_.openBus = vram[a]; return st_.openBus; }
+  uint16_t vramRead(uint16_t a) { if (a < vramWords) return st_.openBus = vram[a]; return st_.openBus; }
 
   bool needsStepping() const;
   void chunk();

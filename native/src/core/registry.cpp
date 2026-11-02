@@ -4,23 +4,31 @@
 #include <map>
 
 #include "../a2600/a2600.h"
+#include "../a5200/a5200.h"
 #include "../a7800/a7800.h"
 #include "../cps/cps.h"
+#include "../fds/fds.h"
+#include "../gamecom/gamecom.h"
 #include "../gb/gb.h"
+#include "../gnw/gnw.h"
 #include "../lynx/lynx.h"
 #include "../md/md.h"
 #include "../md32x/mars.h"
 #include "../msx/msx.h"
 #include "../gba/gba.h"
+#include "../intv/intv.h"
+#include "../jaguar/jaguar.h"
 #include "../nes/nes.h"
 #include "../neogeo/neogeo.h"
 #include "../ngp/ngp.h"
 #include "../pce/pce.h"
 #include "../pm/pm.h"
 #include "../ps1/ps1.h"
+#include "../saturn/saturn.h"
 #include "../segacd/segacd.h"
 #include "../sms/sms.h"
 #include "../snes/snes.h"
+#include "../svision/svision.h"
 #include "../tdo/tdo.h"
 #include "../tms/coleco.h"
 #include "../vectrex/vectrex.h"
@@ -54,23 +62,41 @@ std::unique_ptr<Core> createCore(const std::vector<uint8_t>& rom, const std::str
   // Neo Geo: .zip do MAME (inteiro) ou .neo; o neogeo.zip da BIOS não é jogo
   if (zip::isZip(rom) && neogeo::isNeoGeoBiosZip(rom, n)) return nullptr;
   if (neogeo::isNeoGeoRom(rom, n)) return std::make_unique<neogeo::NeoGeoCore>(rom, n, save);
+  // Game & Watch: .zip do MAME com o desenho .svg da tela e o programa da CPU Sharp
+  if (zip::isZip(rom) && gnw::isGnwSet(rom)) return std::make_unique<gnw::GnwCore>(rom, fileName, save);
+  // Tiger Game.com: as ROMs do console não são jogo (o app as guarda com setFirmware); cartucho pelo
+  // "TigerDMGC" do cabeçalho (em 0 ou $40000) ou .tgc
+  if (!gamecom::gamecomFirmwareKind(rom, n).empty()) return nullptr;
+  if (gamecom::isGamecomRom(rom, n)) return std::make_unique<gamecom::GameComCore>(rom, save);
   if (nes::isNesRom(rom)) return std::make_unique<nes::NESCore>(rom, save);  // mapeador sem suporte: lança erro com o número
+  // Famicom Disk System: a BIOS (disksys.rom, do usuário) não é jogo; o app a guarda com setFirmware("fds").
+  // Discos .fds/.qd: cabeçalho fwNES ou o bloco 1 ("*NINTENDO-HVC*") logo no começo; sem a BIOS, lança o erro
+  if (fds::isFdsBios(rom, n)) return nullptr;
+  if (fds::isFdsDisk(rom, n)) return std::make_unique<fds::FdsCore>(rom, n, save);
   if (snes::isSnesRom(rom, n)) return std::make_unique<snes::SNESCore>(rom, save);  // chip especial sem suporte: lança erro
   if (ngp::isNgpRom(rom)) return std::make_unique<ngp::NGPCore>(rom, save);
   // PlayStation: a BIOS (512 KB) não é jogo (o app a guarda com setFirmware("ps1")); um programa PS-X EXE roda
   // depois da BIOS chegar ao menu, e sem a BIOS o núcleo não é criado (lança o erro com a explicação)
   if (ps1::isPs1Bios(rom)) return nullptr;
   if (ps1::isPsxExe(rom)) return std::make_unique<ps1::Ps1Core>(rom, fileName, save);
+  // Atari Jaguar: .j64, .jag/.abs (programas para a RAM) e .rom só com a marca 0x04040404 do cartucho em 0x400
+  if (jaguar::isJaguarRom(rom, n)) return std::make_unique<jaguar::JaguarCore>(rom, fileName, save);
+  // BIOS do Saturn (512 KB, vetores do SH-2 e "SEGASATURN"): não é jogo; o app a guarda com setFirmware("saturn").
+  // Os jogos de Saturn vêm em CD.
+  if (saturn::isSaturnBios(rom)) return nullptr;
   // BIOS do Sega CD (tem o cabeçalho "SEGA" de um cartucho): não é jogo; o app a guarda com setFirmware
   if (segacd::isSegaCdBios(rom)) return nullptr;
   // 32X: .32x ou "MARS CHECK MODE"/"SEGA 32X" no cabeçalho (antes do Mega Drive: também tem "SEGA" em 0x100)
   if (md32x::isMd32xRom(rom, n)) return std::make_unique<md32x::Md32xCore>(rom, save);
+  // Mega Duck: só pela extensão (.duck, .md0, .md1, .md2), já que os cartuchos não têm cabeçalho
+  if (const int dk = gb::duckKind(rom, n)) return std::make_unique<gb::GBCore>(rom, save, gb::Mode::Dmg, dk);
   // Mega Drive: .md, .gen, .smd, ou "SEGA" em 0x100 (antes do Master System e do .bin do Atari 2600)
   if (md::isMdRom(rom, n)) return std::make_unique<md::MDCore>(rom, save);
   if (pm::isPMRom(rom, n)) return std::make_unique<pm::PMCore>(rom, save);
   // ColecoVision (.col, .cv; precisa da BIOS do usuário) e SG-1000/SC-3000 (.sg, .sc: vídeo TMS9918 próprio,
   // antes do Master System, que não desenha os modos TMS)
   if (pce::isPceRom(rom, n)) return pce::createPceCore(rom, n, save);  // PC Engine (.pce) e SuperGrafx (.sgx)
+  if (sv::isSvRom(rom, n)) return std::make_unique<sv::SupervisionCore>(rom, save);  // Watara Supervision: .sv
   if (vb::isVbRom(rom, n)) return std::make_unique<vb::VBCore>(rom, save);  // Virtual Boy: .vb, .vboy
   if (lynx::isLynxRom(rom, n)) return std::make_unique<lynx::LynxCore>(rom, save);  // .lnx (LYNX), .lyx, .o (BS93)
   if (vectrex::isVectrexRom(rom, n)) return std::make_unique<vectrex::VectrexCore>(rom, save);  // "g GCE", .vec, .gam
@@ -78,10 +104,21 @@ std::unique_ptr<Core> createCore(const std::vector<uint8_t>& rom, const std::str
   if (ws::isWsRom(rom, n)) return std::make_unique<ws::WSCore>(rom, save);  // WonderSwan: .ws, .wsc, .pc2
   if (tms::isColecoRom(rom, n)) return std::make_unique<tms::ColecoCore>(rom, save);
   if (tms::isSg1000Rom(rom, n)) return std::make_unique<tms::SG1000Core>(rom, save);
+  // Intellivision: a EXEC e a GROM (do usuário) não são jogos; o app as guarda com setFirmware("intv_exec"/"intv_grom").
+  // Cartuchos: .int/.itv, .rom do Intellicart (cabeçalho e tamanho conferidos; antes do MSX, que também usa .rom)
+  // e .bin de 10 bits (antes do .bin do Atari 2600)
+  if (intv::intvBiosKind(rom, n)) return nullptr;
+  if (intv::isIntvRom(rom, n)) return std::make_unique<intv::IntvCore>(rom, n);
   // MSX: .mx1/.mx2, ou .rom com o cabeçalho "AB" dos cartuchos
   if (msx::isMsxRom(rom, n)) return std::make_unique<msx::MSXCore>(rom, save, msx::msxMachineFor(rom, n));
   // Nintendo DS: a versão web reconhece, mas aqui ainda não existe núcleo
   if ((rom.size() >= 0x200 && rom[0x15C] == 0x56 && rom[0x15D] == 0xCF) || endsWith(n, ".nds")) return nullptr;
+  // Atari 5200: .a52, .car de 5200, ou .bin pequeno (até 40 KB) com o vetor de partida de 5200 no fim (antes do
+  // teste fraco de .bin do GBA; os .bin de Game Boy, Master System e GBA têm assinatura e ficam de fora).
+  // ATENÇÃO ao juntar consoles novos que usam .bin (Intellivision, Supervision...): o teste do 5200 é
+  // heurístico, então assinaturas fortes desses consoles devem vir antes desta linha.
+  if (a5200::isA5200Rom(rom, n) && !hasGbLogo(rom) && sms::smsKind(rom, "").empty())
+    return std::make_unique<a5200::A5200Core>(rom, n, save);
   const bool gbaLogo = rom.size() >= 0xC0 && rom[4] == 0x24 && rom[5] == 0xFF && rom[6] == 0xAE && rom[7] == 0x51;
   const bool gbaExt = endsWith(n, ".gba") || endsWith(n, ".agb");
   if (gbaLogo || (rom.size() > 0xB2 && rom[0xB2] == 0x96 && (gbaExt || endsWith(n, ".bin"))))
@@ -102,7 +139,7 @@ std::unique_ptr<Core> createCore(const std::vector<uint8_t>& rom, const std::str
 bool isArcadeSet(const std::vector<uint8_t>& z, const std::string& fileName) {
   if (!zip::isZip(z)) return false;
   const std::string n = lower(fileName);
-  return cps::isCpsSet(z, n) || neogeo::isNeoGeoSet(z, n) || neogeo::isNeoGeoBiosZip(z, n);
+  return cps::isCpsSet(z, n) || neogeo::isNeoGeoSet(z, n) || neogeo::isNeoGeoBiosZip(z, n) || gnw::isGnwSet(z);
 }
 
 namespace {

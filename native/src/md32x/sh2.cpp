@@ -304,9 +304,11 @@ void Sh2::checkIrq() {
   sleeping = false;
   npc_ = pc;
   if (irl_ >= intLevel_) {
-    exception(64 + irl_ / 2, pc);
-    bus.irlAck(*this, irl_);
-    sr = (sr & ~0xF0u) | (uint32_t(irl_) << 4);
+    const int lv = irl_;  // o barramento pode baixar a IRL ao dar o vetor
+    const int ev = bus.irlVector(*this, lv);
+    exception(ev >= 0 ? ev : 64 + lv / 2, pc);
+    bus.irlAck(*this, lv);
+    sr = (sr & ~0xF0u) | (uint32_t(lv) << 4);
   } else {
     exception(intVector_, pc);
     sr = (sr & ~0xF0u) | (uint32_t(intLevel_) << 4);
@@ -707,6 +709,13 @@ void Sh2::exec(uint16_t op, uint32_t pcv) {
 }
 
 // ------------------------------------------------------------ periféricos internos
+void Sh2::inputCapture() {
+  frtRun();
+  ficr_ = frc_;
+  ftcsr_ |= 0x80;
+  updateInternalIrq();
+}
+
 void Sh2::frtRun() {
   const int div = FRT_DIV[tcr_ & 3];
   if (!div) { frtLast_ = clock; return; }
@@ -897,7 +906,12 @@ uint32_t Sh2::ioRead(uint32_t a, int size) {
         default: return 0;
       }
     }
-    if (o >= 0x100) { uint32_t v = 0; for (int k = 0; k < 4; k++) v = (v << 8) | misc_[(o & ~3u) + k]; return v; }
+    if (o >= 0x100) {
+      uint32_t v = 0;
+      for (int k = 0; k < 4; k++) v = (v << 8) | misc_[(o & ~3u) + k];
+      if ((o & ~3u) == 0x1E0 && slaveMode) v |= 0x8000;  // BCR1.MASTER: 1 = escravo
+      return v;
+    }
     return (ioRead(a & ~3u, 2) << 16) | ioRead((a & ~3u) + 2, 2);
   }
   if (size == 2) {
@@ -914,7 +928,7 @@ uint32_t Sh2::ioRead(uint32_t a, int size) {
       case 0x82: return uint32_t(rstcsr_ << 8) | 0xFF;
       default:
         if (divu || dmac) return ioRead(a & ~3u, 4) >> ((o & 2) ? 0 : 16) & 0xFFFF;
-        if (o >= 0x100) return uint32_t(misc_[o & ~1u] << 8) | misc_[o | 1];
+        if (o >= 0x100) return uint32_t(misc_[o & ~1u] << 8) | misc_[o | 1] | ((o & ~1u) == 0x1E2 && slaveMode ? 0x8000 : 0);
         return (ioRead(a & ~1u, 1) << 8) | ioRead(a | 1, 1);
     }
   }

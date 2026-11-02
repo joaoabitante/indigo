@@ -56,6 +56,7 @@ add_library(indigo_core STATIC
   src/gb/ppu.cpp
   src/gb/apu.cpp
   src/gb/gb.cpp
+  src/gb/sgb.cpp
   src/nes/cpu.cpp
   src/nes/ppu.cpp
   src/nes/apu.cpp
@@ -85,10 +86,10 @@ target_include_directories(indigo_core PUBLIC src)
 
 # Etapa 7 (clássicos e portáteis menores): cada console numa pasta própria
 file(GLOB INDIGO_ETAPA7_SRC CONFIGURE_DEPENDS
-  src/a2600/*.cpp src/a7800/*.cpp src/lynx/*.cpp src/ws/*.cpp src/vb/*.cpp src/pm/*.cpp src/tms/*.cpp src/msx/*.cpp src/vectrex/*.cpp
+  src/a2600/*.cpp src/a7800/*.cpp src/atari/*.cpp src/a5200/*.cpp src/lynx/*.cpp src/ws/*.cpp src/vb/*.cpp src/pm/*.cpp src/tms/*.cpp src/msx/*.cpp src/vectrex/*.cpp
   src/md/*.cpp src/pce/*.cpp src/neogeo/*.cpp src/cps/*.cpp src/cdrom/*.cpp
   src/neogeocd/*.cpp src/segacd/*.cpp src/pcecd/*.cpp src/md32x/*.cpp
-  src/ps1/*.cpp src/tdo/*.cpp)
+  src/ps1/*.cpp src/tdo/*.cpp src/fds/*.cpp src/svision/*.cpp src/gnw/*.cpp src/gamecom/*.cpp src/intv/*.cpp src/pcfx/*.cpp src/jaguar/*.cpp src/saturn/*.cpp)
 target_sources(indigo_core PRIVATE ${INDIGO_ETAPA7_SRC})
 
 # ferramentas de teste sem interface (desligadas no build do Android)
