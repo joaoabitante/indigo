@@ -4,9 +4,12 @@
   "type": "module",
   "private": true,
   "devDependencies": {
-    "esbuild": "0.24.0"
+    "esbuild": "0.25.12"
   },
   "dependencies": {
     "@vercel/blob": "2.8.0"
+  },
+  "overrides": {
+    "zod": "4.6.7"
   }
 }
