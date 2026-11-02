@@ -1,0 +1,47 @@
+# Gera o Índigo para Windows (indigo.exe, .zip portátil e instalador) a partir deste repositório público.
+# É o build que a assinatura de código (SignPath) confere: o .exe assinado tem de sair daqui, do commit da main.
+# Este arquivo é copiado do repositório privado pelo native/tools/publicar.sh.
+name: Windows
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: ubuntu-24.04
+    steps:
+      # actions presas pelo commit (a tag pode ser movida; o commit não)
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Ferramentas (MinGW, CMake, Ninja, NSIS)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q mingw-w64 cmake ninja-build nsis zip
+      - name: SDL3 estático para Windows (mesma versão do app)
+        run: |
+          git clone -q --depth 1 --branch release-3.4.18 https://github.com/libsdl-org/SDL.git "$RUNNER_TEMP/SDL"
+          test "$(git -C "$RUNNER_TEMP/SDL" rev-parse HEAD)" = 829a65d769d935c4852f8159e964312c0957260a
+          cmake -S "$RUNNER_TEMP/SDL" -B "$RUNNER_TEMP/b-sdl" -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/native/toolchain-mingw.cmake" \
+            -DCMAKE_BUILD_TYPE=Release -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TESTS=OFF -DSDL_TEST_LIBRARY=OFF \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/sdl3-win"
+          cmake --build "$RUNNER_TEMP/b-sdl" && cmake --install "$RUNNER_TEMP/b-sdl"
+      - name: Compilar o indigo.exe
+        run: |
+          cmake -S native -B build-win -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/native/toolchain-mingw.cmake" \
+            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/sdl3-win"
+          cmake --build build-win --target indigo
+      - name: Pacotes (.zip portátil e instalador)
+        run: |
+          native/tools/pacote-pc.sh build-win saida
+          (cd saida && sha256sum * | tee SHA256SUMS.txt)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: indigo-windows
+          path: saida/
+          if-no-files-found: error

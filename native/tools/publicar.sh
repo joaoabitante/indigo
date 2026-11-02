@@ -101,6 +101,10 @@ updates:
     open-pull-requests-limit: 5
 EOF
 
+# build do Windows no GitHub Actions do público (é o build que a assinatura de código confere)
+mkdir -p "$tmp/.github/workflows"
+cp "$tmp/native/tools/ci/windows-publico.yml" "$tmp/.github/workflows/windows.yml"
+
 # conferência final: nenhuma chave, senha ou e-mail particular pode sair
 # (o e-mail particular vem do autor do commit privado, para não ficar escrito neste script, que também é público)
 email=$(git -C "$repo" log -1 --format=%ae "$app")
