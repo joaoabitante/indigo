@@ -48,13 +48,14 @@ export const CONSOLE_GROUPS = [
     { name: 'Game Gear', web: 1 }, { name: 'Lynx' }, { name: 'WonderSwan e WonderSwan Color', n: 2 },
     { name: 'Neo Geo Pocket e Pocket Color', n: 2, web: 1 }, { name: 'Virtual Boy' }, { name: 'Pokémon Mini' },
   ] },
-  { title: 'O salto para o 3D', era: 'Novo na 2.0', icon: 'disc', fresh: 1, items: [
+  { title: 'O salto para o 3D', era: 'Desde a 2.0', icon: 'disc', fresh: 1, items: [
     { name: 'PlayStation', fresh: 1, bios: 1, note: '3D, CDs em .cue/.bin, .chd e .iso, memory card e DualShock com vibração' },
+    { name: '3DO', bios: 1, note: 'experimental, desde a 2.2: ainda não testado com jogos de verdade' },
   ] },
 ];
 export const SYSTEM_COUNT = CONSOLE_GROUPS.reduce((s, g) => s + g.items.reduce((t, i) => t + (i.n || 1), 0), 0);
 // comparações automáticas feitas a cada versão (suítes de teste públicas e emuladores de referência)
-const COMPARISONS = '1030';
+const COMPARISONS = '1032';
 
 // ---------------------------------------------------------------- "nexus": consoles ligados ao Índigo (atrás do desenho do topo)
 const inner = (k) => ICON[k].replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
@@ -122,6 +123,7 @@ const heroArt = () => `<svg class="hero-art" viewBox="0 0 560 440" role="img" ar
 
 // ---------------------------------------------------------------- linha do tempo (ano do primeiro lançamento no mundo)
 // Curiosidades só com fatos conhecidos; na dúvida, sem curiosidade. fresh: novo na versão atual · soon: ainda vai chegar
+// exp: já está no app, mas ainda experimental
 const DECADES = {
   1970: { label: 'Anos 70', blurb: 'O videogame chega à sala de casa, com jogos em cartucho.' },
   1980: { label: 'Anos 80', blurb: 'A era dos 8 bits: o videogame vira mania, chegam os portáteis e o primeiro CD.' },
@@ -148,7 +150,7 @@ export const TIMELINE = [
   { y: 1990, name: 'Game Gear', kind: 'Portátil', fact: 'O portátil colorido da Sega, com peças parecidas com as do Master System.' },
   { y: 1991, name: 'Sega CD', alt: 'Mega-CD no Japão', kind: 'Acessório do Mega Drive', fact: 'Leitor de CD que se encaixa no Mega Drive.' },
   { y: 1993, name: 'Capcom CPS2', kind: 'Fliperama', fact: 'Sucessora da CPS1, com os jogos protegidos por criptografia.' },
-  { y: 1993, name: '3DO', alt: 'Panasonic', kind: 'Console de mesa', fact: 'Era um padrão: várias fabricantes fizeram o aparelho.', soon: 'Em breve · versão 2.2' },
+  { y: 1993, name: '3DO', alt: 'Panasonic', kind: 'Console de mesa', fact: 'Era um padrão: várias fabricantes fizeram o aparelho.', exp: 'Experimental · desde a 2.2' },
   { y: 1994, name: 'PlayStation', kind: 'Console de mesa', fact: 'Lançado no Japão em dezembro de 1994, com os jogos em CD.', fresh: 1 },
   { y: 1994, name: 'Neo Geo CD', kind: 'Console de mesa', fact: 'Os jogos do Neo Geo em CD, bem mais baratos que os cartuchos.' },
   { y: 1994, name: '32X', kind: 'Acessório do Mega Drive', fact: 'Encaixava no Mega Drive como um cartucho e somava dois processadores.' },
@@ -166,7 +168,7 @@ function timelineHtml() {
           <span class="tl-dot" aria-hidden="true"></span>
           <div class="tl-card">
             <p class="tl-meta"><time datetime="${t.y}">${t.y}</time><span>${esc(t.kind)}</span></p>
-            <h4>${esc(t.name)}${t.fresh ? ' <span class="tag-new">Novo</span>' : ''}${t.soon ? ` <span class="tag-soon">${esc(t.soon)}</span>` : ''}</h4>
+            <h4>${esc(t.name)}${t.fresh ? ' <span class="tag-new">Novo</span>' : ''}${t.soon ? ` <span class="tag-soon">${esc(t.soon)}</span>` : ''}${t.exp ? ` <span class="tag-soon">${esc(t.exp)}</span>` : ''}</h4>
             ${t.alt ? `<p class="tl-alt">${esc(t.alt)}</p>` : ''}${t.fact ? `<p class="tl-fact">${esc(t.fact)}</p>` : ''}
           </div>
         </li>`;
@@ -458,7 +460,7 @@ export function landingMid({ press = [] } = {}) {
     ['Que dados a nuvem guarda?', 'Só os seus saves, com o nome do jogo e do aparelho, ligados ao seu PIN. O Índigo não pede nome, e-mail nem documento, e os jogos nunca saem do seu aparelho. Quem não liga a nuvem não manda nada para a internet.'],
     ['O Windows avisou que o arquivo pode ser perigoso. E agora?', 'O Índigo ainda não tem assinatura digital, por isso o Windows desconfia de todo programa novo. Antes de extrair, clique com o botão direito no .zip, abra Propriedades e marque Desbloquear. Se aparecer “O Windows protegeu o computador”, clique em Mais informações e em Executar assim mesmo.'],
     ['Tem para iPhone ou Mac?', 'O app é para Windows, Linux (PC e Steam Deck) e Android. Em qualquer outro aparelho, use o emulador do navegador aqui do site, que roda Game Boy, Game Boy Color, GBA, Master System, Game Gear e Neo Geo Pocket.'],
-    ['Por que parar na geração do PlayStation?', 'Para fazer bem feito. O Índigo vai até a geração do PlayStation: o 3DO, de 1993, é da mesma época e chega na versão 2.2, como o último console novo. Depois disso, o tempo vai só para melhorar os que já estão lá: precisão, compatibilidade e velocidade.'],
+    ['Por que parar na geração do PlayStation?', 'Para fazer bem feito. O Índigo vai até a geração do PlayStation: o 3DO, de 1993, é da mesma época e chegou na versão 2.2 (ainda experimental), como o último console novo. Depois disso, o tempo vai só para melhorar os que já estão lá: precisão, compatibilidade e velocidade.'],
   ];
   const faqHtml = `<section class="l-sec" id="perguntas" aria-labelledby="faqTitle">
   <div class="l-wrap">
