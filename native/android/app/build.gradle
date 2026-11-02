@@ -29,6 +29,7 @@ android {
         release {
             minifyEnabled false
         }
+        // debug usa a chave de depuração do Android (o APK oficial é sempre o release, assinado no GitHub Actions)
         debug {
         }
     }

@@ -11,7 +11,7 @@
 //   GET    ?action=chunk&code=&part=     → bytes da parte
 //   DELETE ?code=                        apaga a transferência
 
-import { put, list, del } from '@vercel/blob';
+import { storageReady, listAll, putBlob, readBlob, delBlobs } from './_store.js';
 import { requirePin } from './_auth.js';
 
 const MAX_CHUNK = 3.5 * 1024 * 1024;
@@ -25,16 +25,7 @@ const fail = (message, status = 400) => json({ error: message }, status);
 const validCode = (c) => typeof c === 'string' && /^\d{6}$/.test(c);
 const prefixOf = (code) => `transfer/${code}/`;
 
-async function blobsOf(code) {
-  const out = [];
-  let cursor;
-  do {
-    const r = await list({ prefix: prefixOf(code), limit: 1000, cursor });
-    out.push(...r.blobs);
-    cursor = r.hasMore ? r.cursor : undefined;
-  } while (cursor);
-  return out;
-}
+const blobsOf = (code) => listAll(prefixOf(code));
 // nome da parte: part-007-<sufixo do Blob>.bin (o hífen evita que a parte 10 case com a 100)
 const partName = (n) => `part-${String(n).padStart(3, '0')}`;
 
@@ -45,21 +36,14 @@ async function cleanup() {
   let live = 0;
   try {
     const old = [];
-    let cursor;
-    do {
-      const r = await list({ prefix: 'transfer/', limit: 1000, cursor });
-      for (const b of r.blobs) {
-        if (Date.now() - new Date(b.uploadedAt).getTime() > TTL_MS) old.push(b.url); else live += b.size;
-      }
-      cursor = r.hasMore ? r.cursor : undefined;
-    } while (cursor);
-    for (let i = 0; i < old.length; i += 1000) await del(old.slice(i, i + 1000));
+    for (const b of await listAll('transfer/')) {
+      if (Date.now() - new Date(b.uploadedAt).getTime() > TTL_MS) old.push(b); else live += b.size;
+    }
+    if (old.length) await delBlobs(old);
   } catch { /* limpeza é oportunista */ }
   return live;
 }
 
-// conexão nova do Vercel usa OIDC (BLOB_STORE_ID); a antiga, uma chave de leitura/escrita
-function storageReady() { return !!(process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN); }
 
 export async function GET(request) {
   const url = new URL(request.url);
@@ -75,15 +59,13 @@ export async function GET(request) {
     const m = blobs.find(b => b.pathname.startsWith(`${prefixOf(code)}manifest`)); // o Vercel acrescenta um sufixo aleatório ao nome
     if (!m) return fail('Nada com esse código. Confira os números ou envie de novo.', 404);
     if (Date.now() - new Date(m.uploadedAt).getTime() > TTL_MS) return fail('Esse código expirou. Envie de novo.', 410);
-    const r = await fetch(m.url, { cache: 'no-store' });
-    return json(await r.json());
+    return json(JSON.parse(new TextDecoder().decode(await readBlob(m))));
   }
   if (action === 'chunk') {
     const part = Number(url.searchParams.get('part'));
     const b = blobs.find(x => x.pathname.startsWith(`${prefixOf(code)}${partName(part)}-`) || x.pathname === `${prefixOf(code)}${partName(part)}.bin`);
     if (!b) return fail('Parte da transferência não encontrada.', 404);
-    const r = await fetch(b.url, { cache: 'no-store' });
-    return new Response(await r.arrayBuffer(), {
+    return new Response(await readBlob(b), {
       headers: { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' },
     });
   }
@@ -112,9 +94,7 @@ export async function POST(request) {
     if (body.byteLength === 0 || body.byteLength > MAX_CHUNK) return fail('Parte com tamanho inválido.');
     // cada código guarda no máximo as suas partes e o manifesto
     if ((await blobsOf(code)).length > MAX_PARTS) return fail('Transferência grande demais.');
-    await put(`${prefixOf(code)}${partName(part)}.bin`, body, {
-      access: 'public', addRandomSuffix: true, contentType: 'application/octet-stream',
-    });
+    await putBlob(`${prefixOf(code)}${partName(part)}.bin`, body, { contentType: 'application/octet-stream' });
     return json({ ok: true });
   }
   if (action === 'finish') {
@@ -131,9 +111,7 @@ export async function POST(request) {
       counts: m.kind === 'shelf' && m.counts && typeof m.counts === 'object'
         ? { roms: Number(m.counts.roms) || 0, saves: Number(m.counts.saves) || 0, states: Number(m.counts.states) || 0 } : undefined,
     };
-    await put(`${prefixOf(code)}manifest.json`, JSON.stringify(manifest), {
-      access: 'public', addRandomSuffix: true, contentType: 'application/json',
-    });
+    await putBlob(`${prefixOf(code)}manifest.json`, JSON.stringify(manifest), { contentType: 'application/json' });
     return json({ ok: true, code });
   }
   return fail('Ação desconhecida.');
@@ -145,6 +123,6 @@ export async function DELETE(request) {
   const code = new URL(request.url).searchParams.get('code');
   if (!validCode(code)) return fail('Código inválido.');
   const blobs = await blobsOf(code);
-  if (blobs.length) await del(blobs.map(b => b.url));
+  if (blobs.length) await delBlobs(blobs);
   return json({ ok: true, removed: blobs.length });
 }
