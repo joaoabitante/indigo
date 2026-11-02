@@ -99,6 +99,9 @@ const mainBody = fs.readFileSync('web/template.html', 'utf8')
 fs.writeFileSync('dist/indigo.html', mainBody);
 fs.writeFileSync('dist/index.html', full(mainBody));
 fs.writeFileSync('dist/version.txt', BUILD);
+// descoberta por buscadores: só URLs deste host (a Vercel não serve nada que não esteja em dist/)
+fs.writeFileSync('dist/robots.txt', `User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: ${SITE_URL}/sitemap.xml\n`);
+fs.writeFileSync('dist/sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url>\n    <loc>${SITE_URL}/</loc>\n    <lastmod>${new Date().toISOString().slice(0, 10)}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>1.0</priority>\n  </url>\n</urlset>\n`);
 // CHANGELOG.md a partir do registro mostrado na página
 {
   const { CHANGELOG } = await import('../web/changelog.js');
