@@ -108,7 +108,9 @@ void King::reset(int64_t now) {
   adpcmControl_ = 0;
   for (int c = 0; c < 2; c++) { adpcmBufMode_[c] = adpcmSal_[c] = adpcmMid_[c] = adpcmStatus_[c] = 0; adpcmEnd_[c] = adpcmPlay_[c] = 0; }
   adpcmIrq_ = false;
-  rbCtrl_ = rbStart_ = rbBlocks_ = rasterLine_ = 0; rbKram_ = 0; rasterIrq_ = false;
+  rbCtrl_ = rbStart_ = rbBlocks_ = rasterLine_ = 0; rbKram_ = rbReadPos_ = 0; rasterIrq_ = false;
+  rbPending_ = false; rbBusy_ = rbLeft_ = 0;
+  rainbow.reset();
   reg01_ = reg02_ = reg03_ = 0;
   subCtrl_ = subBuf_ = dataCache_ = dmaLatch_ = 0;
   cdIrq_ = subIrq_ = dmaIrq_ = false;
@@ -395,7 +397,10 @@ void King::write16(int64_t now, uint32_t a, uint16_t v) {
     case 0x3C: regSet(affX_, v, msh); break;
     case 0x3D: regSet(affY_, v, msh); break;
     case 0x40:
-      if (!msh) { rbCtrl_ = v & 3; }
+      if (!msh) {
+        rbCtrl_ = v & 3;
+        if (!(v & 1)) rbLeft_ = 0;  // transferência desligada: os blocos que faltavam são esquecidos
+      }
       rasterIrq_ = false;
       redoIrq();
       break;
@@ -442,6 +447,29 @@ uint16_t King::adpcmHalfWord(int ch) {
 
 void King::rasterLine(int raster) {
   if (raster == rasterLine_ && (rbCtrl_ & 2)) { rasterIrq_ = true; redoIrq(); }
+}
+
+// O KING conta 16 linhas por bloco: no fim da contagem troca os buffers do RAINBOW e, se há blocos a mandar
+// (a partir da linha programada no registro 0x42), entrega o próximo. A faixa aparece 16 linhas depois.
+int King::rainbowLine(int raster, uint32_t* line) {
+  if (raster == rbStart_ && (rbCtrl_ & 1)) rbPending_ = true;
+  if (rbBusy_ && !--rbBusy_) rainbow.swapBuffers();
+  if (!rbBusy_) {
+    bool first = false;
+    if (!rbLeft_ && rbPending_) {
+      rbLeft_ = uint8_t(rbBlocks_);
+      if (rbLeft_) { rbReadPos_ = rbKram_ << 1; first = true; }
+    }
+    if (rbLeft_) {
+      rbLeft_--;
+      rbBusy_ = 16;
+      rainbow.decodeBlock(first, kram[(page_ & 0x1000) ? 1 : 0], rbReadPos_);
+    }
+  }
+  const uint32_t palOff = uint32_t(vce_.palOffset[3] & 0xFF) << 1;
+  const int f = rainbow.fetchRaster(line, vce_.yuv, palOff, uint32_t(L_RAINBOW) << 28);
+  rbPending_ = false;
+  return f;
 }
 
 void King::drawBgLine(int raster, uint32_t* line) {
@@ -643,13 +671,20 @@ void King::sync(StateIO& io) {
   io.raw(adpcmMid_, sizeof adpcmMid_); io.raw(adpcmStatus_, sizeof adpcmStatus_);
   io.raw(adpcmEnd_, sizeof adpcmEnd_); io.raw(adpcmPlay_, sizeof adpcmPlay_); io.sync(adpcmIrq_);
   io.sync(rbCtrl_); io.sync(rbStart_); io.sync(rbBlocks_); io.sync(rasterLine_); io.sync(rbKram_); io.sync(rasterIrq_);
+  io.sync(rbReadPos_); io.sync(rbPending_); io.sync(rbBusy_); io.sync(rbLeft_);
+  rainbow.sync(io);
   io.sync(reg01_); io.sync(reg02_); io.sync(reg03_);
   io.sync(subCtrl_); io.sync(subBuf_); io.sync(dataCache_); io.sync(dmaLatch_);
   io.sync(cdIrq_); io.sync(subIrq_); io.sync(dmaIrq_);
   io.sync(drq_); io.sync(dmaRecv_); io.sync(dmaSend_); io.sync(dmaFlip_);
   io.sync(dmaAddr_); io.sync(dmaSize_); io.sync(dmaStatus_);
   cd_.sync(io);
-  if (io.reading()) { mprogAddr_ &= 0xF; ar_ &= 0x7F; }
+  if (io.reading()) {
+    mprogAddr_ &= 0xF; ar_ &= 0x7F;
+    rbReadPos_ &= 0x7FFFF; rbKram_ &= 0x3FFFF; rbBlocks_ &= 0x1F; rbStart_ &= 0x1FF;
+    if (rbBusy_ > 16) rbBusy_ = 16;
+    if (rbLeft_ > 0x1F) rbLeft_ = 0x1F;
+  }
 }
 
 }  // namespace indigo::pcfx

@@ -1,6 +1,8 @@
 // Núcleo Atari 5200 (SuperSystem, 1982): CPU 6502C "Sally" (a mesma de nes/cpu.h, com modo decimal), ANTIC
 // (lista de exibição, modos 2–F, LMS, saltos, JVB, DLI, rolagem fina horizontal e vertical, DMA de jogadores e
-// mísseis, ciclos roubados da CPU, WSYNC, VCOUNT, NMI de DLI e de VBI), GTIA (jogadores e mísseis com tamanhos,
+// mísseis, WSYNC, VCOUNT, NMI de DLI e de VBI; a DMA anda ciclo a ciclo: nomes, desenhos dos caracteres,
+// bitmap, lista, jogadores/mísseis e refresh nos ciclos certos, e CHBASE, CHACTL, HSCROL, VSCROL e DMACTL
+// trocados no meio da linha valem dali em diante), GTIA (jogadores e mísseis com tamanhos,
 // prioridades pelas equações do chip, quinto jogador, cores múltiplas, colisões, modos GTIA de 16 tons, 9 cores
 // e 16 matizes, gatilhos) e o POKEY comum com o 7800 (src/atari/pokey.h: som, temporizadores, teclado do
 // controle e potenciômetros do joystick analógico).
@@ -81,6 +83,8 @@ public:
   void setKeys(uint32_t mask);
   // entrada direta (testes): potenciômetros do controle 1, gatilhos e teclado
   void setInput(uint8_t potX, uint8_t potY, bool trig, bool shift, int key);
+  // avança n ciclos com a CPU parada (testes: põe o relógio num ciclo exato antes de um poke)
+  void runCycles(int n);
   void setSampleRate(int rate);
   size_t audioAvailable() const { return (wpos + kBuf - rpos) % kBuf; }
   void pullAudio(float* l, float* r, size_t n);
@@ -98,6 +102,7 @@ public:
   uint64_t cpuCycles = 0;      // ciclos usados pela CPU
   int stolenLast = 0;          // ciclos roubados na última linha completa
   uint8_t stolenLine[262] = {};  // ciclos roubados em cada linha do último quadro
+  uint8_t stolenAt[262][114] = {};  // mapa dos ciclos roubados (1 = do ANTIC) em cada linha do último quadro
   static uint32_t color(uint8_t c);  // cor do GTIA na paleta (0xAABBGGRR)
   int line = 0, cyc = 0;
 
@@ -115,9 +120,13 @@ private:
   // ANTIC
   uint8_t anticRead(int r);
   void anticWrite(int r, uint8_t v);
-  void anticLine();
-  void buildLine(int fetchW, int x0);
-  void stealRange(int from, int count, int step);
+  void anticCycle();              // o que o ANTIC faz no ciclo que começa (cyc)
+  void pmDma(int n);              // n = -1: mísseis; 0–3: jogador n
+  void dlFetch();                 // ciclo 1: instrução da lista (e endereço nos ciclos 6 e 7)
+  void pfCycle(int c);            // DMA do playfield neste ciclo
+  void emitByte(int i, int x);    // pontos do byte i da linha de modo, a partir do ponto de cor x
+  int lastRow() const;            // última linha da linha de modo (com o VSCROL de agora)
+  void endModeRow();              // fim da linha da TV: fim da linha de modo?
   // GTIA
   uint8_t gtiaRead(int r);
   void gtiaWrite(int r, uint8_t v);
@@ -142,7 +151,9 @@ private:
   uint8_t ir = 0;          // instrução atual da lista
   uint8_t dctr = 0;        // linha dentro da linha de modo
   bool needIr = true, prevVs = false, jvb = false, firstRow = true;
-  uint8_t blankLeft = 0;   // linhas em branco que faltam
+  bool dlActive = false;   // esta linha segue uma instrução da lista (DMA da lista ligada no ciclo 1)
+  bool refPending = false; // refresh esperando um ciclo livre (só cabe um)
+  uint8_t fetched = 0;     // bytes de nome/bitmap já buscados nesta linha de modo
   uint8_t names[64] = {};  // códigos de caractere (ou bytes de gráfico) da linha de modo
   // saída do ANTIC para a linha: por ponto de cor, 0 = fundo, 1–4 = PF0–PF3, 5 = alta resolução (PF2 com os
   // meios pontos de hr acesos em PF1)
@@ -155,6 +166,9 @@ private:
   uint8_t mpf[4] = {}, ppf[4] = {}, mpl[4] = {}, ppl[4] = {};
   uint8_t trigLatch = 0;   // bits 0–3: gatilho travado (GRACTL bit 2)
   int rendered = 0;        // pontos de cor já desenhados na linha atual
+  // ponto de cor em que a imagem de cada jogador/míssil começou nesta linha (-1 = nenhuma): o GTIA dispara o
+  // registrador de deslocamento quando o contador passa por HPOS, e a imagem sai inteira mesmo se HPOS mudar
+  int16_t pTrig[4] = {-1, -1, -1, -1}, mTrig[4] = {-1, -1, -1, -1};
 
   // controles
   uint8_t trig = 0;        // bit 0..3 = gatilho apertado

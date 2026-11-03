@@ -112,7 +112,10 @@ void Pcfx::reset() {
   std::fill(ram.begin(), ram.end(), 0);
   irqAsserted_ = 0; irqMask_ = 0xFFFF; irqPrio_[0] = irqPrio_[1] = 0;
   tmrCtrl_ = tmrPeriod_ = 0; tmrCounter_ = 0; tmrLast_ = ts;
-  for (int i = 0; i < 2; i++) { padCtrl_[i] = 0; padLatched_[i] = false; padLatchAt_[i] = NEVER; padData_[i] = 0; }
+  for (int i = 0; i < 2; i++) {
+    padCtrl_[i] = 0; padLatched_[i] = false; padLatchAt_[i] = NEVER; padData_[i] = 0;
+    mouseX_[i] = mouseY_[i] = 0; mouseBtn_[i] = 0;
+  }
   backupCtrl_ = 0; lastVdcAr_[0] = lastVdcAr_[1] = 0; exBusReset_ = 0; ramPage_ = 0;
   // o HuC6261 e os VDCs começam juntos: a linha 0 do VDC é a linha 3 do HuC6261
   for (int i = 0; i < 2; i++) { vdc[i].power(); vdc[i].fixTime(ts); }
@@ -191,7 +194,16 @@ void Pcfx::padUpdate(int64_t t) {
   for (int i = 0; i < 2; i++)
     if (padLatchAt_[i] <= t) {
       padLatchAt_[i] = NEVER;
-      padData_[i] = pad_[i] | (0xFu << 28);  // 0xF = controle comum
+      if (mouseOn_[i]) {
+        // mouse (identificação 0xD): botões nos bits 16-17 e o movimento desde a última leitura, X nos bits 8-15 e
+        // Y nos 0-7, cada um de -127 a 127 (o que passar fica para a próxima)
+        const int32_t rx = std::clamp(mouseX_[i], -127, 127), ry = std::clamp(mouseY_[i], -127, 127);
+        mouseX_[i] -= rx;
+        mouseY_[i] -= ry;
+        padData_[i] = (0xDu << 28) | uint32_t(mouseBtn_[i] & 3) << 16 | uint32_t(rx & 0xFF) << 8 | uint32_t(ry & 0xFF);
+      } else {
+        padData_[i] = pad_[i] | (0xFu << 28);  // 0xF = controle comum
+      }
       padLatched_[i] = true;
       padCtrl_[i] &= ~1;
       irqAssert(SRC_INPUT, true);
@@ -220,6 +232,15 @@ void Pcfx::padWrite16(uint32_t a, uint16_t v) {
     if ((v & 1) && !(padCtrl_[w] & 1)) padLatchAt_[w] = ts + 1536;
     padCtrl_[w] = v & 7;
   }
+}
+
+void Pcfx::setMouse(int port, int dx, int dy, uint8_t buttons) {
+  port &= 1;
+  if (!mouseOn_[port] && !dx && !dy && !buttons) return;  // o mouse só entra na porta quando é usado
+  mouseOn_[port] = true;
+  mouseX_[port] = std::clamp(mouseX_[port] + dx, -32768, 32767);
+  mouseY_[port] = std::clamp(mouseY_[port] + dy, -32768, 32767);
+  mouseBtn_[port] = buttons & 3;
 }
 
 // ------------------------------------------------------------------ VDCs
@@ -289,7 +310,11 @@ void Pcfx::runLine(int64_t t) {
 void Pcfx::activeStart() {
   vdcVce.div = (vce.pictureMode & 8) ? 3 : 4;
   const int r = vce.raster;
-  if (r < 22 || r >= 262) return;
+  if (r >= 262) return;
+  // o RAINBOW anda em todas as linhas (também no apagamento vertical): troca de faixa e descompressão
+  rbType_ = int8_t(king.rainbowLine(r, rbLine_));
+  if (r < 22) return;
+  if (rbType_ == 1 && !(vce.pictureMode & 8)) chromaKey();
   lc_.pictureMode = vce.pictureMode;
   lc_.priority[0] = vce.priority[0]; lc_.priority[1] = vce.priority[1];
   std::memcpy(lc_.palOffset, vce.palOffset, sizeof lc_.palOffset);
@@ -328,12 +353,30 @@ void Pcfx::frameDone(int idx) {
   frameReady_ = true;
 }
 
+// chroma key do HuC6261 sobre o plano YUV do RAINBOW (só a 5,37 MHz): pontos dentro das faixas Y/U/V (mínimo no
+// byte de baixo, máximo no de cima) ficam transparentes; com as três chaves em zero, só o preto absoluto (0,0,0)
+void Pcfx::chromaKey() {
+  const uint32_t ky = vce.chromaY, ku = vce.chromaU, kv = vce.chromaV;
+  const uint32_t ymin = ky & 0xFF, ymax = ky >> 8, umin = ku & 0xFF, umax = ku >> 8, vmin = kv & 0xFF, vmax = kv >> 8;
+  if (!(ky | ku | kv)) {
+    for (auto& p : rbLine_) if (!(p & 0xFFFFFF)) p = 0;
+  } else if (ymin <= ymax && umin <= umax && vmin <= vmax) {
+    for (auto& p : rbLine_) {
+      const uint32_t y = (p >> 16) & 0xFF, u = (p >> 8) & 0xFF, v = p & 0xFF;
+      if (y >= ymin && y <= ymax && u >= umin && u <= umax && v >= vmin && v <= vmax) p = 0;
+    }
+  }
+}
+
 // mistura uma linha: VDC (os dois chips), fundos do KING e RAINBOW, com prioridades e celofane
 void Pcfx::mixLine(int raster) {
   const LineCache& c = lc_;
   const bool hi = c.pictureMode & 8;
   const int vw = hi ? 342 : 256;
-  const int x0 = hi ? 72 : 48;  // primeiro ponto visível do VDC contado do hsync (HDS = 2 alinha com o KING)
+  // primeiro ponto do VDC que cai no começo da imagem do HuC6261, contado do começo da linha do VDC. Pelo tempo do
+  // HSYNC (fim aos 213 ciclos a 5,37 MHz e aos 203 a 7,16 MHz; imagem aos 341), o VDC aparece em
+  // (HDS+1)*8 - 24 pontos a 5,37 MHz e em (HDS+1)*8 - 38 a 7,16 MHz (como no Mednafen)
+  const int x0 = hi ? 70 : 48;
   uint32_t vdcRaw[342], vdcYuv[342];
   const uint32_t poff[2] = {uint32_t(c.palOffset[0] & 0xFF) << 1, uint32_t((c.palOffset[0] >> 8) & 0xFF) << 1};
   const bool anyVdc = c.layerPrio[L_VDC_BG] || c.layerPrio[L_VDC_SPR];
@@ -374,12 +417,13 @@ void Pcfx::mixLine(int raster) {
   if (mode == 2) bpc = uint32_t(c.ccr & 0xFF00) << 8 | uint32_t(c.ccr & 0xF0) << 8 | uint32_t(c.ccr & 0x0F) << 4;
   const int w = hi ? 341 : 256;
   const auto& pm = prioMap();
+  const bool rbOn = rbType_ >= 0;  // sem faixa do RAINBOW nesta linha, a camada fica desligada
   uint32_t* out = lineOut_[raster - 22];
   lineW_[raster - 22] = uint16_t(w);
   for (int x = 0; x < w; x++) {
     const int xb = hi ? x * 256 / 341 : x;
-    const uint32_t lay[3] = {vdcYuv[x], bgLine_[8 + xb], 0u};
-    const uint8_t pr[3] = {c.layerPrio[lay[0] >> 28], c.layerPrio[lay[1] >> 28], 0};
+    const uint32_t lay[3] = {vdcYuv[x], bgLine_[8 + xb], rbLine_[xb]};
+    const uint8_t pr[3] = {c.layerPrio[lay[0] >> 28], c.layerPrio[lay[1] >> 28], rbOn ? c.layerPrio[lay[2] >> 28] : uint8_t(0)};
     uint32_t px[4] = {0, 0, 0, 0};
     for (int k = 0; k < 3; k++) px[pm.m[pr[0]][pr[1]][pr[2]][k]] = lay[k];
     uint32_t z = bpc;
@@ -561,7 +605,7 @@ uint16_t Pcfx::portRead16(uint32_t a) {
 void Pcfx::portWrite8(uint32_t a, uint8_t v) {
   if (a <= 0x0FF) { padWrite16(a, v); return; }
   if (a <= 0x1FF) { ts += 2; sound.write(ts, a, v); irqAssert(SRC_KING, king.irq()); return; }
-  if (a <= 0x2FF) { ts += 2; return; }  // RAINBOW (HuC6271): ainda não emulado
+  if (a <= 0x2FF) { ts += 2; king.rainbow.write8(a, v); return; }  // RAINBOW (HuC6271)
   if (a <= 0x3FF) { ts += 2; runLine(ts); vce.write16(a, v); return; }
   if (a <= 0x5FF) { ts += 2; vdcWrite16((a >> 8) & 1, a, v); return; }
   if (a <= 0x6FF) {
@@ -578,7 +622,7 @@ void Pcfx::portWrite8(uint32_t a, uint8_t v) {
 void Pcfx::portWrite16(uint32_t a, uint16_t v) {
   if (a <= 0x0FF) { padWrite16(a, v); return; }
   if (a <= 0x1FF) { ts += 2; sound.write(ts, a, v); irqAssert(SRC_KING, king.irq()); return; }
-  if (a <= 0x2FF) { ts += 2; return; }
+  if (a <= 0x2FF) { ts += 2; king.rainbow.write16(a, v); return; }
   if (a <= 0x3FF) { ts += 2; runLine(ts); vce.write16(a, v); return; }
   if (a <= 0x5FF) { ts += 2; vdcWrite16((a >> 8) & 1, a, v); return; }
   if (a <= 0x6FF) { ts += 2; king.write16(ts, a, v); irqAssert(SRC_KING, king.irq()); return; }
@@ -647,11 +691,14 @@ void Pcfx::sync(StateIO& io) {
   io.sync(tmrCtrl_); io.sync(tmrPeriod_); io.sync(tmrCounter_); io.sync(tmrLast_);
   io.raw(padCtrl_, sizeof padCtrl_); io.sync(padLatched_[0]); io.sync(padLatched_[1]);
   io.raw(padLatchAt_, sizeof padLatchAt_); io.raw(padData_, sizeof padData_);
+  io.sync(mouseOn_[0]); io.sync(mouseOn_[1]); io.raw(mouseX_, sizeof mouseX_); io.raw(mouseY_, sizeof mouseY_);
+  io.raw(mouseBtn_, sizeof mouseBtn_);
   io.sync(backupCtrl_); io.raw(lastVdcAr_, sizeof lastVdcAr_); io.sync(exBusReset_); io.sync(ramPage_);
   io.sync(lineBase_); io.sync(nextLineEvt_); io.sync(lineEvt_); io.sync(lines_);
   io.sync(vdcIrq_[0]); io.sync(vdcIrq_[1]);
   io.raw(&lc_, sizeof lc_);
   io.raw(bgLine_, sizeof bgLine_);
+  io.raw(rbLine_, sizeof rbLine_); io.sync(rbType_);
   io.raw(vdcRow_, sizeof vdcRow_);
   io.raw(rowDone_, sizeof rowDone_);
   io.sync(frames);
@@ -668,6 +715,12 @@ void Pcfx::sync(StateIO& io) {
     if (lines_ != 262 && lines_ != 263) lines_ = 263;
     if (vce.raster >= lines_) vce.raster = 0;
     if (lineEvt_ > 2) lineEvt_ = 0;
+    if (rbType_ < -1 || rbType_ > 1) rbType_ = -1;
+    for (int i = 0; i < 2; i++) {
+      mouseX_[i] = std::clamp(mouseX_[i], -32768, 32767);
+      mouseY_[i] = std::clamp(mouseY_[i], -32768, 32767);
+      mouseBtn_[i] &= 3;
+    }
     for (auto& p : lc_.layerPrio) p &= 7;
     for (int i = 0; i < 2; i++) { if (rowDone_[i] < -1 || rowDone_[i] > 300) rowDone_[i] = -1; vdc[i].fixTime(ts); }
     irqUpdate();
@@ -724,7 +777,7 @@ PcfxCore::PcfxCore(std::unique_ptr<cdrom::Disc> disc, const std::vector<uint8_t>
     }
   }
   const bool testBios = std::search(b.begin(), b.end(), "Indigo PC-FX", "Indigo PC-FX" + 12) != b.end();
-  note_ = testBios ? " · BIOS de teste do Índigo" : " · PC-FX experimental (sem o vídeo comprimido RAINBOW)";
+  note_ = testBios ? " · BIOS de teste do Índigo" : " · PC-FX experimental";
 }
 
 void PcfxCore::setKeys(uint32_t k) {
@@ -743,6 +796,9 @@ void PcfxCore::setKeys(uint32_t k) {
   if (k & KEY_LEFT) p |= 1 << 11;
   sys_->setPad(0, p);
 }
+
+// mouse do PC: vai para a porta 2 (a 1 continua com o controle do teclado/joystick)
+void PcfxCore::setMouse(int dx, int dy, uint32_t buttons) { sys_->setMouse(1, dx, dy, uint8_t(buttons & 3)); }
 
 void PcfxCore::importSave(const std::vector<uint8_t>& b) {
   if (b.size() == 0x10000 || b.size() == 0x8000) {

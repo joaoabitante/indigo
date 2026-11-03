@@ -1,7 +1,9 @@
 // Processadores RISC do Atari Jaguar: o GPU (dentro do Tom, 4 KB de RAM local em 0xF03000) e o DSP (dentro do
 // Jerry, 8 KB em 0xF1B000). Os dois têm o mesmo conjunto de 64 instruções de 16 bits (com poucas diferenças),
 // 32 registros em dois bancos, bandeiras Z/C/N, desvios com uma instrução de atraso e 5 (GPU) ou 6 (DSP)
-// interrupções. Cada instrução conta 1 ciclo (DIV e MMULT contam mais); a fila (pipeline) não é imitada.
+// interrupções. Tempo: 1 ciclo por instrução na RAM local; busca e acesso fora dela custam mais (barramento
+// principal, que espera o Blitter e o Object Processor); LOAD de fora e DIV usam o placar (scoreboard): a
+// instrução seguinte continua e só espera se usar o registro que ainda não chegou; desvio tomado esvazia a fila.
 #pragma once
 #include <cstdint>
 #include <vector>
@@ -39,9 +41,11 @@ public:
   }
 
   void sync(StateIO& io);
+  void rebase(int64_t lo, int64_t hi);  // prende o relógio entre lo e hi (estado carregado), levando o placar junto
 
   const bool dsp;
   int64_t clk = 0;
+  uint64_t stalls = 0;  // ciclos parados pelo placar (diagnóstico/testes)
   uint32_t r[64] = {};  // banco 0 = r[0..31], banco 1 = r[32..63]
   uint32_t pc = 0;
   uint32_t flags = 0;   // bits fora de Z/C/N (habilitações, IMASK, REGPAGE)
@@ -71,7 +75,16 @@ private:
 
   Jaguar& j_;
   int bank_ = 0;
-  int extra_ = 0;  // ciclos a mais da instrução atual
+  int64_t extra_ = 0;  // ciclos a mais da instrução atual (64 bits: a espera do barramento pode ser longa)
+  int extLat_ = 0;  // atraso do último LOAD de fora (placar)
+  int64_t ready_[64] = {};  // quando cada registro fica pronto (placar)
+  int64_t divFree_ = 0;     // quando a unidade de divisão fica livre
+  int64_t hiReady_ = 0;     // quando o HIDATA do LOADP chega (GPU)
+  uint16_t scoreOp_ = 0;    // instrução que marca o placar no fim (a de atraso, se o desvio foi tomado)
+  int scoreBank_ = 0;
+  int extLatency(uint32_t a, bool write32);
+  void waitBus(uint32_t a);
+  void waitRegs(uint16_t op);
   bool inDelay_ = false;  // rodando a instrução de atraso de um desvio
 };
 

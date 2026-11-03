@@ -206,9 +206,13 @@ static void testCpuRuler(const std::string& dir) {
 // ================================================================================================ utilidades
 
 namespace {
-// BIOS mínima montada aqui mesmo (palavras do ARM em big-endian a partir de 0x03000000)
-std::vector<uint8_t> biosFrom(const std::vector<uint32_t>& words) {
+// BIOS mínima montada aqui mesmo (palavras do ARM em big-endian). A CPU parte do endereço 0, onde a ROM aparece
+// por cima da DRAM: as duas primeiras palavras ("ldr pc, [pc, #-4]" e 0x03000008) pulam para o programa, que fica
+// a partir de 0x03000008.
+std::vector<uint8_t> biosFrom(const std::vector<uint32_t>& prog) {
   std::vector<uint8_t> b(0x100000, 0);
+  std::vector<uint32_t> words = {0xE51FF004, 0x03000008};
+  words.insert(words.end(), prog.begin(), prog.end());
   for (size_t i = 0; i < words.size(); i++) {
     b[i * 4] = uint8_t(words[i] >> 24); b[i * 4 + 1] = uint8_t(words[i] >> 16);
     b[i * 4 + 2] = uint8_t(words[i] >> 8); b[i * 4 + 3] = uint8_t(words[i]);
@@ -223,6 +227,11 @@ uint32_t branch(uint32_t from, uint32_t to, bool link = false) {
 const std::vector<uint8_t>& idleBios() {
   static const std::vector<uint8_t> b = biosFrom({0xEAFFFFFE});  // B .
   return b;
+}
+// o que a BIOS faz antes de tudo: 2 MB de DRAM + 1 MB de VRAM e a ROM fora de cima da DRAM
+void ready(System& s) {
+  s.write32(0x03300004, 0x29);
+  s.write32(0, 0);
 }
 
 // disco Opera sintético na memória: rótulo, diretório raiz com LaunchMe e DADOS.BIN, e uma faixa de áudio
@@ -304,15 +313,16 @@ void putCel(System& s, uint32_t a, const Cel& c) {
   for (int i = 0; i < 15; i++) w32(s, a + uint32_t(i) * 4, w[i]);
 }
 void celSetup(System& s) {
-  w32(s, 0x03300130, 320);
+  ready(s);
+  w32(s, 0x03300130, 0x1414);  // quadros lido e escrito de 320 pixels
   w32(s, 0x03300134, (239u << 16) | 319);
   w32(s, 0x03300138, 0x200000);
   w32(s, 0x0330013C, 0x200000);
 }
-void draw(System& s, uint32_t ccb) { w32(s, 0x033005A0, ccb); w32(s, 0x03300100, 1); }
-// PRE0/PRE1 de uma cel não compactada
+void draw(System& s, uint32_t ccb) { w32(s, 0x033005A4, ccb); w32(s, 0x03300100, 1); }
+// PRE0/PRE1 de uma cel não compactada (WOFFSET10 nos bits 16-25 nas de 8 e 16 bits, WOFFSET8 nos bits 24-31)
 uint32_t pre0(int bppCode, bool linear, int h) { return uint32_t(bppCode) | (linear ? 0x10 : 0) | uint32_t(h - 1) << 6; }
-uint32_t pre1(int w, uint32_t woff) { return uint32_t(w - 1) | woff << 16; }
+uint32_t pre1(int bppCode, int w, uint32_t woff) { return uint32_t(w - 1) | (bppCode >= 5 ? woff << 16 : woff << 24); }
 }  // namespace
 
 // ================================================================================================ CPU: casos dirigidos
@@ -323,18 +333,22 @@ static void testCpuDirected() {
   {
     System s(biosFrom({0xE1D000B0, 0xEAFFFFFE}), nullptr);
     s.cpu.step();
-    CHECK((s.cpu.cpsr & 0x1F) == 0x1B && s.cpu.r[15] == 4 && s.cpu.r[14] == 0x03000004, "LDRH: indefinida (modo %02X pc %08X lr %08X)", s.cpu.cpsr & 0x1F, s.cpu.r[15], s.cpu.r[14]);
+    CHECK(s.cpu.r[15] == 0x03000008 && s.overlay(), "partida no endereço 0 com a ROM por cima (pc %08X)", s.cpu.r[15]);
+    s.cpu.step();
+    CHECK((s.cpu.cpsr & 0x1F) == 0x1B && s.cpu.r[15] == 4 && s.cpu.r[14] == 0x0300000C, "LDRH: indefinida (modo %02X pc %08X lr %08X)", s.cpu.cpsr & 0x1F, s.cpu.r[15], s.cpu.r[14]);
     System u(biosFrom({0xE0810392}), nullptr);
-    u.cpu.step();
+    u.cpu.step(); u.cpu.step();
     CHECK((u.cpu.cpsr & 0x1F) == 0x1B && u.cpu.undefinedCount == 1, "UMULL: indefinida");
     System c(biosFrom({0xEE010F10}), nullptr);  // MCR p15: sem coprocessador
-    c.cpu.step();
+    c.cpu.step(); c.cpu.step();
     CHECK((c.cpu.cpsr & 0x1F) == 0x1B, "MCR: indefinida");
   }
   // big-endian: STR de uma palavra e LDRB dos 4 bytes; LDR desalinhado gira a palavra
   {
     // r0 = 0x1000; r1 = [pool]; str r1,[r0]; ldrb r2,[r0]; ldrb r3,[r0,#3]; ldr r4,[r0,#1]; b .
     System s(biosFrom({0xE3A00A01, 0xE59F1014, 0xE5801000, 0xE5D02000, 0xE5D03003, 0xE5904001, 0xEAFFFFFE, 0, 0x11223344}), nullptr);
+    s.cpu.step();
+    ready(s);
     for (int i = 0; i < 7; i++) s.cpu.step();
     CHECK(s.mem[0x1000] == 0x11 && s.mem[0x1003] == 0x44, "big-endian: bytes na memória %02X..%02X", s.mem[0x1000], s.mem[0x1003]);
     CHECK(s.cpu.r[2] == 0x11 && s.cpu.r[3] == 0x44, "LDRB big-endian: %X %X", s.cpu.r[2], s.cpu.r[3]);
@@ -343,19 +357,20 @@ static void testCpuDirected() {
   // SWI: modo supervisor, vetor 0x08, LR = próxima instrução, SPSR = CPSR anterior
   {
     System s(biosFrom({0xE321F010, 0xEF000042}), nullptr);  // MSR CPSR_c, #0x10 (usuário); SWI
-    s.cpu.step(); s.cpu.step();
-    CHECK((s.cpu.cpsr & 0x1F) == 0x13 && s.cpu.r[15] == 8 && s.cpu.r[14] == 0x03000008 && (s.cpu.spsr() & 0x1F) == 0x10, "SWI");
+    s.cpu.step(); s.cpu.step(); s.cpu.step();
+    CHECK((s.cpu.cpsr & 0x1F) == 0x13 && s.cpu.r[15] == 8 && s.cpu.r[14] == 0x03000010 && (s.cpu.spsr() & 0x1F) == 0x10, "SWI");
   }
   // usuário não troca de modo com MSR
   {
     System s(biosFrom({0xE321F010, 0xE321F013}), nullptr);
-    s.cpu.step(); s.cpu.step();
+    s.cpu.step(); s.cpu.step(); s.cpu.step();
     CHECK((s.cpu.cpsr & 0x1F) == 0x10, "MSR no modo de usuário trocou o modo");
   }
   // FIQ do CLIO: o timer 1 estoura e a CPU entra no vetor 0x1C com os registradores r8-r14 próprios
   {
     // BIOS: r8 = 7; vetor FIQ (na DRAM) = "mov r8, #0x55; b ."; liga a máscara do timer 1 e libera a FIQ
     std::vector<uint32_t> code = {
+        0xE5800000,              // str r0, [r0]: a 1ª escrita na DRAM só tira a ROM de cima
         0xE3A08007,              // mov r8, #7
         0xE59F0020,              // ldr r0, =0x1C
         0xE59F1020,              // ldr r1, = instrução "mov r8,#0x55"
@@ -369,6 +384,7 @@ static void testCpuDirected() {
         0xEAFFFFFE,              // b .
         0x0000001C, 0xE3A08055, 0xEAFFFFFE, 0x03400048};
     System s(biosFrom(code), nullptr);
+    s.clioWrite(0x0220, 0);         // SLACK 0: um passo a cada 32 ciclos da CPU
     s.clioWrite(0x0108, 2);         // timer 1: contador
     s.clioWrite(0x010C, 2);         // recarga
     s.clioWrite(0x0200, 0x3u << 4); // timer 1 conta e recarrega
@@ -377,6 +393,24 @@ static void testCpuDirected() {
     s.cpu.setMode(0x13);
     CHECK(s.cpu.r[8] == 7, "FIQ: r8 do supervisor preservado (%X)", s.cpu.r[8]);
     CHECK(s.pending0() & (1u << 10), "pendência do timer 1");
+    CHECK(!s.overlay() && s.mem[0x1C] == 0xE3, "a 1ª escrita na DRAM tira a ROM de cima (e as seguintes gravam)");
+  }
+  // mapa da memória pelo MSYSBITS: na partida (0x51) cada conjunto de DRAM tem 4 MB declarados e só 1 MB de
+  // verdade (repete) e a VRAM fica depois dos 8 MB; com 0x29, 1 + 1 MB de DRAM e a VRAM em 2 MB
+  {
+    System s(idleBios(), nullptr);
+    CHECK(s.read32(0) == 0xE51FF004 && s.madam.read(0) == 0x01020200 && s.read32(0x03300004) == 0x51, "ROM por cima da DRAM e MSYSBITS da partida");
+    s.write32(0x100, 1);  // tira a ROM (não grava)
+    CHECK(s.mem[0x103] == 0, "a escrita que tira a ROM não grava");
+    s.write32(0x100, 0x11111111);
+    s.write32(0x400100, 0x22222222);
+    s.write32(0x800100, 0x33333333);
+    CHECK(s.read32(0x100100) == 0x11111111 && s.read32(0x400100) == 0x22222222 && s.mem[0x100100 + 3] == 0x22 &&
+          s.mem[0x200103] == 0x33 && s.read32(0x900000) == 0, "0x51: DRAM de 1 MB repetida em 4 MB e VRAM em 8 MB");
+    s.write32(0x03300004, 0x29);
+    s.write32(0x1FFFFC, 0xAABBCCDD);
+    s.write32(0x200000, 0x01020304);
+    CHECK(s.mem[0x1FFFFC] == 0xAA && s.mem[0x200003] == 0x04 && s.read32(0x300000) == 0, "0x29: 2 MB de DRAM e a VRAM em 2 MB");
   }
 }
 
@@ -394,7 +428,7 @@ static void testCels() {
     for (int r = 0; r < 3; r++) for (int c = 0; c < 4; c++) img[r][c] = uint16_t(0x0421 * (r * 4 + c + 1));
     img[1][2] = 0;
     for (int r = 0; r < 3; r++) for (int c = 0; c < 4; c++) s.madam.w16(src + uint32_t(r) * 8 + uint32_t(c) * 2, img[r][c]);
-    Cel c; c.src = src; c.x = 10 << 16; c.y = 20 << 16; c.pre0 = pre0(6, true, 3); c.pre1 = pre1(4, 0);
+    Cel c; c.src = src; c.x = 10 << 16; c.y = 20 << 16; c.pre0 = pre0(6, true, 3); c.pre1 = pre1(6, 4, 0);
     putCel(s, 0x8000, c);
     draw(s, 0x8000);
     bool ok = true;
@@ -415,7 +449,7 @@ static void testCels() {
     // 8x2 pixels de 4 bits = 1 palavra por linha (woffset10 = 0 -> 2 palavras por linha)
     w32(s, 0x10000, 0x01234567); w32(s, 0x10004, 0); w32(s, 0x10008, 0x89ABCDEF); w32(s, 0x1000C, 0);
     Cel c; c.flags |= F::LDPLUT; c.src = 0x10000; c.plut = 0x9000; c.x = 100 << 16; c.y = 50 << 16;
-    c.pre0 = pre0(3, false, 2); c.pre1 = pre1(8, 0);
+    c.pre0 = pre0(3, false, 2); c.pre1 = pre1(3, 8, 0);
     putCel(s, 0x8000, c);
     draw(s, 0x8000);
     bool ok = true;
@@ -434,7 +468,7 @@ static void testCels() {
     for (int i = 0; i < 32; i++) s.madam.w16(0x9000 + uint32_t(i) * 2, uint16_t(0x0400 * (i & 31) + 1));
     // bits: offset(10) | 01 000010 | p p p (8 bits) | 10 000001 | 11 000011 | p | 00 000000
     struct BW { std::vector<uint8_t> bits; void put(uint32_t v, int n) { for (int i = n - 1; i >= 0; i--) bits.push_back((v >> i) & 1); } } bw;
-    bw.put(4, 10);              // próxima linha a 6 palavras
+    bw.put(4, 16);              // próxima linha a 6 palavras (8 e 16 bits: 10 bits num campo de 16)
     bw.put(1, 2); bw.put(2, 6); bw.put(3, 8); bw.put(4, 8); bw.put(5, 8);
     bw.put(2, 2); bw.put(1, 6);
     bw.put(3, 2); bw.put(3, 6); bw.put(9, 8);
@@ -462,7 +496,7 @@ static void testCels() {
       const uint16_t v[4] = {0x7C00, 0x03E0, 0x001F, 0x7FFF};
       for (int i = 0; i < 4; i++) s.madam.w16(0x10000 + uint32_t(i / 2) * 8 + uint32_t(i % 2) * 2, v[i]);
       Cel c; c.flags = flags; c.src = 0x10000; c.x = x0 << 16; c.y = y0 << 16; c.hdx = hdx; c.hdy = hdy; c.vdx = vdx; c.vdy = vdy;
-      c.pre0 = pre0(6, true, 2); c.pre1 = pre1(2, 0);
+      c.pre0 = pre0(6, true, 2); c.pre1 = pre1(6, 2, 0);
       putCel(s, 0x8000, c);
       draw(s, 0x8000);
     };
@@ -485,7 +519,7 @@ static void testCels() {
     fillVram(s, uint16_t(20 << 10 | 10 << 5 | 30));
     celSetup(s);
     s.madam.w16(0x10000, uint16_t(10 << 10 | 30 << 5 | 4));
-    Cel c; c.src = 0x10000; c.x = 5 << 16; c.y = 5 << 16; c.pre0 = pre0(6, true, 1); c.pre1 = pre1(1, 0);
+    Cel c; c.src = 0x10000; c.x = 5 << 16; c.y = 5 << 16; c.pre0 = pre0(6, true, 1); c.pre1 = pre1(6, 1, 0);
     c.pixc = 0x01810181;
     putCel(s, 0x8000, c);
     draw(s, 0x8000);
@@ -499,7 +533,7 @@ static void testCels() {
     celSetup(s);
     w32(s, 0x03300134, (9u << 16) | 9);
     for (int i = 0; i < 100; i++) s.madam.w16(0x10000 + uint32_t(i) * 2, 0x7FFF);
-    Cel c; c.src = 0x10000; c.x = 5 << 16; c.y = 5 << 16; c.pre0 = pre0(6, true, 10); c.pre1 = pre1(10, 3);
+    Cel c; c.src = 0x10000; c.x = 5 << 16; c.y = 5 << 16; c.pre0 = pre0(6, true, 10); c.pre1 = pre1(6, 10, 3);
     putCel(s, 0x8000, c);
     draw(s, 0x8000);
     CHECK(pix(s, 9, 9) == 0x7FFF && pix(s, 10, 9) == 0 && pix(s, 9, 10) == 0 && pix(s, 5, 5) == 0x7FFF, "recorte em 9,9");
@@ -510,7 +544,7 @@ static void testCels() {
     fillVram(s, 0);
     celSetup(s);
     for (int i = 0; i < 8 * 8; i++) s.madam.w16(0x10000 + uint32_t(i) * 2, 0x7FFF);
-    Cel c; c.src = 0x10000; c.x = 0; c.y = 100 << 16; c.hddx = 1 << 18; c.pre0 = pre0(6, true, 8); c.pre1 = pre1(8, 2);
+    Cel c; c.src = 0x10000; c.x = 0; c.y = 100 << 16; c.hddx = 1 << 18; c.pre0 = pre0(6, true, 8); c.pre1 = pre1(6, 8, 2);
     putCel(s, 0x8000, c);
     draw(s, 0x8000);
     auto width = [&](int y) { int n = 0; for (int x = 0; x < 64; x++) n += pix(s, x, y) != 0; return n; };
@@ -522,7 +556,7 @@ static void testCels() {
     fillVram(s, 0);
     celSetup(s);
     s.madam.w16(0x10000, 0x001F);
-    Cel a; a.flags = (F::BASE & ~F::NPABS); a.src = 0x10000; a.x = 1 << 16; a.y = 1 << 16; a.pre0 = pre0(6, true, 1); a.pre1 = pre1(1, 0);
+    Cel a; a.flags = (F::BASE & ~F::NPABS); a.src = 0x10000; a.x = 1 << 16; a.y = 1 << 16; a.pre0 = pre0(6, true, 1); a.pre1 = pre1(6, 1, 0);
     a.next = 0x100 - 8;  // relativo a (endereço do campo + 4)
     Cel b = a; b.flags = F::BASE | F::SKIP; b.next = 0x8200; b.x = 2 << 16;
     Cel c = a; c.flags = F::BASE | F::LAST; c.x = 3 << 16;
@@ -539,11 +573,16 @@ static void testCels() {
     // 2 pixels de 6 bits: P=1 índice 5, P=0 índice 7 -> 100101 000111
     w32(s, 0x10000, 0x947u << 20); w32(s, 0x10004, 0);
     Cel c; c.flags |= F::LDPLUT; c.src = 0x10000; c.plut = 0x9000; c.x = 70 << 16; c.y = 70 << 16;
-    c.pre0 = pre0(4, false, 1); c.pre1 = pre1(2, 0);
+    c.pre0 = pre0(4, false, 1); c.pre1 = pre1(4, 2, 0);
     c.pixc = 0x1F000000u | (1u << 6) | (31u << 1);
     putCel(s, 0x8000, c);
     draw(s, 0x8000);
-    CHECK(pix(s, 70, 70) == (0x8000 | 5 << 5) && pix(s, 71, 70) == 0x7FFF, "6 bits com P: %04X %04X", pix(s, 70, 70), pix(s, 71, 70));
+    CHECK(pix(s, 70, 70) == (5 << 5) && pix(s, 71, 70) == 0x7FFF, "6 bits com P: %04X %04X", pix(s, 70, 70), pix(s, 71, 70));
+    // com PLUTPOS (CCB bit 6) o P da cel vai para o bit 15 do quadro
+    c.flags |= 0x40;
+    putCel(s, 0x8000, c);
+    draw(s, 0x8000);
+    CHECK(pix(s, 70, 70) == (0x8000 | 5 << 5) && pix(s, 71, 70) == 0x7FFF, "PLUTPOS: P no bit 15 (%04X)", pix(s, 70, 70));
   }
   // M: 1 bit com PLUTA (usa as entradas 6 e 7 da PLUT carregada antes)
   {
@@ -555,29 +594,160 @@ static void testCels() {
     w32(s, 0x10004, 0);
     w32(s, 0x10010, 0xA0000000u); w32(s, 0x10014, 0);  // 1 bit: 1 0 1 0
     Cel a; a.flags = (F::BASE | F::LDPLUT) & ~F::LAST; a.next = 0x8100; a.src = 0x10000; a.plut = 0x9000; a.x = 0; a.y = 0;
-    a.pre0 = pre0(5, false, 1); a.pre1 = pre1(1, 0);
-    Cel b; b.flags = F::BASE | F::LAST | 3; b.src = 0x10010; b.x = 200 << 16; b.y = 3 << 16; b.pre0 = pre0(1, false, 1); b.pre1 = pre1(4, 0);
+    a.pre0 = pre0(5, false, 1); a.pre1 = pre1(5, 1, 0);
+    Cel b; b.flags = F::BASE | F::LAST | 3; b.src = 0x10010; b.x = 200 << 16; b.y = 3 << 16; b.pre0 = pre0(1, false, 1); b.pre1 = pre1(1, 4, 0);
     putCel(s, 0x8000, a); putCel(s, 0x8100, b);
     draw(s, 0x8000);
     CHECK(pix(s, 0, 0) == 0x105 && pix(s, 200, 3) == 0x107 && pix(s, 201, 3) == 0x106 && pix(s, 202, 3) == 0x107, "1 bit com PLUTA");
+  }
+  // N: campos opcionais do CCB um atrás do outro: só YOXY, LDPPMP e CCBPRE -> PIXC em +24 e PRE0/PRE1 em +28/+32;
+  // HDX/VDY ficam os da cel anterior (escala 2x)
+  {
+    System s(idleBios(), nullptr);
+    fillVram(s, uint16_t(4 << 10 | 4 << 5 | 4));
+    celSetup(s);
+    s.madam.w16(0x10000, uint16_t(20 << 10 | 20 << 5 | 20));
+    Cel a; a.flags = (F::BASE & ~F::LAST) & ~F::NPABS; a.next = 0x100 - 8; a.src = 0x10000; a.x = 0; a.y = 0;
+    a.hdx = 2 << 20; a.vdy = 2 << 16; a.pre0 = pre0(6, true, 1); a.pre1 = pre1(6, 1, 0);
+    putCel(s, 0x8000, a);
+    const uint32_t f = F::SPABS | F::NPABS | F::YOXY | F::LDPPMP | F::CCBPRE | F::ACW | F::ACCW | F::LAST;
+    const uint32_t w[] = {f, 0, 0x10000, 0, 30u << 16, 40u << 16, 0x1F001F81u, pre0(6, true, 1), pre1(6, 1, 0)};
+    for (int i = 0; i < 9; i++) w32(s, 0x8100 + uint32_t(i) * 4, w[i]);
+    draw(s, 0x8000);
+    // PIXC 0x1F81: cel inteira + quadro (2S = 2) / 2 (2D) -> 20 + 2 = 22
+    const uint16_t e = uint16_t(22 << 10 | 22 << 5 | 22);
+    CHECK(pix(s, 1, 1) == uint16_t(20 << 10 | 20 << 5 | 20) && pix(s, 31, 41) == e && pix(s, 32, 41) == uint16_t(4 << 10 | 4 << 5 | 4),
+          "CCB sem LDSIZE/LDPRS: PIXC e preâmbulos nos campos seguintes (%04X)", pix(s, 31, 41));
+  }
+  // O: WOFFSET8 (bits 24-31 do PRE1) numa cel de 4 bits: linhas a 3 palavras
+  {
+    System s(idleBios(), nullptr);
+    fillVram(s, 0);
+    celSetup(s);
+    for (int i = 0; i < 16; i++) s.madam.w16(0x9000 + uint32_t(i) * 2, uint16_t(0x100 + i));
+    w32(s, 0x10000, 0x12000000); w32(s, 0x1000C, 0x34000000);
+    Cel c; c.flags |= F::LDPLUT; c.src = 0x10000; c.plut = 0x9000; c.x = 10 << 16; c.y = 10 << 16;
+    c.pre0 = pre0(3, false, 2); c.pre1 = pre1(3, 2, 1);
+    putCel(s, 0x8000, c);
+    draw(s, 0x8000);
+    CHECK(pix(s, 10, 10) == 0x101 && pix(s, 11, 10) == 0x102 && pix(s, 10, 11) == 0x103 && pix(s, 11, 11) == 0x104, "WOFFSET8 em 24-31");
+  }
+  // P: 16 bits no formato do quadro (LRFORM): duas linhas por palavra, a altura dobra
+  {
+    System s(idleBios(), nullptr);
+    fillVram(s, 0);
+    celSetup(s);
+    w32(s, 0x10000, 0x7C00001F); w32(s, 0x10004, 0x03E07FFF);
+    Cel c; c.src = 0x10000; c.x = 50 << 16; c.y = 60 << 16; c.pre0 = pre0(6, true, 1); c.pre1 = pre1(6, 2, 0) | 0x800;
+    putCel(s, 0x8000, c);
+    draw(s, 0x8000);
+    CHECK(pix(s, 50, 60) == 0x7C00 && pix(s, 51, 60) == 0x03E0 && pix(s, 50, 61) == 0x001F && pix(s, 51, 61) == 0x7FFF && pix(s, 50, 62) == 0,
+          "LRFORM: %04X %04X %04X %04X", pix(s, 50, 60), pix(s, 51, 60), pix(s, 50, 61), pix(s, 51, 61));
+  }
+  // Q: USEAV (subtrai, divide por 2 o resultado), PXOR e MS = 1 (AMV de uma cel de 8 bits)
+  {
+    System s(idleBios(), nullptr);
+    fillVram(s, uint16_t(10 << 10 | 6 << 5 | 2));
+    celSetup(s);
+    s.madam.w16(0x10000, uint16_t(30 << 10 | 20 << 5 | 1));
+    Cel c; c.flags |= 0x400; c.src = 0x10000; c.x = 5 << 16; c.y = 5 << 16; c.pre0 = pre0(6, true, 1); c.pre1 = pre1(6, 1, 0);
+    c.pixc = 0x1F80u | (0x9u << 1);  // 2S = quadro; AV = 01001: subtrai e divide por 2
+    putCel(s, 0x8000, c);
+    draw(s, 0x8000);
+    const uint16_t e1 = uint16_t(10 << 10 | 7 << 5 | 0);  // (30-10)/2, (20-6)/2, (1-2)/2 -> 0
+    CHECK(pix(s, 5, 5) == e1, "USEAV: %04X esperado %04X", pix(s, 5, 5), e1);
+    c.flags = (c.flags & ~0x400u) | 0x800;
+    c.pixc = 0x1F80;
+    c.x = 6 << 16;
+    putCel(s, 0x8000, c);
+    draw(s, 0x8000);
+    const uint16_t e2 = uint16_t((30 ^ 10) << 10 | (20 ^ 6) << 5 | (1 ^ 2));
+    CHECK(pix(s, 6, 5) == e2, "PXOR: %04X esperado %04X", pix(s, 6, 5), e2);
+    // 8 bits com PLUT: AMV = 3 bits de cima (aqui 3 -> x4), MS = 1, DF = 3 (/8)... na verdade DF 3 = /8
+    for (int i = 0; i < 32; i++) s.madam.w16(0x9000 + uint32_t(i) * 2, uint16_t(16 << 10 | 8 << 5 | 4));
+    w32(s, 0x10010, 0x65000000u);  // 011 00101: AMV 3, índice 5
+    w32(s, 0x10014, 0);
+    Cel d; d.flags |= F::LDPLUT; d.src = 0x10010; d.plut = 0x9000; d.x = 7 << 16; d.y = 5 << 16;
+    d.pre0 = pre0(5, false, 1); d.pre1 = pre1(5, 1, 0);
+    d.pixc = 0x3300;  // MS = 1, DF = 3 (/8), 2S = 0
+    putCel(s, 0x8000, d);
+    draw(s, 0x8000);
+    const uint16_t e3 = uint16_t((16 * 4 / 8) << 10 | (8 * 4 / 8) << 5 | (4 * 4 / 8));
+    CHECK(pix(s, 7, 5) == e3, "MS = 1 (AMV da cel): %04X esperado %04X", pix(s, 7, 5), e3);
+    CHECK((s.read32(0x03300028) & 0x50) == 0x40, "STATBITS: motor de cels terminou");
+  }
+  // S: 8 bits sem PLUT (3-3-2): bits de baixo em zero; com REP8 (PRE0 bit 3) repetem os de cima
+  {
+    System s(idleBios(), nullptr);
+    fillVram(s, 0);
+    celSetup(s);
+    w32(s, 0x10000, 0xFFB60000u);  // 111 111 11, 101 101 10
+    Cel c; c.src = 0x10000; c.x = 0; c.y = 0; c.pre0 = pre0(5, true, 1); c.pre1 = pre1(5, 2, 0);
+    putCel(s, 0x8000, c);
+    draw(s, 0x8000);
+    const uint16_t a = pix(s, 0, 0), b = pix(s, 1, 0);
+    c.pre0 |= 8;
+    putCel(s, 0x8000, c);
+    draw(s, 0x8000);
+    CHECK(a == 0x7398 && b == 0x5290 && pix(s, 0, 0) == 0x7FFF && pix(s, 1, 0) == uint16_t(22 << 10 | 22 << 5 | 21),
+          "8 bits sem PLUT com e sem REP8 (%04X %04X %04X %04X)", a, b, pix(s, 0, 0), pix(s, 1, 0));
+  }
+  // R: REGCTL0 com larguras diferentes (lido 320, escrito 512 = 256 + 256) e um "próximo" impossível encerra a lista
+  {
+    System s(idleBios(), nullptr);
+    fillVram(s, 0);
+    celSetup(s);
+    w32(s, 0x03300130, 0x4414);
+    s.madam.w16(0x10000, 0x1234);
+    Cel c; c.flags = F::BASE & ~F::LAST; c.next = 0; c.src = 0x10000; c.x = 3 << 16; c.y = 3 << 16;
+    c.pre0 = pre0(6, true, 1); c.pre1 = pre1(6, 1, 0);
+    putCel(s, 0x8000, c);
+    draw(s, 0x8000);
+    CHECK(s.madam.m16(0x200000 + 1 * 512 * 4 + 3 * 4 + 2) == 0x1234 && s.madam.celsDrawn == 1, "quadro escrito de 512 pixels e fim da lista");
+    CHECK(!s.madam.budgetHit, "cel normal longe do teto de pontos testados");
+  }
+  // lista maliciosa: 300 cels de 1 pixel, cada uma cobrindo a tela inteira (HDX/VDY enormes). Cada cel testa toda
+  // a caixa (~77 mil pontos); o teto pára a lista antes do fim e o tempo fica limitado
+  {
+    System s(idleBios(), nullptr);
+    fillVram(s, 0);
+    celSetup(s);
+    s.madam.w16(0x10000, 0x7FFF);
+    for (uint32_t k = 0; k < 300; k++) {
+      Cel c; c.flags = F::BASE & ~F::LAST; c.next = 0x8000 + (k + 1) * 0x40; c.src = 0x10000;
+      if (k == 299) c.flags |= F::LAST;
+      c.hdx = 400 << 20; c.vdy = 300 << 16; c.pre0 = pre0(6, true, 1); c.pre1 = pre1(6, 1, 0);
+      putCel(s, 0x8000 + k * 0x40, c);
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    draw(s, 0x8000);
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    CHECK(s.madam.budgetHit && s.madam.celsDrawn > 50 && s.madam.celsDrawn < 300 && pix(s, 100, 100) == 0x7FFF && ms < 2000,
+          "cel enorme para no teto de pontos (%u cels, %.0f ms) e ainda desenha", s.madam.celsDrawn, ms);
   }
 }
 
 // ================================================================================================ matrizes e VDL
 
 static void testMatrixVdl() {
-  std::printf("== MADAM: motor de matrizes e VDL (CLUT, fundo, linhas sem vídeo)\n");
+  std::printf("== MADAM: motor de matrizes e VDL (CLUT, fundo, linhas sem vídeo, largura, linha ímpar)\n");
   System s(idleBios(), nullptr);
+  ready(s);
   for (int i = 0; i < 16; i++) w32(s, 0x03300600 + uint32_t(i) * 4, (i % 5 == 0) ? (2u << 16) : 0);
   w32(s, 0x03300600 + 3 * 4, 5u << 16);  // translação x na 4ª coluna
   w32(s, 0x03300640, 1u << 16); w32(s, 0x03300644, 2u << 16); w32(s, 0x03300648, 3u << 16); w32(s, 0x0330064C, 1u << 16);
-  w32(s, 0x033007FC, 1);
-  CHECK(s.read32(0x03300660) == (2u << 16) && s.read32(0x03300664) == (4u << 16) && s.read32(0x03300668) == (6u << 16), "3x3");
   w32(s, 0x033007FC, 2);
-  CHECK(s.read32(0x03300660) == (7u << 16) && s.read32(0x0330066C) == (2u << 16), "4x4 com translação");
-  w32(s, 0x03300680, 100);
+  CHECK(s.read32(0x03300670) == (2u << 16) && s.read32(0x03300674) == (4u << 16) && s.read32(0x03300678) == (6u << 16), "3x3 (comando 2)");
+  w32(s, 0x033007FC, 1);
+  CHECK(s.read32(0x03300670) == (7u << 16) && s.read32(0x0330067C) == (2u << 16), "4x4 com translação (comando 1)");
+  CHECK(s.read32(0x03300660) == (2u << 16) && s.read32(0x03300668) == (6u << 16), "resultado anterior em 0x660");
+  // projeção: x * N / z com N de 64 bits (0x680 alto, 0x684 baixo)
+  w32(s, 0x03300680, 100u << 16); w32(s, 0x03300684, 0);
   w32(s, 0x033007FC, 3);
-  CHECK(int32_t(s.read32(0x03300660)) == 33 && int32_t(s.read32(0x03300664)) == 66, "projeção: %d %d", int32_t(s.read32(0x03300660)), int32_t(s.read32(0x03300664)));
+  const int32_t px = int32_t(s.read32(0x03300670)), py = int32_t(s.read32(0x03300674));
+  CHECK(std::abs(px - int32_t(2.0 * 100 / 6 * 65536)) < 4 && std::abs(py - int32_t(4.0 * 100 / 6 * 65536)) < 4, "projeção: %d %d", px, py);
+  w32(s, 0x033007FC, 0);
+  CHECK(int32_t(s.read32(0x03300660)) == px, "comando 0: resultado para 0x660");
 
   // VDL: 120 linhas com vídeo (CLUT do vermelho invertida no índice 31, fundo verde), 120 sem vídeo
   fillVram(s, 0);
@@ -591,18 +761,40 @@ static void testMatrixVdl() {
   w32(s, 0x5000, 120); w32(s, 0x5004, 0); w32(s, 0x5008, 0); w32(s, 0x500C, 0x5000);
   w32(s, 0x03300580, v);
   s.madam.renderFrame(s.fb);
+  CHECK(s.fb[10] == 0xFF000000u, "VDL desligada no MCTL: tela preta");
+  w32(s, 0x03300008, 0x6000);
+  s.madam.renderFrame(s.fb);
   CHECK(s.fb[10] == 0xFF000040u, "VDL: CLUT vermelha %08X", s.fb[10]);
   CHECK(s.fb[320 + 11] == 0xFFFF0000u, "VDL: azul %08X", s.fb[320 + 11]);
   CHECK(s.fb[5] == 0xFF00FF00u, "VDL: pixel 0 = fundo %08X", s.fb[5]);
   CHECK(s.fb[200 * 320 + 10] == 0xFF00FF00u, "VDL: linhas sem vídeo mostram o fundo");
+  // entrada de 0 linhas só aplica (a CLUT) e segue; quadro de 640 de largura começando na linha ímpar
+  w32(s, 0x6000, 0u | 1u << 9);                          // 0 linhas, 1 palavra de CLUT
+  w32(s, 0x6004, 0); w32(s, 0x6008, 0); w32(s, 0x600C, 0x6100);
+  w32(s, 0x6010, 0x60000000u | 31u << 24 | 0x800000);    // vermelho 31 = 0x80
+  w32(s, 0x6100, 0x00200000u | 0x00010000u | 3u << 23 | 240);
+  w32(s, 0x6104, 0x200000 | 2); w32(s, 0x6108, 0); w32(s, 0x610C, 0x6100);
+  s.madam.w16(0x200000 + 10 * 4 + 2, 0x7C00);            // linha 1 do quadro -> 1ª linha da tela
+  s.madam.w16(0x200000 + 640 * 4 + 10 * 4, 0x7C00);      // linha 2 (largura 640) -> 2ª linha
+  w32(s, 0x03300580, 0x6000);
+  s.madam.renderFrame(s.fb);
+  CHECK(s.fb[10] == 0xFF000080u && s.fb[320 + 10] == 0xFF000080u, "VDL: entrada de 0 linhas, largura 640 e linha ímpar (%08X %08X)", s.fb[10], s.fb[330]);
+  // controle do vídeo (0xC0, bit 25): pixel com o bit 15 usa a CLUT fixa (rampa) em vez da carregada
+  w32(s, 0x6000, 0u | 2u << 9);
+  w32(s, 0x6014, 0xC0000000u | 1u << 25);
+  s.madam.w16(0x200000 + 10 * 4 + 2, 0xFC00);
+  s.madam.renderFrame(s.fb);
+  CHECK(s.fb[10] == 0xFF0000FFu && s.fb[320 + 10] == 0xFF000080u, "CLUT fixa pelo bit 15 (%08X %08X)", s.fb[10], s.fb[330]);
 }
 
 // ================================================================================================ CLIO
 
 static void testClio() {
-  std::printf("== CLIO: timers, interrupções, VINT, DMA do DSP, do XBUS e do controle\n");
+  std::printf("== CLIO: timers, interrupções, VINT, registradores de sistema, DMA do controle, XBUS\n");
   {
     System s(idleBios(), nullptr);
+    CHECK(s.clioRead(0x0220) == 336, "SLACK da partida = 336 (um passo a cada 400 ciclos de 25 MHz)");
+    s.clioWrite(0x0220, 64);  // passo a cada 128 ciclos de 25 MHz = 64 da CPU
     s.clioWrite(0x0108, 3); s.clioWrite(0x010C, 3);
     s.clioWrite(0x0110, 1); s.clioWrite(0x0114, 1);
     s.clioWrite(0x0200, (0x3u << 4) | (0x7u << 8));  // timer 1 conta/recarrega; timer 2 encadeado no 1
@@ -613,106 +805,283 @@ static void testClio() {
     CHECK(s.timer(2) == 0, "timer 2 encadeado anda 1 (%u)", s.timer(2));
     s.clioWrite(0x0044, 1u << 10);
     CHECK(!(s.pending0() & (1u << 10)), "limpar a pendência");
-    s.clioWrite(0x0220, 64);  // SLACK: passo a cada 128 ciclos
+    s.clioWrite(0x0220, 192);  // SLACK: passo a cada 256 ciclos de 25 MHz = 128 da CPU
     s.tickHardware(128 * 4);
     CHECK(s.timer(1) == 3 && (s.pending0() & (1u << 10)), "SLACK muda a velocidade");
+    // timer 3 sem recarga: estoura uma vez, fica 0xFFFF e para
+    s.clioWrite(0x0118, 1);
+    s.clioWrite(0x0200, 0x1u << 12);
+    s.tickHardware(128 * 3);
+    CHECK(s.timer(3) == 0xFFFF && !(s.clioRead(0x0200) & (1u << 12)) && (s.pending0() & (1u << 9)), "timer sem recarga para ao estourar");
+    // palavra 1: o bit 31 da palavra 0 só com a máscara 1 ligada; a máscara 0 lê o bit 31 sempre ligado
     s.clioWrite(0x0060, 1);
-    CHECK(s.pending0() & 0x80000000u, "bit 31 = pendência na palavra 1");
+    CHECK(!(s.pending0() & 0x80000000u), "palavra 1 pendente mas desligada: sem bit 31");
+    s.clioWrite(0x0068, 1);
+    CHECK((s.pending0() & 0x80000000u) && (s.clioRead(0x0048) & 0x80000000u), "bit 31 = pendência ligada na palavra 1");
     s.clioWrite(0x0064, 1);
     CHECK(!(s.pending0() & 0x80000000u), "palavra 1 limpa");
   }
   {
     System s(idleBios(), nullptr);
+    s.runFrame();
+    CHECK((s.pending0() & 3) == 0, "VINT0/VINT1 desligadas na partida (0xFFFFFFFF)");
     s.clioWrite(0x0008, 100);
     s.clioWrite(0x000C, 250);
     s.runFrame();
     CHECK((s.pending0() & 3) == 3, "VINT0 e VINT1 no quadro");
-    CHECK((s.clioRead(0x0034) & 0x7FF) == 0 && (s.clioRead(0x0034) & 0x800), "linha 0 do campo seguinte");
+    CHECK((s.clioRead(0x0034) & 0x7FF) == 0 && !(s.clioRead(0x0034) & 0x800), "linha 0 de volta ao campo par");
   }
+  // registradores de sistema
   {
     System s(idleBios(), nullptr);
-    for (int i = 0; i < 4; i++) s.madam.w16(0x1000 + uint32_t(i) * 2, uint16_t(0x1110 * (i + 1)));
-    s.madam.w16(0x2000, 0x7777);
-    w32(s, 0x03300400, 0x1000); w32(s, 0x03300404, 4); w32(s, 0x03300408, 0x2000); w32(s, 0x0330040C, 2);
-    s.clioWrite(0x0304, 1);
-    const uint16_t a = s.dsp.read(0x300), b = s.dsp.read(0x300), c = s.dsp.read(0x300), d = s.dsp.read(0x300);
-    CHECK(a == 0x1110 && b == 0x2220 && c == 0x7777 && d == 0, "FIFO do DSP com próximo bloco: %X %X %X %X", a, b, c, d);
-    CHECK((s.pending0() & (1u << 16)) && !(s.clioRead(0x0304) & 1), "fim do DMA do canal 0");
+    CHECK(s.clioRead(0x0000) == 0x02020000 && s.clioRead(0x0028) == 1 && s.clioRead(0x0400) == 0x80, "revisão, CSTATBITS (ligou agora) e EXPCTL");
+    s.clioWrite(0x0038, 0xFFFFFFFF);
+    const uint32_t seed = s.clioRead(0x0038);
+    const uint32_t r1 = s.clioRead(0x003C), r2 = s.clioRead(0x003C);
+    CHECK(seed == 0x0FFF0FFF && r1 != r2, "semente (máscara 0x0FFF0FFF) e número aleatório");
+    s.clioWrite(0x0050, 0x10000); s.clioWrite(0x0054, 0);
+    CHECK(s.clioRead(0x0050) == 0x10000, "MODE liga/limpa");
+    s.clioWrite(0x0400, 0xFFFF);
+    CHECK(s.clioRead(0x0400) == 0xCA80, "EXPCTL só os bits 7, 9, 11, 14, 15");
+    s.clioWrite(0x0084, 0x44);  // ADBIO: saída 2 ligada -> banco de kanji (vazio)
+    CHECK(s.read32(0x03000000) == 0xFFFFFFFF, "ADBIO escolhe o banco de kanji da ROM");
+    s.clioWrite(0x0084, 0x40);
+    CHECK(s.read32(0x03000000) == 0xE51FF004, "ADBIO volta para a BIOS");
+    s.cpu.step(); s.cpu.step();
+    s.write32(0x1000, 0);
+    CHECK(!s.overlay(), "ROM fora de cima");
+    s.clioWrite(0x0028, 0x10);  // reinício da CPU pelo CLIO
+    CHECK(s.clioRead(0x0028) == 0x40 && s.cpu.r[15] == 0 && s.overlay(), "reinício pelo CSTATBITS: PC 0 e a ROM por cima");
   }
+  // DMA do controle (PBUS, canal 23): começa com o bit 15 do MCTL; o controle 1 entra na 2ª palavra
   {
     System s(idleBios(), nullptr);
-    w32(s, 0x03300570, 0x3000); w32(s, 0x03300574, 4);
-    s.mem[0x3002] = 0xEE;
+    ready(s);
+    w32(s, 0x03300570, 0x3000); w32(s, 0x03300574, 8); w32(s, 0x03300578, 0x3100);
+    w32(s, 0x3100, 0x12345678);
     s.setPad(0x8000 | 0x0100 | 0x0020);  // A e P
-    s.clioWrite(0x0304, 0x80000000u);
-    s.runFrame();
-    CHECK(s.mem[0x3000] == 0x81 && s.mem[0x3001] == 0x20 && s.mem[0x3002] == 0, "controle pelo PBUS: %02X %02X", s.mem[0x3000], s.mem[0x3001]);
-    CHECK(s.clioRead(0x0060) & 1, "fim da leitura do controle");
+    w32(s, 0x03300008, 0x8000);
+    s.tickHardware(10);
+    CHECK(s.madam.m32(0x3000) == 0x12345678 && s.mem[0x3004] == 0x81 && s.mem[0x3005] == 0x20 && s.mem[0x3006] == 0xFF &&
+          s.madam.m32(0x3008) == 0xFFFFFFFF, "controle pelo PBUS: %02X %02X", s.mem[0x3004], s.mem[0x3005]);
+    CHECK((s.clioRead(0x0060) & 1) && !(s.read32(0x03300008) & 0x8000), "fim do DMA do controle (palavra 1, bit 0) e MCTL limpo");
+  }
+  // XBUS: só o CD (0) e o 0x8F respondem; troca de disco na partida (DIPIR)
+  {
+    OperaDisc disc;
+    System s(idleBios(), &disc);
+    CHECK((s.clioRead(0x0540) & 0x80) && s.clioRead(0x0410) == 0x8000 && (s.pending1() & 2), "disco na gaveta ao ligar: troca de disco e DIPIR");
+    s.clioWrite(0x0540, 0x80);
+    CHECK(!(s.clioRead(0x0540) & 0x80), "troca de disco apagada");
+    s.clioWrite(0x0028, 0x20);
+    CHECK(!(s.clioRead(0x0410) & 0x8000) && !(s.pending1() & 2), "pedido do DIPIR apagado");
+    s.clioWrite(0x0500, 3);
+    CHECK(s.clioRead(0x0540) == 0xFF && s.clioRead(0x0580) == 0xFF, "dispositivo 3 do XBUS não responde");
+  }
+  // dispositivo do XBUS que não existe: a CPU leva um "data abort" (vetor 0x10, LR = instrução + 8)
+  {
+    // mov r0, #0x03400000; mov r1, #3; str r1, [r0, #0x500]; ldr r2, [r0, #0x540]; b .
+    System s(biosFrom({0xE3A00634, 0xE3A01003, 0xE5801500, 0xE5902540, 0xEAFFFFFE}), nullptr);
+    for (int i = 0; i < 5; i++) s.cpu.step();
+    CHECK((s.cpu.cpsr & 0x1F) == 0x17 && s.cpu.r[15] == 0x10 && s.cpu.r[14] == 0x0300001C && (s.read32(0x03300020) & 4),
+          "XBUS ausente: data abort (modo %02X pc %08X lr %08X)", s.cpu.cpsr & 0x1F, s.cpu.r[15], s.cpu.r[14]);
+  }
+  // LDR abortado: a base anda (pós-indexado), mas o registrador de destino fica como estava
+  {
+    // mov r0, #0x03400000; mov r1, #3; mov r2, #0x55; str r1, [r0, #0x500]; add r0, r0, #0x540;
+    // ldr r2, [r0], #4; b .
+    System s(biosFrom({0xE3A00634, 0xE3A01003, 0xE3A02055, 0xE5801500, 0xE2800D15, 0xE4902004, 0xEAFFFFFE}), nullptr);
+    for (int i = 0; i < 7; i++) s.cpu.step();
+    CHECK((s.cpu.cpsr & 0x1F) == 0x17 && s.cpu.r[15] == 0x10 && s.cpu.r[2] == 0x55 && s.cpu.r[0] == 0x03400544,
+          "LDR abortado não escreve o destino (r2 %08X r0 %08X modo %02X)", s.cpu.r[2], s.cpu.r[0], s.cpu.cpsr & 0x1F);
+  }
+  // reinício pelo CSTATBITS feito pela própria CPU, com escrita de volta da base: vale ao fim da instrução
+  {
+    // mov r0, #0x03400000; mov r1, #0x10; str r1, [r0, #0x28]!; b .
+    System s(biosFrom({0xE3A00634, 0xE3A01010, 0xE5A01028, 0xEAFFFFFE}), nullptr);
+    for (int i = 0; i < 4; i++) s.cpu.step();
+    CHECK(s.cpu.r[15] == 0 && s.cpu.r[0] == 0 && (s.cpu.cpsr & 0x1F) == 0x13 && s.overlay(),
+          "reinício pela CPU: banco zerado depois da escrita da base (r0 %08X pc %08X)", s.cpu.r[0], s.cpu.r[15]);
+  }
+  // SPORT da VRAM (cor + preenchimento, cópia de página com máscara), UNCLE e a porta de diagnóstico
+  {
+    System s(idleBios(), nullptr);
+    ready(s);
+    w32(s, 0x03202000, 0x11112222);
+    w32(s, 0x03204000 + 3 * 4, 0xFFFFFFFF);
+    w32(s, 0x03202000, 0xAAAABBBB);
+    w32(s, 0x03204000 + 5 * 4, 0xFFFFFFFF);
+    (void)s.read32(0x03200000 + 3 * 4);          // página 3 -> registrador de transferência
+    w32(s, 0x03200000 + 5 * 4, 0xFFFF0000);      // página 5 recebe só as metades de cima
+    CHECK(s.madam.m32(0x200000 + 3 * 2048 + 100) == 0x11112222 && s.madam.m32(0x200000 + 5 * 2048 + 2044) == 0x1111BBBB &&
+          s.madam.m32(0x200000 + 4 * 2048) == 0 && s.read32(0x03202000) == 0xAAAABBBB, "SPORT: cor, preenchimento e cópia com máscara");
+    CHECK(s.clioRead(0xC000) == 0x03800000, "UNCLE responde com a revisão");
+    uint32_t bits = 0;
+    for (int i = 0; i < 4; i++) bits = bits << 1 | s.read32(0x03180000);
+    CHECK(bits == 0x2, "porta de diagnóstico: 0 0 1 0 (sem modo de diagnóstico)");
   }
 }
 
 // ================================================================================================ DSP
 
 namespace {
+// codificação do DSPP (ver dspp.h)
 uint16_t arith(int nops, int muxa, int muxb, int alu, int bs, bool m2 = false) {
   return uint16_t(nops << 13 | (m2 ? 0x1000 : 0) | muxa << 10 | muxb << 8 | alu << 4 | bs);
 }
-uint16_t ctl(int kind, int sub, int target) { return uint16_t(0x8000 | kind << 13 | sub << 10 | target); }
+uint16_t A(int addr, bool wb = false) { return uint16_t(0x8000 | (wb ? 0x800 : 0) | addr); }   // endereço
+uint16_t AI(int addr) { return uint16_t(0x8400 | addr); }                                       // indireto
+uint16_t IMM(int v) { return uint16_t(0xC000 | (v & 0x1FFF)); }                                 // 13 bits com sinal
+uint16_t IMMH(int v) { return uint16_t(0xE000 | ((v >> 3) & 0x1FFF)); }                         // deslocado 3 bits
+uint16_t MOVED(int addr) { return uint16_t(0x9800 | addr); }
+uint16_t JUMP(int t) { return uint16_t(0x8400 | t); }
+uint16_t JSR(int t) { return uint16_t(0x8800 | t); }
+const uint16_t RTS = 0x8200, SLEEP = 0x8380;
+// desvio: mode 1 (ou 2 = negado), sel 0 = N,V / 1 = C,Z, mask bit 1 = exige o 1º, bit 0 = exige o 2º
+uint16_t BR(int mode, int sel, int mask, int t) { return uint16_t(0x8000 | mode << 13 | sel << 12 | mask << 10 | t); }
+uint16_t BCPX(int type, int t) { return uint16_t(0xE000 | type << 10 | t); }
 void loadDsp(Dspp& d, const std::vector<uint16_t>& prog) {
   std::memset(d.code, 0, sizeof d.code);
   for (size_t i = 0; i < prog.size(); i++) d.code[i] = prog[i];
+  d.reset();
   d.running = true;
 }
 }  // namespace
 
 static void testDsp() {
-  std::printf("== DSP (DSPP): microcódigo de teste (MOVE, ULA, multiplicador, desvios, sub-rotina, FIFO, DAC)\n");
+  std::printf("== DSP (DSPP): conjunto de instruções (operandos, ULA, multiplicador, deslocador, desvios, registradores)\n");
   Dspp d;
-  d.reset();
-  const uint16_t SLEEP = ctl(0, 4, 0);
-  loadDsp(d, {ctl(2, 0, 0x3F0), 0x1234, ctl(2, 0, 0x3F1), 0xFEDC, SLEEP});
-  d.runSample();
-  CHECK(d.outL == 0x1234 && d.outR == int16_t(0xFEDC), "MOVE para o DAC");
+  d.clearAll();
+  loadDsp(d, {MOVED(0x3FE), IMM(0x123), MOVED(0x3FF), IMM(-5), SLEEP});
+  d.runFrame();
+  CHECK(d.outL == 0x123 && d.outR == -5, "MOVED com imediato para o DAC (%d %d)", d.outL, d.outR);
+  loadDsp(d, {MOVED(0x3FE), IMMH(0x1800), MOVED(0x3FF), IMMH(-0x1800), SLEEP});
+  d.runFrame();
+  CHECK(d.outL == 0x1800 && d.outR == -0x1800, "imediato deslocado 3 bits");
   d.data[0x100] = 100; d.data[0x101] = 23;
-  loadDsp(d, {arith(3, 1, 1, 2, 0), 0x100, 0x101, 0x102, SLEEP});
-  d.runSample();
-  CHECK(d.data[0x102] == 123 && d.acc == 123, "soma com 3 operandos (%u)", d.data[0x102]);
+  loadDsp(d, {arith(3, 1, 1, 2, 0), A(0x100), A(0x101), A(0x102), SLEEP});
+  d.runFrame();
+  CHECK(d.data[0x102] == 123 && (d.acc >> 4) == 123, "soma com 3 operandos (%u)", d.data[0x102]);
   d.data[0x100] = 0x4000; d.data[0x101] = 1000;
-  loadDsp(d, {arith(3, 3, 2, 2, 0), 0x100, 0x101, 0x103, SLEEP});
-  d.runSample();
+  loadDsp(d, {arith(3, 3, 0, 0, 0, true), A(0x100), A(0x101), A(0x103), SLEEP});
+  d.runFrame();
   CHECK(d.data[0x103] == 500, "multiplicador 0,5 x 1000 (%d)", int16_t(d.data[0x103]));
+  d.data[0x100] = 300;
+  loadDsp(d, {arith(2, 1, 0, 0, 0), A(0x100), A(0x104), arith(2, 3, 0, 0, 0), IMMH(0x2000), A(0x105), SLEEP});
+  d.runFrame();
+  CHECK(d.data[0x105] == 75, "multiplicador com o ACC (300 x 0,25 = %d)", int16_t(d.data[0x105]));
   d.data[0x110] = 5; d.data[0x111] = 0;
-  // laço: [0x111]++; [0x110]--; desvia se não zero
-  loadDsp(d, {arith(2, 1, 2, 6, 0), 0x111, 0x111, arith(2, 1, 2, 7, 0), 0x110, 0x110, ctl(1, 4, 0), SLEEP});
-  d.runSample();
+  // laço: [0x111]++; [0x110]--; volta enquanto não zero
+  loadDsp(d, {arith(3, 1, 1, 2, 0), A(0x111), IMM(1), A(0x111), arith(3, 1, 1, 4, 0), A(0x110), IMM(1), A(0x110), BR(2, 1, 1, 0), SLEEP});
+  d.runFrame();
   CHECK(d.data[0x111] == 5 && d.data[0x110] == 0, "laço com desvio condicional (%u)", d.data[0x111]);
+  // "++" soma 1 no bit de baixo do ACC de 20 bits (1/16 da palavra)
+  loadDsp(d, {arith(1, 1, 0, 6, 0), IMM(2), arith(1, 0, 0, 6, 0), A(0x112), SLEEP});
+  d.runFrame();
+  CHECK(d.acc == 0x22 && d.data[0x112] == 2, "++ no ACC de 20 bits (%X)", d.acc);
   d.data[0x120] = 30000; d.data[0x121] = 30000;
-  loadDsp(d, {arith(3, 1, 1, 2, 7), 0x120, 0x121, 0x122, SLEEP});
-  d.runSample();
-  CHECK(int16_t(d.data[0x122]) == 32767 && d.fv, "saturação");
-  // imediato com sinal, sub-rotina e retorno
-  loadDsp(d, {ctl(3, 4, 4), ctl(2, 0, 0x3F0), 0x0001, SLEEP, arith(2, 1, 2, 2, 0), uint16_t(0x8000 | 0x1FFF), 0x130, ctl(0, 2, 0)});
-  d.runSample();
-  CHECK(int16_t(d.data[0x130]) == -1 && d.outL == 1, "JSR/RTS e imediato negativo");
+  loadDsp(d, {arith(3, 1, 1, 2, 7), A(0x120), A(0x121), A(0x122), SLEEP});
+  d.runFrame();
+  CHECK(int16_t(d.data[0x122]) == 32767 && d.fv, "saturação (%d)", int16_t(d.data[0x122]));
+  d.data[0x120] = uint16_t(-30000); d.data[0x121] = 30000;
+  loadDsp(d, {arith(3, 1, 1, 4, 7), A(0x120), A(0x121), A(0x122), SLEEP});
+  d.runFrame();
+  CHECK(int16_t(d.data[0x122]) == -32768, "saturação negativa (%d)", int16_t(d.data[0x122]));
+  d.data[0x123] = 0x4000; d.data[0x124] = 0x8000;
+  loadDsp(d, {arith(2, 1, 0, 0, 0xE), A(0x123), A(0x125), arith(2, 1, 0, 0, 0xF), A(0x124), A(0x126),
+              arith(2, 1, 0, 8, 0xF), A(0x124), A(0x127), arith(2, 1, 0, 0, 6), IMM(1), A(0x128), SLEEP});
+  d.runFrame();
+  CHECK(d.data[0x125] == 0x1000 && d.data[0x126] == 0xC000 && d.data[0x127] == 0x4000 && d.data[0x128] == 0x100,
+        "deslocador: >>2, >>1 aritmético e lógico, <<8 (%04X %04X %04X %04X)", d.data[0x125], d.data[0x126], d.data[0x127], d.data[0x128]);
+  // sub-rotina, imediato negativo, operando indireto e "escreve de volta"
+  d.data[0x130] = 0; d.data[0x131] = 0x132; d.data[0x132] = 7; d.data[0x133] = 3;
+  loadDsp(d, {JSR(5), MOVED(0x3FE), IMM(1), SLEEP, 0, MOVED(0x130), IMM(-1),
+              arith(2, 1, 1, 2, 0), A(0x133, true), AI(0x131), RTS});
+  d.runFrame();
+  CHECK(int16_t(d.data[0x130]) == -1 && d.outL == 1 && d.data[0x133] == 10, "JSR/RTS, indireto e escreve de volta (%u)", d.data[0x133]);
+  // registradores: R4..R6 = 0x104..0x106 (três num operando só); RBASE por XOR
+  d.data[0x104] = 11; d.data[0x105] = 31;
+  loadDsp(d, {arith(3, 1, 1, 2, 0), uint16_t(4 << 10 | 5 << 5 | 6), uint16_t(0x8000 | 0x10 << 7 | 0), 0, SLEEP});
+  d.code[2] = SLEEP;
+  d.runFrame();
+  CHECK(d.data[0x106] == 42, "três registradores num operando (%u)", d.data[0x106]);
+  d.data[0x144] = 9;
+  loadDsp(d, {uint16_t(0x8000 | 2 << 7 | 0x10), MOVED(0x150), uint16_t(0xA000 | 4), SLEEP});
+  d.runFrame();
+  CHECK(d.data[0x150] == 9, "RBASE: R4 vira 0x144 (%u)", d.data[0x150]);
+  // desvio composto (BLT) e BAC
+  d.data[0x160] = 3; d.data[0x161] = 5;
+  loadDsp(d, {arith(2, 1, 1, 4, 0), A(0x160), A(0x161), BCPX(0, 7), MOVED(0x162), IMM(1), SLEEP, MOVED(0x162), IMM(2), SLEEP});
+  d.runFrame();
+  CHECK(d.data[0x162] == 2, "BLT (3 < 5)");
+  loadDsp(d, {arith(2, 1, 0, 0, 0), IMM(5), A(0x163), uint16_t(0x8000 | 1 << 7), SLEEP, MOVED(0x164), IMM(4), SLEEP});
+  d.runFrame();
+  CHECK(d.data[0x164] == 4, "BAC (PC = ACC)");
   int irqs = 0;
   d.irq = [&]() { irqs++; };
-  loadDsp(d, {ctl(2, 0, 0x3FE), 1, SLEEP});
-  d.runSample();
-  CHECK(irqs == 1, "interrupção para a CPU");
-  // DSP dentro do sistema: lê amostras do DMA e entrega ao DAC (áudio a 44,1 kHz)
+  loadDsp(d, {MOVED(0x3EE), IMM(7), SLEEP});
+  d.runFrame();
+  CHECK(irqs == 1 && d.tick == 7, "interrupção para a CPU (0x3EE)");
+  // sem SLEEP o programa para no fim dos 568 ciclos da amostra
+  loadDsp(d, {JUMP(0)});
+  d.runFrame();
+  CHECK(d.pc == 0, "amostra sem SLEEP termina pelos ciclos");
+  // DSP dentro do sistema: DMA da RAM (canal 0), um bloco e o "próximo" que se repete; programa carregado pelo
+  // CLIO (uma instrução por palavra), DAC a 44,1 kHz
   {
     System s(idleBios(), nullptr);
+    ready(s);
     for (int i = 0; i < 2000; i++) s.madam.w16(0x20000 + uint32_t(i) * 2, uint16_t(i * 16));
-    w32(s, 0x03300400, 0x20000); w32(s, 0x03300404, 4000);
+    w32(s, 0x03300400, 0x20000); w32(s, 0x03300404, 4000 - 4);
     s.clioWrite(0x0304, 1);
-    const std::vector<uint16_t> prog = {arith(2, 1, 2, 0, 0), 0x300, 0x3F0, arith(1, 0, 2, 0, 0), 0x3F1, SLEEP};
-    for (size_t i = 0; i < prog.size(); i++) s.clioWrite(0x1800 + uint32_t(i) * 4, prog[i]);
-    s.clioWrite(0x17E8, 1);
+    const std::vector<uint16_t> prog = {arith(2, 1, 0, 0, 0), A(0x0F0), A(0x3FE), arith(1, 0, 0, 0, 0), A(0x3FF), SLEEP};
+    for (size_t i = 0; i < prog.size(); i++) s.clioWrite(0x2000 + uint32_t(i) * 4, prog[i]);
+    s.clioWrite(0x17FC, 5);
     s.runFrame();
     const size_t n = s.audio.size() / 2;
     bool ok = n > 700 && n < 770;
     for (size_t i = 0; i < n && ok; i++) if (s.audio[2 * i] != int16_t(i * 16) || s.audio[2 * i + 1] != int16_t(i * 16)) ok = false;
     CHECK(ok, "amostras do DMA no DAC (%zu amostras no quadro)", n);
+    CHECK(s.read32(0x03300400) > 0x20000 && (s.read32(0x03300404) & 3) == 0, "registradores do canal 0 andam (%08X)", s.read32(0x03300400));
+    // programa com duas instruções por palavra (0x1800) e semáforo
+    s.clioWrite(0x17FC, 0);
+    const std::vector<uint16_t> p2 = {arith(2, 1, 0, 0, 0), A(0x0ED), A(0x300), MOVED(0x3ED), IMM(0x55), SLEEP};
+    for (size_t i = 0; i < p2.size(); i += 2)
+      s.clioWrite(0x1800 + uint32_t(i) * 2, uint32_t(p2[i]) << 16 | (i + 1 < p2.size() ? p2[i + 1] : 0));
+    s.clioWrite(0x17FC, 5);  // reinicia (o semáforo também) e roda
+    s.clioWrite(0x17D0, 0x1234);
+    CHECK(s.clioRead(0x17D0) == (8u << 16 | 0x1234), "semáforo escrito pela CPU (%08X)", s.clioRead(0x17D0));
+    s.dsp.runFrame();
+    CHECK(s.clioRead(0x17D0) == (4u << 16 | 0x55) && s.clioRead(0x3C00) == 0x1234, "semáforo do DSP e EO lida pela CPU (%08X)", s.clioRead(0x17D0));
+    // EI: duas palavras por escrita em 0x3000; EO: duas por leitura em 0x3800
+    s.clioWrite(0x3008, 0xAAAA5555);
+    CHECK(s.dsp.data[4] == 0xAAAA && s.dsp.data[5] == 0x5555 && s.clioRead(0x3800) == (0x1234u << 16 | s.dsp.data[0x301]), "EI e EO em pares");
+  }
+  // canal de saída (DSP -> RAM, canal 16) e interrupções de troca de bloco
+  {
+    System s(idleBios(), nullptr);
+    ready(s);
+    w32(s, 0x03300500, 0x30000); w32(s, 0x03300504, 16 - 4);   // canal 16: 8 amostras
+    w32(s, 0x03300400, 0x20000); w32(s, 0x03300404, 8 - 4);    // canal 0: 4 amostras
+    w32(s, 0x03300408, 0x20100); w32(s, 0x0330040C, 4 - 4);    // próximo: 2 amostras (repete)
+    for (int i = 0; i < 4; i++) s.madam.w16(0x20000 + uint32_t(i) * 2, uint16_t(0x1110 * (i + 1)));
+    s.madam.w16(0x20100, 0x7777); s.madam.w16(0x20102, 0x8888);
+    s.clioWrite(0x0304, 0x10001);
+    const std::vector<uint16_t> prog = {arith(2, 1, 0, 0, 0), A(0x0F0), A(0x3F0), SLEEP};
+    for (size_t i = 0; i < prog.size(); i++) s.clioWrite(0x2000 + uint32_t(i) * 4, prog[i]);
+    s.clioWrite(0x17FC, 5);
+    s.tickHardware(300 * 10);
+    const uint16_t e[8] = {0x1110, 0x2220, 0x3330, 0x4440, 0x7777, 0x8888, 0x7777, 0x8888};
+    bool ok = true;
+    for (int i = 0; i < 8; i++) if (s.madam.m16(0x30000 + uint32_t(i) * 2) != e[i]) ok = false;
+    CHECK(ok, "canal de saída leva o FIFO do DSP para a RAM (%04X %04X)", s.madam.m16(0x30000), s.madam.m16(0x30008));
+    CHECK((s.pending0() & (1u << 16)) == 0, "troca de bloco do canal 0 sem o MODE: sem interrupção");
+    s.clioWrite(0x0050, 1u << 16);
+    s.tickHardware(300 * 10);
+    CHECK(s.pending0() & (1u << 16), "troca de bloco do canal 0 com o MODE: interrupção");
+    const uint32_t depth = s.clioRead(0x0380);
+    s.clioWrite(0x0300, 1);
+    CHECK(depth > 0 && depth <= 8 && s.clioRead(0x0380) == 0, "FIFO do canal 0 pelo CLIO (%u) e esvaziado pelo 0x300", depth);
   }
 }
 
@@ -756,36 +1125,76 @@ static void testCd() {
     std::filesystem::remove(iso); std::filesystem::remove(bin); std::filesystem::remove(cue);
   }
   System s(idleBios(), &disc);
+  ready(s);
   cdCmd(s, {0x83});
   auto r = cdReply(s);
-  CHECK(r.size() == 8 && r[0] == 0x83 && (r.back() & 0xC1) == 0xC1, "identificação (%zu bytes)", r.size());
-  cdCmd(s, {0x8E});
+  CHECK(r.size() == 12 && r[0] == 0x83 && (r.back() & 0xC1) == 0xC1, "identificação (%zu bytes)", r.size());
+  cdCmd(s, {0x80});
   r = cdReply(s);
-  CHECK(r.size() == 8 && r[2] == 1 && r[3] == 2 && r[4] == 0 && r[5] == 2 + (64 + 150 + 150) / 75 && r[6] == (64 + 150 + 150) % 75, "informações do disco");
-  cdCmd(s, {0x8F, 2});
+  CHECK(r.size() == 4 && r[1] == 0xAA && r[2] == 0x55, "teste do caminho de dados");
+  cdCmd(s, {0x8B});
   r = cdReply(s);
-  CHECK(r.size() == 9 && r[2] == 0x10 && r[3] == 2 && r[6] == 2 + (64 + 150) / 75 && r[7] == (64 + 150) % 75, "TOC da faixa de áudio");
-  cdCmd(s, {0x8F, 7});
+  const uint32_t lead = 64 + 150 + 150 + 150;  // lead-out em MSF (com os 150 iniciais)
+  CHECK(r.size() == 8 && r[2] == 1 && r[3] == 2 && r[4] == lead / 4500 && r[5] == lead / 75 % 60 && r[6] == lead % 75,
+        "informações do disco (%zu bytes)", r.size());
+  cdCmd(s, {0x8C, 0, 2});
   r = cdReply(s);
-  CHECK(!r.empty() && (r.back() & 0x10), "TOC de faixa inexistente dá erro");
-  // leitura de 2 setores pela porta de dados (setores 1 e 2, MSF 00:02:01)
+  CHECK(r.size() == 10 && r[2] == 0x10 && r[3] == 2 && r[6] == (64 + 300) / 75 % 60 && r[7] == (64 + 300) % 75, "TOC da faixa de áudio");
+  cdCmd(s, {0x8C, 0, 1});
+  r = cdReply(s);
+  CHECK(r.size() == 10 && r[2] == 0x14 && r[3] == 1 && r[6] == 2 && r[7] == 0, "TOC da faixa de dados");
+  cdCmd(s, {0x8C, 0, 7});
+  r = cdReply(s);
+  CHECK(r.size() == 2 && (r.back() & 0x10), "TOC de faixa inexistente dá erro");
+  cdCmd(s, {0x85});
+  r = cdReply(s);
+  CHECK(r.size() == 8 && r[4] == lead % 75, "capacidade (lead-out)");
+  cdCmd(s, {0x09, 3, 0x80});
+  r = cdReply(s);
+  CHECK(r.size() == 2 && (r[1] & 0x0A) == 0x0A, "modo: velocidade dupla (%02X)", r.empty() ? 0 : r[1]);
+  // leitura de 2 setores pela porta de dados (setores 1 e 2, MSF 00:02:01): sem resposta imediata; a resposta
+  // (0x10 com "sucesso") só depois do último dado
   cdCmd(s, {0x10, 0, 2, 1, 0, 0, 2});
   r = cdReply(s);
+  CHECK(r.empty(), "leitura sem resposta imediata");
   s.tickHardware(CdDrive::CYCLES_PER_SECTOR_2X * 2 + 100);
   std::vector<uint8_t> got;
   while (s.clioRead(0x0540) & 0x20) got.push_back(uint8_t(s.clioRead(0x05C0)));
   CHECK(got.size() == 4096 && std::memcmp(got.data(), &disc.image()[2048], 4096) == 0, "leitura pela porta de dados (%zu bytes)", got.size());
-  // leitura por DMA do XBUS
-  w32(s, 0x03300540, 0x40000); w32(s, 0x03300544, 2048);
+  s.tickHardware(CdDrive::REPLY_DELAY + 10);
+  r = cdReply(s);
+  CHECK(r.size() == 2 && r[0] == 0x10 && (r[1] & 0x08), "resposta da leitura depois dos dados");
+  // leitura por DMA do XBUS (contagem em bytes - 4, EXPCTL bit 11), LBA no lugar do MSF
+  w32(s, 0x03300540, 0x40000); w32(s, 0x03300544, 2048 - 4);
+  s.clioWrite(0x0400, 0x800);
   s.clioWrite(0x0304, 1u << 20);
-  cdCmd(s, {0x10, 0, 2, 0, 0, 0, 1});
-  cdReply(s);
+  cdCmd(s, {0x10, 0, 0, 0, 1, 0, 1});
   s.tickHardware(CdDrive::CYCLES_PER_SECTOR_2X + 100);
-  CHECK(std::memcmp(&s.mem[0x40000], &disc.image()[0], 2048) == 0 && (s.pending0() & (1u << 29)), "leitura pelo DMA do XBUS");
+  CHECK(std::memcmp(&s.mem[0x40000], &disc.image()[0], 2048) == 0 && (s.pending0() & (1u << 29)) && !(s.clioRead(0x0304) & (1u << 20)) &&
+        (s.clioRead(0x0400) & 0x80), "leitura pelo DMA do XBUS");
+  s.tickHardware(CdDrive::REPLY_DELAY + 10);
+  r = cdReply(s);
+  CHECK(r.size() == 2 && r[0] == 0x10, "resposta depois do DMA");
+  // setor bruto (2352): modo 0, bytes 3-4
+  cdCmd(s, {0x09, 0, 0, 0x09, 0x30});
+  cdReply(s);
+  cdCmd(s, {0x10, 0, 2, 0, 0, 0, 1});
+  s.tickHardware(CdDrive::CYCLES_PER_SECTOR_2X + 100);
+  got.clear();
+  while (s.clioRead(0x0540) & 0x20) got.push_back(uint8_t(s.clioRead(0x05C0)));
+  CHECK(got.size() == 2352 && got[0] == 0 && got[1] == 0xFF && got[15] == 1 && got[16] == disc.image()[0], "setor bruto de 2352 bytes");
+  cdCmd(s, {0x09, 0, 0, 0x08, 0x00});
+  s.tickHardware(CdDrive::REPLY_DELAY + 10);
+  cdReply(s);
   // fora do disco: erro
   cdCmd(s, {0x10, 9, 0, 0, 0, 0, 1});
   r = cdReply(s);
   CHECK(!r.empty() && (r.back() & 0x10), "leitura fora do disco dá erro");
+  // abortar: um byte, sem resposta
+  cdCmd(s, {0x10, 0, 2, 0, 0, 0, 20});
+  s.clioWrite(0x0580, 0x08);
+  s.tickHardware(CdDrive::CYCLES_PER_SECTOR_2X * 3);
+  CHECK(!(s.clioRead(0x0540) & 0x10) && s.cd.dataSize() == 0, "abortar a leitura");
   // gaveta aberta: sem disco
   cdCmd(s, {0x06});
   r = cdReply(s);
@@ -793,6 +1202,34 @@ static void testCd() {
   cdCmd(s, {0x07});
   r = cdReply(s);
   CHECK(!r.empty() && (r.back() & 0xC0) == 0xC0, "gaveta fechada com disco");
+  cdCmd(s, {0x04});
+  r = cdReply(s);
+  CHECK(r.size() == 2 && (r[1] & 0x10), "comando desconhecido dá erro");
+  // áudio de CD: tocar a faixa 2 (0x0F) e um trecho por MSF (0x0E) misturados ao som do sistema
+  s.audio.clear();
+  cdCmd(s, {0x0F, 2, 0, 2, 0});
+  r = cdReply(s);
+  s.tickHardware(100000);
+  auto expected = [](uint32_t lba, uint32_t k, bool right) {
+    const uint32_t b = k * 4 + (right ? 2 : 0);
+    return int16_t(uint8_t(b ^ lba) | uint8_t((b + 1) ^ lba) << 8);
+  };
+  bool ok = s.audio.size() > 100;
+  for (size_t k = 0; ok && k < s.audio.size() / 2 && k < 588; k++)
+    if (s.audio[2 * k] != expected(214, uint32_t(k), false) || s.audio[2 * k + 1] != expected(214, uint32_t(k), true)) ok = false;
+  CHECK(ok && r.size() == 2 && (r[1] & 0x04), "tocar a faixa de áudio (%zu amostras)", s.audio.size() / 2);
+  const uint32_t a = 214 + 150 + 10, e = a + 1;  // um setor só, em MSF
+  cdCmd(s, {0x0E, uint8_t(a / 4500), uint8_t(a / 75 % 60), uint8_t(a % 75), uint8_t(e / 4500), uint8_t(e / 75 % 60), uint8_t(e % 75)});
+  cdReply(s);
+  s.audio.clear();
+  s.tickHardware(12500000 / 75 * 2);
+  size_t nonzero = 0;
+  for (size_t k = 0; k < s.audio.size() / 2; k++) nonzero += s.audio[2 * k] != 0 || s.audio[2 * k + 1] != 0;
+  CHECK(nonzero < 588 && nonzero > 300 && !s.cd.playing(), "tocar por MSF para no fim do trecho (%zu amostras)", nonzero);
+  cdCmd(s, {0x0F, 2, 0, 2, 0});
+  cdCmd(s, {0x0E, 0, 0, 0, 0, 0, 0});
+  r = cdReply(s);
+  CHECK(!s.cd.playing() && r.size() == 2 && !(r[1] & 0x04), "parar o áudio de CD");
   // interrupção do XBUS quando a resposta chega
   s.clioWrite(0x0540, 1);
   s.clioWrite(0x0044, 4);
@@ -819,16 +1256,23 @@ static void testState() {
   auto c = std::make_unique<TdoCore>(std::make_unique<OperaDisc>(), nullptr, &bios);
   {
     System& s = c->sys();
+    s.cpu.step();  // sai do endereço 0 para a ROM antes de tirar a ROM de cima da DRAM
     celSetup(s);
     for (int i = 0; i < 16; i++) s.madam.w16(0x10000 + uint32_t(i) * 2, uint16_t(0x1111 * i + 1));
-    Cel cel; cel.src = 0x10000; cel.x = 10 << 16; cel.y = 10 << 16; cel.pre0 = pre0(6, true, 4); cel.pre1 = pre1(4, 0);
+    Cel cel; cel.src = 0x10000; cel.x = 10 << 16; cel.y = 10 << 16; cel.pre0 = pre0(6, true, 4); cel.pre1 = pre1(6, 4, 0);
     putCel(s, 0x8000, cel);
+    w32(s, 0x033005A4, 0x8000);
     w32(s, 0x4000, 0x00200000u | 0x00010000u | 240);
     w32(s, 0x4004, 0x200000);
     w32(s, 0x03300580, 0x4000);
-    const uint16_t prg[] = {arith(2, 1, 2, 0, 0), 0x3F8, 0x3F0, ctl(0, 4, 0)};
-    for (int i = 0; i < 4; i++) s.clioWrite(0x1800 + uint32_t(i) * 4, prg[i]);
-    s.clioWrite(0x17E8, 1);
+    w32(s, 0x03300008, 0x6000);
+    // DSP: ruído no DAC e um canal de DMA que se repete
+    for (int i = 0; i < 64; i++) s.madam.w16(0x30000 + uint32_t(i) * 2, uint16_t(i * 999));
+    w32(s, 0x03300410, 0x30000); w32(s, 0x03300414, 128 - 4); w32(s, 0x03300418, 0x30000); w32(s, 0x0330041C, 128 - 4);
+    s.clioWrite(0x0304, 2);
+    const uint16_t prg[] = {arith(2, 1, 0, 0, 0), A(0x0EA), A(0x3FE), arith(2, 1, 0, 0, 0), A(0x0F1), A(0x3FF), SLEEP};
+    for (int i = 0; i < 7; i++) s.clioWrite(0x2000 + uint32_t(i) * 4, prg[i]);
+    s.clioWrite(0x17FC, 5);
     s.clioWrite(0x0108, 100); s.clioWrite(0x010C, 100); s.clioWrite(0x0200, 0x3u << 4);
   }
   for (int f = 0; f < 10; f++) { c->runFrame(); c->sys().write32(0x03300100, 1); }
@@ -860,6 +1304,31 @@ static void testState() {
   refused = false;
   try { c->loadState(std::vector<uint8_t>(100, 7)); } catch (const std::exception&) { refused = true; }
   CHECK(refused && c->saveState() == before, "estado de outro console recusado");
+  {
+    auto old = st;  // mesmo conteúdo com a marca "3DO1" da 2.4
+    old[0] = 0x31; old[1] = 0x4F; old[2] = 0x44; old[3] = 0x33;
+    if (st[0] == 0x31) { old[0] = 0x33; old[1] = 0x44; old[2] = 0x4F; old[3] = 0x31; }
+    std::string msg;
+    try { c->loadState(old); } catch (const std::exception& e) { msg = e.what(); }
+    CHECK(msg.find("antiga") != std::string::npos && c->saveState() == before, "estado da 2.4 (\"3DO1\") recusado como versão antiga");
+    auto longer = st;
+    longer.push_back(0);
+    refused = false;
+    try { c->loadState(longer); } catch (const std::exception&) { refused = true; }
+    CHECK(refused && c->saveState() == before, "estado com bytes sobrando recusado");
+  }
+  // contagem enorme no DMA do DSP: o teto é o mesmo ao escrever e ao carregar, então carregar não muda nada
+  {
+    c->sys().write32(0x03300414, 0x7FFFFFF0);
+    const uint32_t r0 = c->sys().read32(0x03300414);
+    c->sys().dsp.hostDmaWrite(1, 3, 0xFFFFFFF0);
+    const auto big = c->saveState();
+    const uint32_t r1 = c->sys().dsp.hostDmaRead(1, 3);
+    c->loadState(big);
+    CHECK(r0 == 0x3FFFF0 && r1 == (1u << 23) - 4 && c->saveState() == big,
+          "contagem do DMA do DSP com teto (%08X, %08X) e estado igual ao recarregar", r0, r1);
+    c->loadState(before);
+  }
   // NVRAM: um byte por palavra em 0x03140000
   c->sys().write32(0x03140000 + 5 * 4, 0xAB);
   CHECK(c->saveDirty() && c->exportSave().size() == 32768 && c->exportSave()[5] == 0xAB && !c->saveDirty(), "NVRAM de 32 KB como save");

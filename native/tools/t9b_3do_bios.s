@@ -1,9 +1,11 @@
 @ BIOS de teste do Índigo para o 3DO (etapa 9b). Escrita do zero para o Índigo; não é a BIOS do 3DO e não
 @ contém nada dela. Serve só para os testes automáticos e para mostrar o núcleo rodando sem a BIOS do usuário:
-@   1. liga o vídeo (VDL na DRAM, quadro na VRAM) e desenha o logotipo "3DO" com o motor de cels (retângulos e um
-@      quadrado com degradê girado 45 graus);
-@   2. lê o disco pela unidade de CD (XBUS, comandos 0x02 e 0x10, DMA), confere o rótulo do sistema de arquivos
-@      Opera, acha o arquivo "LaunchMe" no diretório raiz, carrega em 0x00010000 e pula para ele;
+@   0. parte do endereço 0 (a ROM aparece por cima da DRAM) e pula para 0x03000000; diz ao MADAM que há 2 MB de
+@      DRAM e 1 MB de VRAM (MSYSBITS = 0x29);
+@   1. liga o vídeo (VDL na DRAM, quadro na VRAM, MCTL) e desenha o logotipo "3DO" com o motor de cels (retângulos
+@      e um quadrado com degradê girado 45 graus);
+@   2. lê o disco pela unidade de CD (XBUS, comandos 0x02, 0x09 e 0x10, DMA), confere o rótulo do sistema de
+@      arquivos Opera, acha o arquivo "LaunchMe" no diretório raiz, carrega em 0x00010000 e pula para ele;
 @   3. sem disco (ou sem o arquivo), mostra um quadrado vermelho e tenta de novo a cada segundo.
 @ Montagem: arm-none-eabi-as -mbig-endian -march=armv3; ld -EB -Ttext=0x03000000 (ver t9b_3do.sh).
         .equ MADAM, 0x03300000
@@ -22,10 +24,15 @@
         .text
         .global inicio
 inicio:
-        b       reset
+        ldr     pc, =reset              @ da cópia em 0 para a ROM em 0x03000000
         .ascii  "Indigo 3DO test BIOS (GPL-3.0)\0"
         .balign 4
 reset:
+        ldr     r0, =MADAM
+        mov     r1, #0x29               @ 2 MB de DRAM (dois conjuntos de 1 MB) e 1 MB de VRAM
+        str     r1, [r0, #4]
+        mov     r1, #0
+        str     r1, [r1]                @ a 1ª escrita na DRAM só tira a ROM de cima (não grava)
         ldr     sp, =0x001FF000
         bl      video_init
         mov     r0, #0
@@ -62,7 +69,9 @@ video_init:
         str     r1, [r0, #16]
         ldr     r2, =MADAM
         str     r0, [r2, #0x580]
-        mov     r1, #320
+        mov     r1, #0x6000             @ MCTL: VDL e DAC de vídeo ligados
+        str     r1, [r2, #8]
+        ldr     r1, =0x1414             @ REGCTL0: quadros de 320 pixels (256 + 64)
         str     r1, [r2, #0x130]
         ldr     r1, =0x00EF013F
         str     r1, [r2, #0x134]
@@ -71,12 +80,16 @@ video_init:
         str     r1, [r2, #0x13C]
         mov     pc, lr
 
-@ r0 = palavra de preenchimento (dois pixels)
+@ r0 = palavra de preenchimento (dois pixels): cor do SPORT (0x2000) e "flash" das 75 páginas de 2 KB (0x4000;
+@ a página vem dos bits 2-10 do endereço) com a máscara inteira
 limpa_tela:
         ldr     r1, =SPORT
+        add     r1, r1, #0x2000         @ deslocamento imediato do ARM só vai até 4095
+        str     r0, [r1]
+        add     r1, r1, #0x2000
+        mvn     r3, #0
         mov     r2, #75                 @ 240 linhas * 640 bytes / 2048
-1:      str     r0, [r1]
-        add     r1, r1, #2048
+1:      str     r3, [r1], #4
         subs    r2, r2, #1
         bne     1b
         mov     pc, lr
@@ -135,7 +148,7 @@ desenha_retangulos:
         bne     1b
         ldr     r2, =MADAM
         ldr     r1, =CCBS
-        str     r1, [r2, #0x5A0]
+        str     r1, [r2, #0x5A4]        @ primeiro CCB
         str     r1, [r2, #0x100]        @ desenha
         ldmfd   sp!, {r4-r11, pc}
 
@@ -189,14 +202,15 @@ desenha_degrade:
         ldr     r1, =0x0006000F         @ 16 pixels, 8 palavras por linha
         str     r1, [r0, #56]
         ldr     r2, =MADAM
-        str     r0, [r2, #0x5A0]
+        str     r0, [r2, #0x5A4]
         str     r0, [r2, #0x100]
         mov     pc, lr
 
         .ltorg
 
 @ ---------------------------------------------------------------- CD
-@ r0 = 7 bytes do comando; devolve em r0 o último byte da resposta (estado da unidade)
+@ r0 = 7 bytes do comando; devolve em r0 o último byte da resposta (estado da unidade). Na leitura (0x10) a
+@ resposta só vem depois do último dado (que o DMA leva).
 cd_cmd:
         ldr     r1, =CLIO
         mov     r2, #0
@@ -247,8 +261,11 @@ cd_le:
         ldr     r1, =MADAM
         str     r6, [r1, #0x540]
         mov     r2, r5, lsl #11
+        sub     r2, r2, #4              @ contagem em bytes menos 4
         str     r2, [r1, #0x544]
         ldr     r1, =CLIO
+        mov     r2, #0x800
+        str     r2, [r1, #0x400]        @ EXPCTL: DMA do XBUS para a RAM
         mov     r2, #0x100000
         str     r2, [r1, #0x304]        @ liga o DMA do XBUS
         bl      cd_cmd
@@ -268,6 +285,8 @@ parte_do_cd:
         bl      cd_cmd
         tst     r0, #0x40               @ disco presente?
         beq     falhou
+        ldr     r0, =cmd_veloc
+        bl      cd_cmd
         mov     r0, #0
         mov     r1, #1
         ldr     r2, =BUF
@@ -329,6 +348,8 @@ falhou:
         .balign 4
 cmd_gira:
         .byte   0x02, 0, 0, 0, 0, 0, 0
+cmd_veloc:
+        .byte   0x09, 3, 0x80, 0, 0, 0, 0   @ velocidade dupla
 nome:
         .asciz  "LaunchMe"
         .balign 4

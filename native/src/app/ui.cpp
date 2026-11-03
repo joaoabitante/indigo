@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 #include "core/core.h"
 #include "text.h"
@@ -160,6 +161,19 @@ SDL_Color consoleColor(const std::string& c) {
   if (c == "SMS") return {0x1E, 0x88, 0xE5, 255};
   if (c == "GG") return {0x26, 0xA6, 0x9A, 255};
   if (c == "NGP") return {0xF3, 0x9C, 0x12, 255};
+  // os outros consoles (capas sem imagem): cores claras, que aparecem sobre o fundo escuro
+  static const struct { const char* c; SDL_Color k; } MORE[] = {
+      {"MD", {0x5C, 0x7C, 0xFA, 255}}, {"32X", {0xEF, 0x53, 0x50, 255}}, {"FDS", {0xF0, 0x8A, 0x3C, 255}},
+      {"PCE", {0xF0, 0x6A, 0x86, 255}}, {"PM", {0xF2, 0x8B, 0x8B, 255}}, {"2600", {0xBC, 0x95, 0x7E, 255}},
+      {"5200", {0xC8, 0xA0, 0x6E, 255}}, {"7800", {0x9E, 0xB3, 0xC2, 255}}, {"LYNX", {0xFF, 0xA7, 0x26, 255}},
+      {"MSX", {0x79, 0x86, 0xCB, 255}}, {"COLECO", {0x90, 0xA4, 0xAE, 255}}, {"SG", {0x26, 0xC6, 0xDA, 255}},
+      {"WS", {0x4D, 0xD0, 0xE1, 255}}, {"VECTREX", {0x66, 0xBB, 0x6A, 255}}, {"INTV", {0xD4, 0xAF, 0x37, 255}},
+      {"VB", {0xE5, 0x39, 0x35, 255}}, {"DUCK", {0x9C, 0xCC, 0x65, 255}}, {"SV", {0xA5, 0xB8, 0x8A, 255}},
+      {"G&W", {0xFF, 0xD5, 0x4F, 255}}, {"GAMECOM", {0xAB, 0x47, 0xBC, 255}}, {"JAGUAR", {0xFF, 0x70, 0x43, 255}},
+      {"ARCADE", {0xF0, 0x62, 0x92, 255}}, {"PS1", {0xB0, 0xBE, 0xC5, 255}}, {"3DO", {0x4D, 0xB6, 0xAC, 255}},
+      {"PCFX", {0xCE, 0x93, 0xD8, 255}}, {"SATURN", {0x9F, 0xA8, 0xDA, 255}}, {"CD", {0x95, 0x75, 0xCD, 255}},
+  };
+  for (const auto& e : MORE) if (c == e.c) return e.k;
   return color::MUTED;
 }
 
@@ -258,6 +272,7 @@ void TouchControls::layout(int ow, int oh, bool portrait, bool lr, bool xy, SDL_
     const float my = ps1 ? T + 0.285f * u : T + 0.27f * u;
     ctls_.push_back({PILL, xl, my, 0.17f * u, 0.075f * u, "Menu", 0, MENU});
     ctls_.push_back({PILL, xr, my, 0.17f * u, 0.075f * u, "\xC2\xBB", 0, FAST});
+    layoutExtras(false, L, R, T, B, u, xl);
   } else {
     // em pé: grupos presos às bordas de baixo, da esquerda e da direita (num tablet a cruz não vai para o meio)
     const float C = (L + R) / 2;
@@ -290,7 +305,41 @@ void TouchControls::layout(int ow, int oh, bool portrait, bool lr, bool xy, SDL_
     ctls_.push_back({PILL, C + 0.12f * u, B - 0.11f * u, 0.20f * u, 0.07f * u, tdo ? "P" : "Start", KEY_START, NONE});
     ctls_.push_back({PILL, C - 0.08f * u, B - 0.80f * u, 0.13f * u, 0.07f * u, "Menu", 0, MENU});
     ctls_.push_back({PILL, C + 0.08f * u, B - 0.80f * u, 0.13f * u, 0.07f * u, "\xC2\xBB", 0, FAST});
+    layoutExtras(true, L, R, T, B, u, L + 0.17f * u);
   }
+}
+
+// botão do disco e teclado numérico. Deitado: "Disco" no lugar do L (o FDS não tem L e R) e "123" embaixo, no
+// meio; o teclado abre acima do "123". Em pé: "Disco" no lugar do L, "123" entre a cruz e os botões e o
+// teclado logo acima da faixa dos controles.
+void TouchControls::layoutExtras(bool portrait, float L, float R, float T, float B, float u, float xl) {
+  const float C = (L + R) / 2;
+  if (disk) {
+    if (portrait) ctls_.push_back({PILL, xl, B - 0.80f * u, 0.24f * u, 0.075f * u, "Disco", 0, DISK});
+    else ctls_.push_back({PILL, xl, T + 0.13f * u, 0.26f * u, 0.085f * u, "Disco", 0, DISK});
+  }
+  if (keypad == 0) { kpOpen_ = false; kpBase_ = ctls_.size(); return; }
+  if (portrait) ctls_.push_back({PILL, C, B - 0.67f * u, 0.15f * u, 0.07f * u, "123", 0, KEYPAD});
+  else ctls_.push_back({PILL, C, B - 0.08f * u, 0.17f * u, 0.075f * u, "123", 0, KEYPAD});
+  kpBase_ = ctls_.size();
+  if (!kpOpen_) return;
+  static const char* const LABELS[2][12] = {
+      {"1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"},
+      {"1", "2", "3", "4", "5", "6", "7", "8", "9", "Clear", "0", "Enter"}};
+  const char* const* lab = LABELS[keypad == 2 ? 1 : 0];
+  const float sx = 0.135f * u, sy = 0.10f * u, kw = 0.12f * u, kh = 0.085f * u;
+  const float bottom = portrait ? B - 0.98f * u : B - 0.18f * u;  // centro da fileira de baixo
+  for (int i = 0; i < 12; i++) {
+    const int row = i / 3, col = i % 3;
+    const uint32_t key = i == 9 ? KEY_KPSTAR : i == 11 ? KEY_KPHASH : KEY_KP0 << (i == 10 ? 0 : i + 1);
+    ctls_.push_back({PILL, C + (col - 1) * sx, bottom - (3 - row) * sy, kw, kh, lab[i], key, NONE});
+  }
+}
+
+bool TouchControls::find(const std::string& label, float& x, float& y) const {
+  for (const Ctl& c : ctls_)
+    if (c.label && label == c.label) { x = c.cx; y = c.cy; return true; }
+  return false;
 }
 
 int TouchControls::hit(float x, float y) const {
@@ -332,13 +381,22 @@ TouchAction TouchControls::fingerDown(SDL_FingerID id, float x, float y) {
   if (i < 0) return TouchAction::None;
   const Ctl& c = ctls_[i];
   if (c.special == MENU) return TouchAction::Menu;
+  if (c.special == DISK) return TouchAction::Disk;
+  if (c.special == KEYPAD) {
+    // abre ou fecha o teclado; ao fechar, solta as teclas que ainda estavam apertadas
+    kpOpen_ = !kpOpen_;
+    if (!kpOpen_)
+      for (auto it = fingers_.begin(); it != fingers_.end();)
+        it = it->second.ctl >= static_cast<int>(kpBase_) ? fingers_.erase(it) : std::next(it);
+    return TouchAction::Control;
+  }
   fingers_[id] = {i, c.kind == DPAD ? dpadDir(c, x, y) : c.key};
   return TouchAction::Control;
 }
 
 void TouchControls::fingerMove(SDL_FingerID id, float x, float y) {
   auto it = fingers_.find(id);
-  if (it == fingers_.end()) return;
+  if (it == fingers_.end() || it->second.ctl >= static_cast<int>(ctls_.size())) return;
   const Ctl& c = ctls_[it->second.ctl];
   if (c.kind == DPAD) { it->second.dir = dpadDir(c, x, y); return; }
   // arrastar o dedo de um botão para outro (de B para A, por exemplo) troca o botão
@@ -356,7 +414,7 @@ uint32_t TouchControls::keys() const {
 
 bool TouchControls::turbo() const {
   for (const auto& [id, f] : fingers_)
-    if (ctls_[f.ctl].special == FAST) return true;
+    if (f.ctl < static_cast<int>(ctls_.size()) && ctls_[f.ctl].special == FAST) return true;
   return false;
 }
 
@@ -406,7 +464,10 @@ void TouchControls::draw(SDL_Renderer* r) const {
       drawText(r, c.cx - textWidth(c.label, px, true) / 2, c.cy - text::lineHeight(px) / 2, c.label, px, label, true);
     } else {
       const SDL_FRect rc{c.cx - c.w / 2, c.cy - c.h / 2, c.w, c.h};
-      fillRoundRect(r, rc, c.h / 2, p ? on : fill);
+      // teclas do teclado numérico: fundo escuro para ler por cima do jogo; "123" aceso com o teclado aberto
+      const bool kpKey = kpOpen_ && i >= static_cast<int>(kpBase_);
+      const SDL_Color base = kpKey ? SDL_Color{0x0E, 0x0F, 0x14, 190} : (c.special == KEYPAD && kpOpen_) ? alpha(color::PRIMARY, 90) : fill;
+      fillRoundRect(r, rc, c.h / 2, p ? on : base);
       strokeRoundRect(r, rc, c.h / 2, line, ring);
       float px = c.h * 0.5f;
       const float lw = textWidth(c.label, px, true);

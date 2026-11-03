@@ -11,6 +11,12 @@
 //   - ANTIC: centenas de telas sorteadas (modos 2 a F, larguras, LMS, linhas em branco, rolagem fina horizontal
 //     e vertical, CHACTL) comparadas ponto a ponto com um desenhista de referência escrito à parte aqui
 //   - ciclos roubados pelo ANTIC por linha (refresh, lista, jogadores/mísseis, modos de texto e de bitmap)
+//   - ANTIC ciclo a ciclo: mapa exato dos ciclos roubados (nomes, desenhos, bitmap, refresh adiado), CHBASE,
+//     CHACTL e DMACTL trocados num ciclo exato no meio da linha, VSCROL comparado no fim da linha, brancos que
+//     fecham a região rolada, troca de CHBASE pela CPU depois de WSYNC (borda da linha ou meio dela), estado
+//     gravado no meio da linha
+//   - GTIA no meio da linha: HPOS trocado durante a imagem, jogador reaproveitado, colisão lida no meio da linha
+//   - POKEY: primeira IRQ do temporizador na grade do divisor de 64 kHz, contador do POT na grade de 15 kHz
 //   - GTIA: posição e tamanho de jogadores e mísseis, DMA de linha simples e dupla, VDELAY, prioridades
 //     (PRIOR 1, 2, 4, 8 e 0), quinto jogador, cores múltiplas, colisões e HITCLR, modos GTIA 1, 2 e 3
 //   - save state determinístico e estados estragados recusados sem estragar a máquina
@@ -140,13 +146,14 @@ std::vector<uint32_t> reference(const A5200& m, const Regs& r) {
   while (y < 248) {
     const uint8_t ir = next();
     const int mode = ir & 15;
-    if (mode == 0) { y += ((ir >> 4) & 7) + 1; prevVs = false; continue; }
+    // brancos e saltos depois de uma região rolada também fecham a região: VSCROL + 1 linhas
+    if (mode == 0) { y += (prevVs ? r.vscrol : (ir >> 4) & 7) + 1; prevVs = false; continue; }
     if (mode == 1) {
       const uint8_t lo = next(), hi = next();
       dl = static_cast<uint16_t>(lo | hi << 8);
-      prevVs = false;
       if (ir & 0x40) break;
-      y++;
+      y += prevVs ? r.vscrol + 1 : 1;
+      prevVs = false;
       continue;
     }
     if (ir & 0x40) { const uint8_t lo = next(), hi = next(); ms = static_cast<uint16_t>(lo | hi << 8); }
@@ -359,7 +366,9 @@ void testBoot(const std::string& root) {
   // ciclos roubados: linha em branco = refresh (9); primeira linha de modo F com LMS = 1 + 2 + 40 + 9
   check(m->stolenLine[20] == 9, "linha em branco: 9 ciclos de refresh (" + std::to_string(m->stolenLine[20]) + ")");
   check(m->stolenLine[41] == 52, "modo F com LMS: 52 ciclos (" + std::to_string(m->stolenLine[41]) + ")");
-  check(m->stolenLine[49] == 92, "modo 2, primeira linha com LMS: 92 ciclos (" + std::to_string(m->stolenLine[49]) + ")");
+  // 1 + 2 + 40 nomes + 40 desenhos + 1 refresh: os pedidos de refresh caem nos ciclos do playfield e só um
+  // espera o ciclo livre 98 (mapa de ciclos medido no aparelho; até a 2.4 eram 9 refresh = 92)
+  check(m->stolenLine[49] == 84, "modo 2, primeira linha com LMS: 84 ciclos (" + std::to_string(m->stolenLine[49]) + ")");
   check(m->stolenLine[50] == 49, "modo 2, outras linhas: 49 ciclos (" + std::to_string(m->stolenLine[50]) + ")");
   check(m->stolenLine[250] == 9, "retraço vertical: só refresh");
 
@@ -614,6 +623,321 @@ void testAntic() {
   check(bad == 0, std::to_string(total - bad) + " de " + std::to_string(total) + " telas iguais à referência");
 }
 
+// ---------------------------------------------------------------- ANTIC ciclo a ciclo
+// mapa dos ciclos roubados de uma linha ("." = CPU, "#" = ANTIC) e o mapa esperado a partir de uma lista
+std::string stealStr(const A5200& m, int line) {
+  std::string s;
+  for (int c = 0; c < A5200::CYCLES; c++) s += m.stolenAt[line][c] ? '#' : '.';
+  return s;
+}
+std::string mapOf(const std::vector<int>& cycles) {
+  std::string s(A5200::CYCLES, '.');
+  for (int c : cycles) s[size_t(c)] = '#';
+  return s;
+}
+std::vector<int> range(int from, int to, int step) {
+  std::vector<int> v;
+  for (int c = from; c <= to; c += step) v.push_back(c);
+  return v;
+}
+std::vector<int> join(std::initializer_list<std::vector<int>> parts) {
+  std::vector<int> v;
+  for (const auto& p : parts) v.insert(v.end(), p.begin(), p.end());
+  return v;
+}
+
+// máquina parada (JMP $4000) com lista em $0800, tela em $1000, fonte A em $2000 (caractere 1 aceso, 0 apagado)
+// e fonte B em $2400 (tudo apagado); cores: PF2 = $94 (apagado), PF1 = $0E (aceso em $9E), fundo $46
+std::unique_ptr<A5200> cycleMachine(const std::vector<uint8_t>& dl, uint8_t dmactl, uint8_t name,
+                                    const std::vector<uint8_t>& cart = idleCart()) {
+  auto m = machine(cart);
+  for (int i = 0; i < 15; i++) m->runFrame();
+  for (size_t i = 0; i < dl.size(); i++) m->poke(static_cast<uint16_t>(0x0800 + i), dl[i]);
+  for (int a = 0x1000; a < 0x1800; a++) m->poke(static_cast<uint16_t>(a), name);
+  for (int a = 0x2000; a < 0x2800; a++) m->poke(static_cast<uint16_t>(a), 0);
+  for (int r = 0; r < 8; r++) m->poke(static_cast<uint16_t>(0x2008 + r), 0xFF);
+  m->poke(0xC018, 0x94); m->poke(0xC017, 0x0E); m->poke(0xC01A, 0x46);
+  m->poke(0xD409, 0x20); m->poke(0xD401, 0); m->poke(0xD404, 0); m->poke(0xD405, 0);
+  m->poke(0xD402, 0x00); m->poke(0xD403, 0x08); m->poke(0xD400, dmactl);
+  m->runFrame();
+  m->runFrame();
+  return m;
+}
+// leva o relógio da máquina (no começo de um quadro) até a linha e o ciclo pedidos
+void goTo(A5200& m, int line, int cyc) { m.runCycles(line * A5200::CYCLES + cyc - (m.line * A5200::CYCLES + m.cyc)); }
+
+void testCycles() {
+  std::printf("== ANTIC ciclo a ciclo: posição da DMA, registradores trocados no meio da linha, WSYNC\n");
+  const uint32_t ON = A5200::color(0x9E), OFF = A5200::color(0x94), BK = A5200::color(0x46);
+  // modo 2, largura normal: nomes nos ciclos pares 18–96, desenhos nos ímpares 21–99, refresh só no 98
+  {
+    auto m = cycleMachine({0x70, 0x70, 0x70, 0x42, 0x00, 0x10, 0x02, 0x41, 0x00, 0x08}, 0x22, 1);
+    check(stealStr(*m, 20) == mapOf(range(25, 57, 4)), "linha em branco: refresh nos ciclos 25, 29, ... 57\n    " + stealStr(*m, 20));
+    check(stealStr(*m, 32) == mapOf(join({{1, 6, 7, 98}, range(18, 96, 2), range(21, 99, 2)})),
+          "modo 2 com LMS: instrução 1, endereço 6-7, nomes 18-96, desenhos 21-99, refresh 98\n    " + stealStr(*m, 32));
+    check(stealStr(*m, 33) == mapOf(join({range(21, 99, 2), range(26, 58, 4)})),
+          "modo 2, linha seguinte: desenhos 21-99 e refresh adiado para 26, 30, ... 58\n    " + stealStr(*m, 33));
+    check(stealStr(*m, 40) == mapOf(join({{1, 98}, range(18, 96, 2), range(21, 99, 2)})), "modo 2 sem LMS: sem os ciclos 6-7");
+  }
+  // modo F largo: bytes nos pares 12–104 (o 48º, no ciclo 106, já não toma o barramento); refresh nos ímpares
+  {
+    auto m = cycleMachine({0x70, 0x70, 0x70, 0x4F, 0x00, 0x10, 0x0F, 0x41, 0x00, 0x08}, 0x23, 0xFF);
+    check(stealStr(*m, 32) == mapOf(join({{1, 6, 7}, range(12, 104, 2), range(25, 57, 4)})),
+          "modo F largo com LMS: bytes 12-104, refresh 25-57\n    " + stealStr(*m, 32));
+    check(px(*m, 33, 220, 1) == ON && px(*m, 33, 223, 1) == ON, "modo F largo: o último byte aparece mesmo sem tomar o ciclo 106");
+  }
+  // modo 8 estreito com rolagem horizontal (HSCROL 5: busca na largura normal, 2 ciclos depois): bytes 22–94
+  {
+    auto m = cycleMachine({0x70, 0x70, 0x70, 0x58, 0x00, 0x10, 0x41, 0x00, 0x08}, 0x21, 0x55);
+    m->poke(0xD404, 5);
+    m->runFrame();
+    check(stealStr(*m, 32) == mapOf(join({{1, 6, 7}, range(22, 94, 8), range(25, 57, 4)})),
+          "modo 8 com HSCROL 5: bytes nos ciclos 22, 30, ... 94\n    " + stealStr(*m, 32));
+    check(stealStr(*m, 33) == mapOf(range(25, 57, 4)), "modo 8, linha seguinte: sem DMA de playfield");
+  }
+  // modo 6 com jogadores e mísseis: mísseis 0, jogadores 2-5, nomes 18-94 de 4 em 4, desenhos 21-97
+  {
+    auto m = cycleMachine({0x70, 0x70, 0x70, 0x46, 0x00, 0x10, 0x41, 0x00, 0x08}, 0x2E, 1);
+    m->poke(0xC01D, 3);
+    m->runFrame();
+    check(stealStr(*m, 32) == mapOf(join({{0, 1, 2, 3, 4, 5, 6, 7}, range(18, 94, 4), range(21, 97, 4), range(27, 59, 4)})),
+          "modo 6 com jogadores: 0-7, nomes 18-94, desenhos 21-97, refresh adiado para 27-59\n    " + stealStr(*m, 32));
+  }
+  // CHBASE trocado no ciclo 61 da linha 34: os desenhos buscados depois (byte 21 em diante, ciclo 63) são da fonte B
+  {
+    auto m = cycleMachine({0x70, 0x70, 0x70, 0x42, 0x00, 0x10, 0x02, 0x41, 0x00, 0x08}, 0x22, 1);
+    goTo(*m, 34, 61);
+    m->poke(0xD409, 0x24);
+    m->runFrame();
+    check(px(*m, 33, 200) == ON && px(*m, 35, 50) == OFF, "CHBASE: linha anterior inteira com a fonte A, seguinte com a B");
+    check(px(*m, 34, 48) == ON && px(*m, 34, 131, 1) == ON && px(*m, 34, 132) == OFF && px(*m, 34, 207) == OFF,
+          "CHBASE no ciclo 61: bytes 0-20 com a fonte A, 21-39 com a B (corte no ponto de cor 132)");
+    m->poke(0xD409, 0x20);
+    m->runFrame();
+    goTo(*m, 34, 40);
+    m->poke(0xD409, 0x24);
+    m->runFrame();
+    check(px(*m, 34, 87, 1) == ON && px(*m, 34, 88) == OFF, "CHBASE no ciclo 40: corte no byte 10 (ponto de cor 88)");
+  }
+  // CHACTL (inversão) trocado no ciclo 41: só os caracteres buscados depois saem invertidos
+  {
+    auto m = cycleMachine({0x70, 0x70, 0x70, 0x42, 0x00, 0x10, 0x02, 0x41, 0x00, 0x08}, 0x22, 0x81);
+    goTo(*m, 34, 41);
+    m->poke(0xD401, 2);
+    m->runFrame();
+    check(px(*m, 34, 91, 1) == ON && px(*m, 34, 92) == OFF && px(*m, 35, 48) == OFF && px(*m, 33, 207) == ON,
+          "CHACTL no ciclo 41: bytes 0-10 normais, 11-39 invertidos");
+  }
+  // DMACTL: playfield desligado no ciclo 60: a DMA para ali e o resto da linha fica com o fundo
+  {
+    auto m = cycleMachine({0x70, 0x70, 0x70, 0x42, 0x00, 0x10, 0x02, 0x41, 0x00, 0x08}, 0x22, 1);
+    goTo(*m, 34, 60);
+    m->poke(0xD400, 0x20);
+    m->runFrame();
+    check(stealStr(*m, 34) == mapOf(join({range(21, 59, 2), range(26, 58, 4)})),
+          "DMACTL no ciclo 60: desenhos só até o 59\n    " + stealStr(*m, 34));
+    check(px(*m, 34, 127, 1) == ON && px(*m, 34, 128) == BK && px(*m, 35, 60) == BK, "DMACTL no ciclo 60: bytes 0-19 e depois o fundo");
+  }
+  // VSCROL comparado no fim da linha: a linha de modo que fecha a região rolada acaba onde o VSCROL novo manda
+  {
+    std::vector<uint8_t> dl = {0x70, 0x70, 0x70, 0x62, 0x00, 0x10, 0x02, 0x4F, 0x00, 0x14, 0x0F, 0x0F, 0x41, 0x00, 0x08};
+    auto m = cycleMachine(dl, 0x22, 0);
+    for (int a = 0x1400; a < 0x1500; a++) m->poke(static_cast<uint16_t>(a), 0xFF);
+    m->poke(0xD405, 7);
+    m->runFrame();
+    // VSCROL 7: primeira linha de modo só com a linha 7 (32), segunda com 0-7 (33-40), modo F a partir da 41
+    check(px(*m, 40, 100) == OFF && px(*m, 41, 100) == ON, "VSCROL 7: fim da região na linha 40");
+    m->runFrame();
+    goTo(*m, 35, 50);
+    m->poke(0xD405, 2);
+    m->runFrame();
+    check(px(*m, 35, 100) == OFF && px(*m, 36, 100) == ON && px(*m, 38, 100) == ON,
+          "VSCROL 7 -> 2 no meio da linha 35 (linha 2 da região): a linha de modo acaba nela e o modo F vem na 36");
+  }
+  // brancos depois de uma região rolada também a fecham: VSCROL + 1 linhas
+  {
+    std::vector<uint8_t> dl = {0x70, 0x70, 0x70, 0x62, 0x00, 0x10, 0x70, 0x4F, 0x00, 0x14, 0x0F, 0x41, 0x00, 0x08};
+    auto m = cycleMachine(dl, 0x22, 0);
+    for (int a = 0x1400; a < 0x1500; a++) m->poke(static_cast<uint16_t>(a), 0xFF);
+    m->poke(0xD405, 4);
+    m->runFrame();
+    // modo 2 rolado: linhas 4-7 (32-35); branco com VSCROL 4: 5 linhas (36-40); modo F na 41
+    check(px(*m, 35, 100) == OFF && px(*m, 36, 100) == BK && px(*m, 40, 100) == BK && px(*m, 41, 100) == ON,
+          "linha em branco que fecha a região rolada: VSCROL + 1 = 5 linhas");
+  }
+  // com a CPU de verdade: espera VCOUNT = $32 (linhas 100-101), STA WSYNC, LDX #n, laço DEX/BNE e STA CHBASE:
+  // com n = 1 a escrita cai no ciclo 2 da linha seguinte (antes do primeiro desenho, no 21: borda limpa); com
+  // n = 6 cai no meio da linha seguinte
+  for (int ws = 1; ws >= 0; ws--) {
+    std::vector<uint8_t> cart = idleCart();
+    const uint8_t prog[] = {0xAD, 0x0B, 0xD4, 0xD0, 0xFB, 0xA9, 0x20, 0x8D, 0x09, 0xD4, 0xAD, 0x0B, 0xD4, 0xC9, 0x32,
+                            0xD0, 0xF9, 0x8D, 0x0A, 0xD4, 0xA2, uint8_t(ws ? 1 : 6), 0xCA, 0xD0, 0xFD, 0xA9, 0x24,
+                            0x8D, 0x09, 0xD4, 0x4C, 0x00, 0x40};
+    std::copy(std::begin(prog), std::end(prog), cart.begin());
+    std::vector<uint8_t> dl = {0x70, 0x70, 0x70, 0x42, 0x00, 0x10};
+    for (int i = 0; i < 25; i++) dl.push_back(0x02);
+    dl.push_back(0x41); dl.push_back(0x00); dl.push_back(0x08);
+    auto m = cycleMachine(dl, 0x22, 1, cart);
+    m->runFrame();
+    int mixed = 0, first = -1;
+    bool clean = true;
+    for (int y = 90; y < 120; y++) {
+      int on = 0, off = 0;
+      for (int cc = 48; cc < 208; cc++) (px(*m, y, cc, 1) == ON ? on : off)++;
+      if (on && off) mixed++;
+      if (std::getenv("A5200_DBG")) std::printf("    linha %d: %d acesos %d apagados\n", y, on, off);
+      if (!on && first < 0) first = y;
+      if (first >= 0 && on) clean = false;
+    }
+    if (ws)
+      check(mixed == 0 && clean && (first == 101 || first == 102), "WSYNC + 8 ciclos + STA CHBASE: troca na borda da linha " + std::to_string(first));
+    else
+      check(mixed == 1 && clean, "WSYNC + laço de 6 voltas + STA CHBASE: a troca cai no meio de uma linha (" + std::to_string(mixed) + " linha mista)");
+  }
+  // estado gravado no meio de uma linha (DMA do playfield, refresh pendente e jogador disparado no meio do caminho)
+  {
+    auto m = cycleMachine({0x70, 0x70, 0x70, 0x42, 0x00, 0x10, 0x02, 0x41, 0x00, 0x08}, 0x2E, 1);
+    m->poke(0xC00D, 0xFF); m->poke(0xC008, 3); m->poke(0xC000, 100); m->poke(0xC012, 0x36);
+    m->runFrame();
+    goTo(*m, 34, 55);  // ciclo 55: desenhos em curso, P0 disparado no ponto 100
+    const auto st = m->saveState();
+    m->poke(0xD409, 0x24);
+    m->runFrame(); m->runFrame();
+    const auto fb1 = m->fb;
+    const auto end1 = m->saveState();
+    m->loadState(st);
+    m->poke(0xD409, 0x24);
+    m->runFrame(); m->runFrame();
+    check(m->fb == fb1 && m->saveState() == end1, "estado do meio da linha: carregar e rodar dá a mesma tela e o mesmo estado");
+    std::mt19937 rng(5200);
+    int ok = 0;
+    for (int t = 0; t < 40; t++) {
+      auto bad = st;
+      for (int k = 0; k < 6; k++) bad[rng() % bad.size()] ^= static_cast<uint8_t>(1 + rng() % 255);
+      try { m->loadState(bad); } catch (const std::exception&) {}
+      for (int f = 0; f < 3; f++) m->runFrame();
+      ok++;
+    }
+    m->loadState(st);
+    check(ok == 40 && m->saveState() == st, "40 estados do meio da linha estragados rodados sem quebrar; o bom volta igual");
+    // estado adulterado com o disparo do P0 e do M0 depois do ponto já desenhado: tem de ser descartado ao
+    // carregar, e não virar um deslocamento fora da faixa no desenho. A escrita em HITCLR desenha até o ciclo 55
+    // (ponto 110), com o P0 disparado no ponto 100 e o M0 no 0
+    m->loadState(st);
+    m->poke(0xC01E, 0);
+    const auto st2 = m->saveState();
+    const uint8_t pat[] = {110, 0, 0, 0, 100, 0, 0, 0};  // rendered, pTrig[0], mTrig[0] (HPOSM0 = 0)
+    size_t at = 0;
+    int achados = 0;
+    for (size_t i = 0; i + sizeof pat <= st2.size(); i++)
+      if (std::equal(pat, pat + sizeof pat, st2.begin() + i)) { at = i; achados++; }
+    bool limpo = false;
+    if (achados == 1) {
+      auto bad = st2;
+      bad[at + 4] = 220; bad[at + 6] = 200; bad[at + 7] = 0;  // pTrig[0] = 220, mTrig[0] = 200
+      m->loadState(bad);
+      const auto re = m->saveState();
+      limpo = re[at + 4] == 0xFF && re[at + 5] == 0xFF && re[at + 6] == 0xFF && re[at + 7] == 0xFF;
+      m->runFrame(); m->runFrame();
+      m->loadState(st2);
+      limpo = limpo && m->saveState() == st2;
+    }
+    check(achados == 1 && limpo, "estado com jogador e míssil disparados adiante do ponto desenhado: disparo descartado ao carregar");
+  }
+}
+
+// GTIA no meio da linha: HPOS trocado enquanto o jogador sai (a imagem não é cortada e o jogador volta na posição
+// nova), reaproveitamento do jogador na mesma linha e colisões lidas no meio da linha
+void testGtiaLine() {
+  std::printf("== GTIA no meio da linha: HPOS, reaproveitamento de jogador, colisões\n");
+  auto m = machine(idleCart());
+  for (int i = 0; i < 15; i++) m->runFrame();
+  const uint32_t P = A5200::color(0x36), Z = A5200::color(0);
+  m->poke(0xC01A, 0); m->poke(0xC012, 0x36); m->poke(0xC013, 0x86);
+  m->poke(0xC00D, 0xFF); m->poke(0xC008, 3); m->poke(0xC000, 100);  // P0 quádruplo: pontos 100-131
+  m->runFrame(); m->runFrame();
+  goTo(*m, 120, 55);  // ponto de cor 110: no meio da imagem
+  m->poke(0xC000, 200);
+  m->runFrame();
+  check(px(*m, 120, 100) == P && px(*m, 120, 131, 1) == P && px(*m, 120, 132) == Z,
+        "HPOS trocado no ponto 110: a imagem já disparada sai inteira (100-131)");
+  check(px(*m, 120, 199) == Z && px(*m, 120, 200) == P && px(*m, 120, 223) == P, "e o jogador dispara de novo no HPOS novo (200)");
+  check(px(*m, 119, 200) == Z && px(*m, 121, 100) == Z && px(*m, 121, 200) == P, "linhas vizinhas só com uma posição");
+  m->poke(0xC000, 60);
+  m->runFrame();
+  goTo(*m, 130, 50);
+  m->poke(0xC000, 150);
+  m->runFrame();
+  check(px(*m, 130, 60) == P && px(*m, 130, 91) == P && px(*m, 130, 150) == P && px(*m, 130, 181) == P && px(*m, 130, 120) == Z,
+        "jogador reaproveitado: 60-91 e 150-181 na mesma linha");
+  // colisão P0 x P1 nos pontos 160-167 (ciclo 80): lida no ciclo 60 ainda não existe, no 100 já
+  m->poke(0xC00E, 0xFF); m->poke(0xC001, 160);
+  m->runFrame();
+  goTo(*m, 140, 10);
+  m->poke(0xC01E, 0);
+  goTo(*m, 140, 60);
+  const uint8_t antes = m->read(0xC00C);
+  goTo(*m, 140, 100);
+  const uint8_t depois = m->read(0xC00C);
+  m->runFrame();
+  check(antes == 0 && depois == 2, "colisão P0PL lida no meio da linha: " + std::to_string(antes) + " antes do ponto 160, " +
+                                   std::to_string(depois) + " depois");
+  check(px(*m, 140, 160) == P && px(*m, 140, 167, 1) == P, "P0 na frente de P1 onde se cruzam");
+}
+
+// POKEY: o primeiro pulso do temporizador depois de STIMER cai na grade do divisor de 64 kHz (que corre sempre), e
+// o contador dos potenciômetros sobe na grade do relógio de 15 kHz
+void testPokeyClock() {
+  std::printf("== POKEY: divisores de 64 kHz e 15 kHz (temporizador e potenciômetros)\n");
+  auto m = machine(idleCart());  // a CPU fica com I = 1: a IRQ só aparece em IRQST
+  for (int i = 0; i < 15; i++) m->runFrame();
+  m->poke(0xE80F, 3); m->poke(0xE808, 0); m->poke(0xE800, 9);  // 64 kHz, AUDF1 = 9: 10 x 28 = 280 ciclos
+  // espera a IRQ do temporizador 1 lendo IRQST; devolve o ciclo da leitura que a viu
+  auto waitIrq = [&]() -> int64_t {
+    for (int k = 0; k < 600; k++) {
+      const uint8_t v = m->read(0xE80E);
+      if (!(v & 1)) return static_cast<int64_t>(m->clk) - 1;
+    }
+    return -1;
+  };
+  int dmin = 1 << 30, dmax = 0, foraDaGrade = 0, periodoErrado = 0;
+  for (int ph = 0; ph < 28; ph++) {
+    m->runFrame();
+    goTo(*m, 250, 60);
+    m->runCycles(int((ph + 28 - m->clk % 28) % 28));  // STIMER na fase ph do divisor
+    m->poke(0xE80E, 0); m->poke(0xE80E, 1);
+    const int64_t c0 = static_cast<int64_t>(m->clk);
+    m->poke(0xE809, 0);  // STIMER
+    const int64_t t1 = waitIrq();
+    const int64_t want = (c0 / 28 + 1) * 28 + 9 * 28;
+    if (t1 < want || t1 > want + 1) foraDaGrade++;
+    dmin = std::min<int>(dmin, int(t1 - c0));
+    dmax = std::max<int>(dmax, int(t1 - c0));
+    m->poke(0xE80E, 0); m->poke(0xE80E, 1);
+    const int64_t t2 = waitIrq();
+    if (t2 < want + 280 || t2 > want + 281) periodoErrado++;
+  }
+  check(foraDaGrade == 0, "primeira IRQ depois de STIMER na grade de 28 ciclos, nas 28 fases (" + std::to_string(foraDaGrade) + " fora)");
+  check(dmin >= 253 && dmax <= 281 && dmax - dmin >= 26, "atraso da primeira IRQ varia com a fase: " + std::to_string(dmin) + " a " + std::to_string(dmax) + " ciclos");
+  check(periodoErrado == 0, "segunda IRQ 280 ciclos depois da primeira em todas as fases");
+  // potenciômetros: POTGO no ciclo 100 de uma linha; 13 ciclos depois o contador ainda é 0, 14 depois já é 1
+  m->setInput(200, 200, false, false, -1);
+  m->runFrame();
+  goTo(*m, 250, 0);
+  m->runCycles(int((100 + 114 - m->clk % 114) % 114));
+  m->poke(0xE80B, 0);  // POTGO
+  m->runCycles(13);
+  const uint8_t a = m->read(0xE800);  // lido 13 ciclos depois (ciclo 113 da linha)
+  const uint8_t b = m->read(0xE800);  // 14 ciclos depois: passou um passo de 15 kHz
+  m->runCycles(114 * 5);
+  const uint8_t c = m->read(0xE800);
+  const uint8_t all = m->read(0xE808);
+  check(a == 0 && b == 1 && c == 6 && (all & 1), "POT0 contando na grade de 114 ciclos: " + std::to_string(a) + ", " +
+        std::to_string(b) + ", " + std::to_string(c) + " (esperado 0, 1, 6) e ALLPOT ainda contando");
+  m->runFrame(); m->runFrame();
+  check(m->read(0xE800) == 200 && !(m->read(0xE808) & 1), "POT0 = 200 depois da varredura, ALLPOT livre");
+}
+
 void testPm() {
   std::printf("== GTIA: jogadores, mísseis, prioridade, colisões, modos GTIA\n");
   auto m = machine(idleCart());
@@ -793,7 +1117,10 @@ int main(int argc, char** argv) {
   testPokeyIrq();
   testFuzz();
   testAntic();
+  testCycles();
   testPm();
+  testGtiaLine();
+  testPokeyClock();
   testAltirra(root);
   std::printf("RESULTADO a5200: %d verificações, %d falhas\n", checks, fails);
   return fails ? 1 : 0;

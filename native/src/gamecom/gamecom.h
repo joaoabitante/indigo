@@ -8,15 +8,24 @@
 //     $2000-$9FFF quatro janelas de 8 KB (MMU1-MMU4): valor < $20 = banco da ROM do sistema (256 KB), senão
 //     banco do cartucho (2 MB, com espelho, como no MAME); $A000-$DFFF vídeo (16 KB, só escrita, lê 0);
 //     $E000-$FFFF RAM estendida (8 KB);
+//   - dois encaixes de cartucho: P3 bits 7-6 = 01 liga o 1, 10 liga o 2, 00/11 nenhum. A escolha vale na hora
+//     em que a janela é lida (o número do banco fica no MMU): com nenhum encaixe ligado a janela do cartucho lê
+//     $FF. Isso segue o teste em aparelho do Kitrinx (GameCom-Assembler: "P3 = FF desligou a ROM que tinha a
+//     próxima instrução"); o MAME, em vez disso, mantém a janela como estava;
 //   - LCD 200x160 em 4 tons, duas páginas de 8 KB (LCDC bit 6), 40 bytes por coluna (4 pixels por byte);
 //     paleta de contraste pelos bits 4-5 do LCDC; interrupção LCDC no começo do retraço;
 //   - DMA de blocos (VRAM->VRAM, ROM->VRAM, RAM estendida<->VRAM) com paleta de 4 cores e transparência,
 //     feito quando a CPU para em HALT (como no MAME) ou depois de um tempo se ela não parar;
 //   - timers 0 e 1 (pré-divisor + contador), relógio de 1 s / 1 min (CLKT);
-//   - som: dois canais de onda de 32 amostras de 4 bits (SG0/SG1), um de ruído (SG2, aproximado: o MAME não
-//     emula) e o DAC de 8 bits (SGDA); saída mono;
+//   - som (modelo do emulador de SM8521 de cam900, licença zlib, feito pela folha de dados; ver TERCEIROS.md):
+//     relógio dos geradores = 11,0592 MHz / 4; período de cada passo = SGnT + 1 (12 bits); dois canais de onda
+//     de 32 amostras de 4 bits com sinal (SG0/SG1; a RAM da onda só aceita escrita com o canal parado e lê 0 com
+//     ele tocando), um de ruído (SG2; o polinômio do LFSR não é conhecido) e o DAC de 8 bits (SGDA), que com
+//     SGC bit 3 toca sozinho; mistura de 8 bits com corte; saída mono;
 //   - teclas e tela de toque pela multiplexação de P0/P1/P2 (grade de 13 x 10 áreas de 16x16 pixels).
-// Não emulados: porta serial (UART), o segundo cartucho, watchdog, troca de relógio (STOP).
+// Não emulados: porta serial (UART), watchdog, a divisão do relógio pedida em CKC (o STOP só a registra).
+//
+// Segundo cartucho: setCart2() ou, ao criar o núcleo, o arquivo registrado como firmware "gamecom_cart2".
 //
 // BIOS: as duas ROMs do console da pessoa são obrigatórias: a interna do SM8521 (4 KB, "internal.bin",
 // firmware "gamecom_int") e a do sistema (256 KB, "external.bin", firmware "gamecom_ext").
@@ -50,6 +59,10 @@ bool isGamecomRom(const std::vector<uint8_t>& rom, const std::string& nomeMinusc
 std::string gamecomFirmwareKind(const std::vector<uint8_t>& b, const std::string& nomeMinusculo);
 uint32_t crc32(const uint8_t* p, size_t n);
 
+// toque/mouse do app -> pixel do LCD. (x, y) na saída do app; (gx, gy, gw, gh) = retângulo da imagem do jogo.
+// Arredonda para baixo (meio pixel fora da borda não conta como dentro). Devolve se o ponto está na tela.
+bool pointerToLcd(float x, float y, float gx, float gy, float gw, float gh, int& px, int& py);
+
 class GameCom : public Sm8500Bus {
 public:
   GameCom(const std::vector<uint8_t>& cart, const std::vector<uint8_t>& intRom, const std::vector<uint8_t>& extRom);
@@ -62,6 +75,9 @@ public:
   void setKeys(uint32_t mask);
   void setPointer(int x, int y, bool down);
   std::string title() const;
+  // segundo encaixe de cartucho (vazio = tira); não entra no save state
+  void setCart2(const std::vector<uint8_t>& c);
+  bool hasCart2() const { return !cart2.empty(); }
 
   void setSampleRate(int rate);
   size_t audioAvailable() const { return (wpos + AUDIO_BUF - rpos) % AUDIO_BUF; }
@@ -84,6 +100,8 @@ public:
   void pokeSoundAcc(uint32_t v) { sg[0].acc = sg[1].acc = noiseAcc = v; }
   uint32_t timerPre(int i) const { return tm[i & 1].pre; }
   uint32_t soundAcc(int i) const { return i < 2 ? sg[i].acc : noiseAcc; }
+  int soundStepPos(int i) const { return sg[i & 1].pos; }
+  int mixOut() const { return mix; }  // última mistura de 8 bits (-128..127), antes do passa-alta
 
   // RAM estendida de 8 KB (agenda e recordes): vira o save do jogo
   bool extDirty = false;
@@ -97,14 +115,13 @@ public:
 private:
   // ---------------------------------------------------------------- memória
   std::vector<uint8_t> cart;   // 2 MB com espelho
+  std::vector<uint8_t> cart2;  // segundo encaixe (vazio = sem cartucho)
   std::string cartTitle;
   uint8_t intRom[INT_ROM_SIZE] = {};
   std::vector<uint8_t> extRom;  // 256 KB
   uint8_t ram[0x400] = {};
   uint8_t vram[0x4000] = {};
   uint8_t ext[0x2000] = {};
-  uint32_t bankBase[5] = {};    // janelas 1-4: deslocamento (bit 31 = cartucho)
-  bool cartSelected = false;
   uint8_t muxLo = 0xFF, muxHi = 0xFF;  // o que a CPU escreveu em P1/P2 (seleção das teclas/colunas)
 
   // ---------------------------------------------------------------- tempo e periféricos
@@ -133,6 +150,7 @@ private:
   uint32_t noiseAcc = 0;
   uint16_t lfsr = 0x7FFF;
   uint8_t dacLevel = 0x80;
+  int mix = 0;
   static constexpr size_t AUDIO_BUF = 16384;
   std::vector<float> bufL, bufR;
   size_t wpos = 0, rpos = 0;
@@ -143,7 +161,7 @@ private:
 
   // ---------------------------------------------------------------- funções
   void ioWrite(uint8_t r, uint8_t v);
-  void setMmu(int n, uint8_t v);
+  const uint8_t* activeCart() const;  // cartucho ligado por P3 (nullptr = nenhum)
   void inputMux();
   void stylusColumn(int col);
   void runDma();

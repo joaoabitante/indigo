@@ -12,6 +12,7 @@
 // Mapa visto pela CPU:
 //   $00-$0F  registradores R0-R15: janela de 16 bytes num banco interno de $108 bytes, a partir de PS0 & $F8
 //   $10-$13  IE0, IE1, IR0, IR1 (interrupções)       $19 SYS (bit 6 = pilha de 16 bits)
+//   $1A      CKC (troca de relógio: o valor novo só vale depois de um STOP, como no MAME)
 //   $1C/$1D  SPH/SPL (pilha)   $1E PS0 (ponteiro dos registradores + prioridade)   $1F PS1 (flags)
 //   o resto vai para o barramento (Sm8500Bus).
 //
@@ -49,6 +50,10 @@ public:
   uint16_t pc = 0x1020;
   uint8_t ps0 = 0, ps1 = 0, sys = 0, sph = 0, spl = 0;
   uint8_t ie0 = 0, ie1 = 0, ir0 = 0, ir1 = 0;
+  uint8_t ckc = 0;            // CKC escrito pelo programa
+  uint8_t ckcApplied = 0;     // CKC em vigor (copiado no STOP que segue a escrita)
+  bool ckcPending = false;    // CKC mudou e ainda não passou por um STOP
+  uint32_t stops = 0;         // STOPs executados (testes e depuração)
   bool halted = false;
   uint16_t pending = 0;       // linhas pedidas e ainda não atendidas
   uint8_t regs[0x108] = {};   // banco dos registradores
@@ -62,7 +67,7 @@ public:
   uint16_t rdw(uint16_t a) { return uint16_t(rd(a) << 8 | rd(uint16_t(a + 1))); }
   void wrw(uint16_t a, uint16_t v) { wr(a, uint8_t(v >> 8)); wr(uint16_t(a + 1), uint8_t(v)); }
 
-  void sync(StateIO& s);
+  void sync(StateIO& s, int version = 2);  // version 1 = estados da 2.4 (sem CKC)
 
 private:
   Sm8500Bus* bus_;

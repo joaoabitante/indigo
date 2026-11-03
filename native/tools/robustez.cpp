@@ -583,7 +583,10 @@ std::unique_ptr<Core> makeTdo(const std::vector<uint8_t>* save) {
                                   0x03400104, 0x03400118, 0x03400200, 0x03400208, 0x03400220, 0x03400304, 0x03400308,
                                   0x03400500, 0x03400540, 0x03400580, 0x03400580, 0x03400580, 0x034005C0, 0x034017E8,
                                   0x034017F0, 0x03401800, 0x03401804, 0x03401808, 0x03403000, 0x03403040, 0x03200000,
-                                  0x03284000, 0x03140010, 0x00100000, 0x00200000};
+                                  0x03284000, 0x03140010, 0x00100000, 0x00200000, 0x033005A4, 0x03300008,
+                                  0x03300004, 0x03300410, 0x03300414, 0x03300418, 0x03300500, 0x03300504,
+                                  0x03300578, 0x03400050, 0x03400300, 0x03400400, 0x034017D0, 0x034017FC,
+                                  0x03402000, 0x03402004, 0x03403400, 0x03403C00, 0x03400028, 0x03400084};
   std::vector<uint32_t> code;
   auto movConst = [&](int rd, uint32_t v) {  // mov + orr de 8 bits em 8 bits
     code.push_back(0xE3A00000u | uint32_t(rd) << 12 | 0x400 | (v >> 24));        // mov rd, #(v>>24) ror 8
@@ -591,6 +594,8 @@ std::unique_ptr<Core> makeTdo(const std::vector<uint8_t>* save) {
     code.push_back(0xE3800000u | uint32_t(rd) << 16 | uint32_t(rd) << 12 | 0xC00 | ((v >> 8) & 0xFF));   // ror 24
     code.push_back(0xE3800000u | uint32_t(rd) << 16 | uint32_t(rd) << 12 | (v & 0xFF));
   };
+  code.push_back(0xE51FF004);  // ldr pc, [pc, #-4]: a CPU parte do 0 (ROM por cima da DRAM) e pula para a ROM
+  code.push_back(0x03000008);
   code.push_back(0xE321F013);  // msr cpsr_c, #0x13 (libera IRQ/FIQ)
   movConst(13, 0x001F0000);
   const int n = 300 + int(rnd() % 1500);

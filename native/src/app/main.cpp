@@ -7,8 +7,10 @@
 // aparelho) estiver na pasta de dados, ela é usada. Abrir esse arquivo no Índigo copia ele para lá.
 // Atalhos: Ctrl+O abrir jogo · F5 salvar estado · F8 carregar estado · 1–9 escolher espaço de estado ·
 // P pausar · Ctrl+R reiniciar · F3 trocar paleta do Game Boy · F4 trocar o lado do disco (Famicom Disk System) · F11 ou Alt+Enter tela cheia · Esc menu.
+// Teclado numérico do PC = teclado do controle do Atari 5200 e do Intellivision (* e # = Clear e Enter).
 // Controle: botão Guia (ou Start + Select juntos) abre o menu. No celular: controles na tela (somem quando há um
-// controle ligado), botão MENU ou "voltar" do Android.
+// controle ligado), botão MENU ou "voltar" do Android; "Disco" troca o lado no Famicom Disk System e "123" abre o
+// teclado numérico do 5200 e do Intellivision.
 //
 // Tela inicial: "Continuar de onde parou" (estado automático gravado ao fechar o jogo), abrir jogo e os últimos
 // jogos abertos. Arquivos .zip são descompactados na hora. Cada save guarda versões anteriores (no máximo uma a
@@ -36,6 +38,7 @@
 #include "core/zip.h"
 #include "files.h"
 #include "platform.h"
+#include "consoles.h"
 #include "shelf.h"
 #include "neogeo/neogeo.h"
 #include "pcecd/pcecd.h"
@@ -44,6 +47,7 @@
 #include "a5200/a5200.h"
 #include "vectrex/vectrex.h"
 #include "intv/intv.h"
+#include "jaguar/jaguar.h"
 #include "neogeocd/neogeocd.h"
 #include "ps1/ps1.h"
 #include "tdo/tdo.h"
@@ -194,6 +198,20 @@ std::string withoutExt(const std::string& path) {
   return (dot == std::string::npos || (slash != std::string::npos && dot < slash)) ? path : path.substr(0, dot);
 }
 
+// Intellivision: o .cfg do jzIntv ao lado do .bin traz o mapa de memória (o núcleo só o usa em .bin/.int/.itv).
+// Vale só enquanto este objeto existe: ao sair, o firmware "intv_cfg" é limpo, para o .cfg de um jogo não
+// mudar a identificação dos outros arquivos (.bin de outro console virando Intellivision)
+struct IntvCfgBeside {
+  explicit IntvCfgBeside(const std::string& path) {
+    std::vector<uint8_t> cfg;
+    if (!readFile(withoutExt(path) + ".cfg", cfg) || cfg.size() > 65536) cfg.clear();
+    indigo::setFirmware("intv_cfg", std::move(cfg));
+  }
+  ~IntvCfgBeside() { indigo::setFirmware("intv_cfg", {}); }
+  IntvCfgBeside(const IntvCfgBeside&) = delete;
+  IntvCfgBeside& operator=(const IntvCfgBeside&) = delete;
+};
+
 // BIOS do Pokémon Mini (bios.min do aparelho do usuário): 4 KB e .min (os jogos têm pelo menos 8,5 KB)
 bool isPmBios(const std::string& path, const std::vector<uint8_t>& data) {
   if (data.size() != 4096) return false;
@@ -298,6 +316,7 @@ public:
     for (const char* d : {"saves", "saves/historico", "states", "roms", "capas"}) SDL_CreateDirectory((dataDir_ + d).c_str());
     loadFavorites();
     loadFolders();
+    loadPlayedSys();
     // arquivo do DSP-1 que o usuário instalou (os jogos com o chip passam a rodar o programa original)
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "dsp1b.rom", fw) && fw.size() == 8192) indigo::setFirmware("dsp1", std::move(fw));
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "pm_bios.min", fw) && fw.size() == 4096) indigo::setFirmware("pm", std::move(fw));
@@ -417,14 +436,19 @@ public:
   }
   bool hasXY() const {
     const std::string s = core_->system();
-    return s == "snes" || s == "ws" || s == "wsc" || s == "md" || s == "32x" || s == "segacd" || s == "ps1" || s == "3do" || s == "gnw" || s == "gamecom" || s == "a5200" || s == "pcfx" || s == "saturn";
+    return s == "snes" || s == "ws" || s == "wsc" || s == "md" || s == "32x" || s == "segacd" || s == "ps1" || s == "3do" || s == "gnw" || s == "gamecom" || s == "a5200" || s == "pcfx" || s == "saturn" || s == "intv";
   }
   // controles de toque: medidas da tela e a imagem do jogo (deitado, eles ficam na faixa livre ao lado dela)
   bool ps1AnalogHeld_ = false;
   uint16_t rumbleLo_ = 0, rumbleHi_ = 0;
   std::map<std::string, std::string> discSys_;  // console de cada CD já olhado (a estante separa o PS1)
+  std::map<std::string, std::string> romSys_;   // console de cada .rom já olhado (MSX, Intellivision ou Jaguar)
+  std::map<std::string, std::string> playedSys_;  // aba de cada jogo já aberto (consoles.txt)
   void layoutTouch(int ow, int oh, bool touchUi) {
     applyMetrics(ow, oh);
+    const std::string sys = core_ ? core_->system() : "";
+    touch_.disk = core_ && core_->diskSides() > 0;  // Famicom Disk System: botão "Disco"
+    touch_.keypad = sys == "a5200" ? 1 : sys == "intv" ? 2 : 0;  // teclado numérico do controle
     touch_.layout(ow, oh, oh > ow, hasLR(), hasXY(), gameRect(ow, oh, touchUi || touchUiInUse()), core_ && core_->system() == "ps1",
                   core_ && core_->system() == "3do");
   }
@@ -671,6 +695,7 @@ public:
     const std::string base = baseName(name), key = fileName(name);
     std::vector<uint8_t> save;
     const std::string savePath = dataDir_ + "saves/" + key + ".sav";
+    IntvCfgBeside intvCfg(path);  // .cfg ao lado do .bin (Intellivision): vale para a identificação e o núcleo
     const auto ident = indigo::backup::identify(rom, name);
     pullBeforeBoot(key, ident.saveKey);  // save mais novo na nuvem (outro aparelho)? traz antes de ligar o jogo
     // save do Índigo; depois o nome usado até a versão 0.3 (sem a extensão); por fim um .sav/.ngf ao lado da
@@ -819,6 +844,7 @@ public:
       }
     }
     addRecent(recent);
+    rememberConsole(recent);
     shelfDirty_ = true;
     rebuildMenu();
     if (audio_) SDL_ClearAudioStream(audio_);
@@ -845,6 +871,7 @@ public:
         core_->setKeys(adaptKeys(keyboard_ | touch_.keys(), false) | adaptKeys(padKeys, true));
         if (auto* p = dynamic_cast<indigo::ps1::Ps1Core*>(core_.get())) ps1Input(*p, touch_.keys());
         if (core_->system() == "gamecom") penInput();
+        if (core_->system() == "pcfx") mouseInput();
         const bool turbo = turboKey_ || padTurbo_ || touch_.turbo() || fastOn_;
         const int frames = turbo ? 4 : 1;
         for (int i = 0; i < frames; i++) {
@@ -1031,9 +1058,10 @@ private:
       for (SDL_Scancode k : keyMap_[a]) if (k == sc) return ACTION_BITS[a];
     return 0;
   }
-  // teclado numérico do PC = teclado do controle do Atari 5200 (0–9, * e #); nos outros consoles fica livre
+  // teclado numérico do PC = teclado do controle do Atari 5200 (0–9, * e #) e do Intellivision (0–9, * = Clear,
+  // # = Enter); nos outros consoles fica livre
   uint32_t keypadFor(SDL_Scancode sc) const {
-    if (!core_ || core_->system() != "a5200") return 0;
+    if (!core_ || (core_->system() != "a5200" && core_->system() != "intv")) return 0;
     if (sc == SDL_SCANCODE_KP_0) return indigo::KEY_KP0;
     if (sc >= SDL_SCANCODE_KP_1 && sc <= SDL_SCANCODE_KP_9) return indigo::KEY_KP0 << (1 + (sc - SDL_SCANCODE_KP_1));
     if (sc == SDL_SCANCODE_KP_MULTIPLY) return indigo::KEY_KPSTAR;
@@ -1077,7 +1105,6 @@ private:
         case SDL_SCANCODE_F: libToggleFav(); break;
         case SDL_SCANCODE_ESCAPE: showPage(P_SETTINGS); break;
         case SDL_SCANCODE_O: if (ctrl) showOpenDialog(); break;
-        case SDL_SCANCODE_F4: if (core_) nextDiskSide(); break;
         case SDL_SCANCODE_F11: toggleFullscreen(); break;
         default: break;
       }
@@ -1109,6 +1136,7 @@ private:
     switch (k.scancode) {
       case SDL_SCANCODE_O: if (ctrl) showOpenDialog(); break;
       case SDL_SCANCODE_R: if (ctrl && core_) { core_->reset(); status("Jogo reiniciado"); } break;
+      case SDL_SCANCODE_F4: if (core_) nextDiskSide(); break;  // durante o jogo (na biblioteca não há disco)
       case SDL_SCANCODE_F5: saveState(slot_); break;
       case SDL_SCANCODE_F8: loadState(slot_); break;
       case SDL_SCANCODE_F3:
@@ -1214,6 +1242,7 @@ private:
       return m;
     }
     if (core_ && core_->system() == "a5200") return m;  // X faz de "shift" do teclado numérico (ver a5200.h)
+    if (core_ && core_->system() == "intv") return m;   // X = botões de cima, Y = tecla 0 (ver intv.h)
     if (m & indigo::KEY_X) m |= indigo::KEY_A;
     if (m & indigo::KEY_Y) m |= indigo::KEY_B;
     return m & ~(indigo::KEY_X | indigo::KEY_Y);
@@ -1355,8 +1384,8 @@ private:
 
   void showOpenDialog() {
     static const SDL_DialogFileFilter filters[] = {
-      {"Jogos (SNES, NES, Famicom Disk System, Game Boy, Game Boy Color, Game Boy Advance, Master System, Game Gear, Neo Geo Pocket, Pokémon Mini, Atari 2600, Atari 5200, MSX, ColecoVision, SG-1000, WonderSwan, Atari 7800, Vectrex, Intellivision, Atari Lynx, Virtual Boy, Mega Duck, Watara Supervision, PC Engine, Mega Drive, 32X, Neo Geo, arcade Capcom, Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, Game.com, PC-FX, Saturn)",
-       "sfc;smc;nes;gb;gbc;dmg;sgb;gba;agb;sms;gg;sg;sc;ngp;ngc;npc;min;a26;a52;rom;mx1;mx2;col;cv;ws;wsc;pc2;a78;vec;gam;int;itv;lnx;lyx;vb;duck;md0;md1;md2;sv;pce;sgx;md;gen;smd;32x;fds;qd;bin;neo;zip;cue;chd;iso;exe;psx;tgc;indigo"},
+      {"Jogos (SNES, NES, Famicom Disk System, Game Boy, Game Boy Color, Game Boy Advance, Master System, Game Gear, Neo Geo Pocket, Pokémon Mini, Atari 2600, Atari 5200, MSX, ColecoVision, SG-1000, WonderSwan, Atari 7800, Vectrex, Intellivision, Atari Lynx, Virtual Boy, Mega Duck, Watara Supervision, PC Engine, Mega Drive, 32X, Neo Geo, arcade Capcom, Game & Watch, Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, Game.com, Jaguar, PC-FX, Saturn)",
+       indigo::app::dialogPattern().c_str()},
       {"Todos os arquivos", "*"},
     };
     SDL_ShowOpenFileDialog(
@@ -1697,6 +1726,7 @@ private:
     std::vector<uint8_t> b;
     std::string key;
     if (indigo::shelf::loadRom(path, b, key)) {
+      IntvCfgBeside cfg(path);
       const auto r = indigo::backup::identify(b, key);
       if (!r.sys.empty()) { id.fileKey = key; id.saveKey = r.saveKey; id.sys = r.sys; }
     }
@@ -2231,15 +2261,7 @@ private:
     rebuildMenu();
   }
 
-  static bool romExtension(const std::string& name) {
-    std::string n = name;
-    for (char& c : n) c = static_cast<char>(SDL_tolower(static_cast<unsigned char>(c)));
-    for (const char* e : {".gb", ".gbc", ".dmg", ".sgb", ".gba", ".agb", ".sms", ".gg", ".sg", ".ngp", ".ngc", ".npc", ".nes", ".sfc", ".smc", ".min", ".a26", ".a52", ".rom", ".mx1", ".mx2", ".col", ".cv", ".sc", ".ws", ".wsc", ".pc2", ".a78", ".vec", ".gam", ".int", ".itv", ".lnx", ".lyx", ".vb", ".duck", ".md0", ".md1", ".md2", ".sv", ".pce", ".sgx", ".md", ".gen", ".smd", ".32x", ".fds", ".qd", ".tgc", ".j64", ".jag", ".abs", ".neo", ".zip", ".cue", ".chd", ".iso"}) {
-      const size_t l = SDL_strlen(e);
-      if (n.size() > l && n.compare(n.size() - l, l, e) == 0) return true;
-    }
-    return false;
-  }
+  static bool romExtension(const std::string& name) { return indigo::app::shelfExtension(name); }
 
   // console de um CD: olha a imagem uma vez (o resultado fica guardado); no celular, só os da biblioteca do app
   std::string discConsole(const std::string& path) {
@@ -2256,46 +2278,63 @@ private:
 
   // console pela extensão do arquivo da ROM (rápido: não lê o arquivo; .zip olha o nome de dentro)
   std::string consoleOf(const std::string& path) {
-    std::string n = displayKey(path);
-    for (char& c : n) c = static_cast<char>(SDL_tolower(static_cast<unsigned char>(c)));
-    const auto dot = n.find_last_of('.');
-    const std::string e = dot == std::string::npos ? "" : n.substr(dot);
-    if (e == ".gba" || e == ".agb") return "GBA";
-    if (e == ".gbc") return "GBC";
-    if (e == ".gb" || e == ".dmg" || e == ".sgb") return "GB";
-    if (e == ".gg") return "GG";
-    if (e == ".sms") return "SMS";
-    if (e == ".sg" || e == ".sc") return "SG";
-    if (e == ".col" || e == ".cv") return "COLECO";
-    if (e == ".ws" || e == ".wsc" || e == ".pc2") return "WS";
-    if (e == ".ngp" || e == ".ngc" || e == ".npc") return "NGP";
-    if (e == ".nes") return "NES";
-    if (e == ".fds" || e == ".qd") return "FDS";
-    if (e == ".sfc" || e == ".smc" || e == ".swc" || e == ".fig") return "SNES";
-    if (e == ".min") return "PM";
-    if (e == ".zip") return n.rfind("gnw_", 0) == 0 ? "G&W" : "ARCADE";  // Game & Watch: pacotes gnw_* do MAME
-    if (e == ".neo") return "ARCADE";
+    const std::string key = displayKey(path);
+    // console de um jogo já aberto: vale para .bin, .rom e .zip, que a extensão não decide
+    if (auto it = playedSys_.find(key); it != playedSys_.end()) return it->second;
+    const std::string e = indigo::app::extOf(key);
+    if (e == ".zip") return indigo::app::lowerAscii(key).rfind("gnw_", 0) == 0 ? "G&W" : "ARCADE";  // Game & Watch: pacotes gnw_* do MAME
     if (e == ".cue" || e == ".chd" || e == ".iso") {
       const std::string d = discConsole(path);
       return d == "ps1" ? "PS1" : d == "3do" ? "3DO" : d == "pcfx" ? "PCFX" : d == "saturn" ? "SATURN" : "CD";
     }
-    if (e == ".exe" || e == ".psx") return "PS1";
-    if (e == ".a26") return "2600";
-    if (e == ".a52") return "5200";
-    if (e == ".a78") return "7800";
-    if (e == ".vec" || e == ".gam") return "VECTREX";
-    if (e == ".int" || e == ".itv") return "INTV";
-    if (e == ".lnx" || e == ".lyx") return "LYNX";
-    if (e == ".vb") return "VB";
-    if (e == ".duck" || e == ".md0" || e == ".md1" || e == ".md2") return "DUCK";
-    if (e == ".sv") return "SV";
-    if (e == ".pce" || e == ".sgx") return "PCE";
-    if (e == ".md" || e == ".gen" || e == ".smd") return "MD";
-    if (e == ".32x") return "32X";
-    if (e == ".tgc") return "GAMECOM";
-    if (e == ".j64" || e == ".jag" || e == ".abs") return "JAGUAR";
-    if (e == ".rom" || e == ".mx1" || e == ".mx2") return "MSX";
-    return "outros";
+    if (e == ".rom") return romConsole(path);
+    const std::string t = indigo::app::tabOfExt(e);
+    return t.empty() ? "outros" : t;
+  }
+
+  // .rom é do MSX, do Intellicart (Intellivision) ou do Jaguar: olha o arquivo uma vez (até 8 MB; no celular,
+  // só os da biblioteca do app)
+  std::string romConsole(const std::string& path) {
+    const std::string k = displayKey(path);
+    if (auto it = romSys_.find(k); it != romSys_.end()) return it->second;
+    std::string tab = "MSX";
+    std::vector<uint8_t> b;
+    SDL_PathInfo info{};
+    if (path.rfind("content://", 0) != 0 && SDL_GetPathInfo(path.c_str(), &info) && info.size <= 8u * 1024 * 1024 &&
+        readFile(path, b)) {
+      const std::string n = indigo::app::lowerAscii(k);
+      if (indigo::jaguar::isJaguarRom(b, n)) tab = "JAGUAR";
+      else if (indigo::intv::isIntvRom(b, n)) tab = "INTV";
+    }
+    romSys_[k] = tab;
+    return tab;
+  }
+
+  // lembra o console de cada jogo aberto (arquivo consoles.txt: "nome<TAB>aba" por linha)
+  void loadPlayedSys() {
+    std::vector<uint8_t> b;
+    if (!readFile(dataDir_ + "consoles.txt", b)) return;
+    std::string line;
+    for (size_t i = 0; i <= b.size(); i++) {
+      if (i == b.size() || b[i] == '\n') {
+        const auto t = line.find('\t');
+        if (t != std::string::npos && t > 0 && playedSys_.size() < 5000) playedSys_[line.substr(0, t)] = line.substr(t + 1);
+        line.clear();
+      } else if (b[i] != '\r') {
+        line += static_cast<char>(b[i]);
+      }
+    }
+  }
+  void rememberConsole(const std::string& recent) {
+    if (!core_ || recent.empty()) return;
+    const std::string key = displayKey(recent), tab = indigo::app::tabOfSystem(core_->system());
+    if (key.empty() || key.find_first_of("\t\n\r") != std::string::npos) return;
+    auto it = playedSys_.find(key);
+    if (it != playedSys_.end() && it->second == tab) return;
+    playedSys_[key] = tab;
+    std::string s;
+    for (const auto& [k, v] : playedSys_) s += k + "\t" + v + "\n";
+    writeFile(dataDir_ + "consoles.txt", std::vector<uint8_t>(s.begin(), s.end()));
   }
 
   // todos os jogos conhecidos: recentes, pasta do app e pastas de jogos; favoritos primeiro, depois pelo nome
@@ -2551,6 +2590,7 @@ private:
         if (x >= g.x && y >= g.y && x < g.x + g.w && y < g.y + g.h) { penActive_ = true; penFinger_ = f.fingerID; penX_ = x; penY_ = y; }
       }
       if (a == indigo::ui::TouchAction::Menu) { indigo::platform::haptic(); openMenu(); }
+      else if (a == indigo::ui::TouchAction::Disk) { indigo::platform::haptic(); nextDiskSide(); }
       else if (a == indigo::ui::TouchAction::Control) indigo::platform::haptic();
     } else if (type == SDL_EVENT_FINGER_MOTION) {
       if (gActive_ && f.fingerID == gFinger_) {
@@ -2594,11 +2634,38 @@ private:
       }
     }
     const SDL_FRect g = gameRect(ow, oh, touchUiInUse());
+    int px = 0, py = 0;  // arredonda para baixo: meio pixel fora da borda não toca na tela
+    down = indigo::gamecom::pointerToLcd(x, y, g.x, g.y, g.w, g.h, px, py) && down;
+    core_->setPointer(px, py, down);
+  }
+
+  // mouse do PC-FX: o mouse do PC sobre a imagem do jogo (movimento em pixels da imagem, botões esquerdo e direito)
+  int mouseLastX_ = 0, mouseLastY_ = 0;
+  bool mouseInside_ = false;
+  void mouseInput() {
+    if (mobile_) return;
+    float wx = 0, wy = 0, x = 0, y = 0;
+    const SDL_MouseButtonFlags b = SDL_GetMouseState(&wx, &wy);
+    SDL_RenderCoordinatesFromWindow(ren_, wx, wy, &x, &y);
+    int ow = 0, oh = 0;
+    SDL_GetCurrentRenderOutputSize(ren_, &ow, &oh);
+    const SDL_FRect g = gameRect(ow, oh, touchUiInUse());
     if (g.w <= 0 || g.h <= 0) return;
     const int px = static_cast<int>((x - g.x) * static_cast<float>(core_->width()) / g.w);
     const int py = static_cast<int>((y - g.y) * static_cast<float>(core_->height()) / g.h);
-    down = down && px >= 0 && py >= 0 && px < core_->width() && py < core_->height();
-    core_->setPointer(px, py, down);
+    const bool inside = px >= 0 && py >= 0 && px < core_->width() && py < core_->height() &&
+                        (SDL_GetWindowFlags(win_) & SDL_WINDOW_INPUT_FOCUS);
+    int dx = 0, dy = 0;
+    uint32_t buttons = 0;
+    if (inside) {
+      if (mouseInside_) { dx = px - mouseLastX_; dy = py - mouseLastY_; }
+      if (b & SDL_BUTTON_LMASK) buttons |= 1;
+      if (b & SDL_BUTTON_RMASK) buttons |= 2;
+    }
+    mouseInside_ = inside;
+    mouseLastX_ = px;
+    mouseLastY_ = py;
+    core_->setMouse(dx, dy, buttons);
   }
 
   // toque/clique em menu ou biblioteca; um segundo toque logo em seguida é ignorado (toque duplo sem querer)
@@ -2629,12 +2696,11 @@ private:
     auto add = [&](const std::string& p) { if (keys.insert(displayKey(p)).second) all.push_back(p); };
     for (const auto& p : library_) add(p);
     for (const auto& p : shelfAll_) add(p);
-    static const char* ORDER[] = {"SNES", "MD", "32X", "NES", "FDS", "GB", "GBC", "GBA", "SMS", "GG", "NGP", "PCE", "PM", "2600", "5200", "7800", "LYNX", "MSX", "COLECO", "SG", "WS", "VECTREX", "INTV", "VB", "DUCK", "SV", "G&W", "GAMECOM", "JAGUAR", "ARCADE", "PS1", "3DO", "PCFX", "SATURN", "CD", "outros"};
     std::vector<std::string> tabs = {"Todos"};
     bool anyFav = false;
     for (const auto& p : all) if (favorites_.count(displayKey(p))) { anyFav = true; break; }
     if (anyFav) tabs.push_back("Favoritos");
-    for (const char* c : ORDER)
+    for (const char* c : indigo::app::TAB_ORDER)
       for (const auto& p : all) if (consoleOf(p) == c) { tabs.push_back(c); break; }
     int ti = 0;
     for (size_t k = 0; k < tabs.size(); k++) if (tabs[k] == libTabName_) ti = static_cast<int>(k);

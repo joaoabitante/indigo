@@ -524,7 +524,7 @@ std::vector<uint8_t> buildCart() {
   a.mov(0x34, 0x83);  // sobrescrevendo
   a.b({0xF1});
   // som: SG0 ligado, onda quadrada, volume máximo
-  for (int i = 0; i < 16; i++) a.mov(0x60 + i, i < 8 ? 0xFF : 0x00);
+  for (int i = 0; i < 16; i++) a.mov(0x60 + i, i < 8 ? 0x77 : 0x88);  // amostras com sinal: +7 / -8
   a.mov(0x40, 0x81).mov(0x42, 0x1F).mov(0x46, 0x00).mov(0x47, 0x40);
   // timer 0: pré-divisor 512, limite 10 (interrupção a cada 5120 ciclos)
   a.mov(0x51, 10).mov(0x50, 0x81);
@@ -542,18 +542,22 @@ std::vector<uint8_t> buildCart() {
   // varre as 13 colunas da tela de toque
   a.movw(0x0A, 0xFFFB);                    // rr10: r10 = P2, r11 = P1
   a.b({0xC4, 0x00});                       // r4 = coluna
-  a.b({0xC5, 0xFF}).stAbs(5, 0xE013);      // nenhuma
+  a.b({0xC6, 0xFF});                       // r6 = coluna achada (nenhuma); vai para $E013 no fim da varredura
   a.b({0xC5, 13});                         // r5 = contador
   a.label("col");
   a.movr(0x15, 0x0B).movr(0x16, 0x0A);
-  a.cmp(0x14, 0xFF).br(CC_EQ, "nada");
-  a.stAbs(4, 0xE013);
+  a.cmp(0x14, 0xFF).br(CC_NE, "achou");
+  a.b({0xB0, 0x15}).b({0x55, 0x03, 0x00}).cmp(0x00, 0x03).br(CC_EQ, "nada");  // linhas 8-9 ficam em P1
+  a.label("achou");
+  a.b({0x48, 0x04, 0x06});                 // MOV r6,r4
   a.b({0xB0, 0x14}).stAbs(0, 0xE014);
+  a.b({0xB0, 0x15}).stAbs(0, 0xE015);      // P1 (linhas 8 e 9 nos bits 0-1)
   a.label("nada");
   a.b({0xFC});                             // SETC
   a.b({0x06, 0x0B}).b({0x06, 0x0A});       // RLC r11, RLC r10
   a.inc(0x04);
   a.dbnz(5, "col");
+  a.stAbs(6, 0xE013);
   a.jmp(CC_T, "main");
   a.finish();
   std::memcpy(rom.data(), a.out.data(), a.out.size());
@@ -656,6 +660,43 @@ void machineTests() {
   core->runFrame();
   core->runFrame();
   check(g.peekExt(0x13) == 0xFF, "caneta solta: nenhuma coluna");
+  // 2.5: cantos da tela de toque (grade de 13 x 10 áreas; a última coluna tem 8 pixels, como no MAME)
+  {
+    struct P { int x, y, col; uint8_t p0, p1; };
+    const P ps[] = {{0, 0, 0, 0xFE, 3}, {199, 159, 12, 0xFF, 1}, {191, 127, 11, 0x7F, 3}, {192, 128, 12, 0xFF, 2},
+                    {15, 16, 0, 0xFD, 3}, {16, 15, 1, 0xFE, 3}};
+    for (const P& q : ps) {
+      core->setPointer(q.x, q.y, true);
+      core->runFrame();
+      core->runFrame();
+      check(g.peekExt(0x13) == q.col && g.peekExt(0x14) == q.p0 && (g.peekExt(0x15) & 3) == q.p1,
+            "caneta em (" + std::to_string(q.x) + "," + std::to_string(q.y) + "): coluna " + std::to_string(g.peekExt(0x13)) +
+                ", P0 " + hx(g.peekExt(0x14)) + ", P1 " + hx(g.peekExt(0x15) & 3));
+    }
+    core->setPointer(500, -20, true);  // fora da tela: o núcleo prende na borda
+    core->runFrame();
+    core->runFrame();
+    check(g.peekExt(0x13) == 12 && g.peekExt(0x14) == 0xFE, "ponto fora da tela vai para a borda mais próxima");
+    core->setPointer(0, 0, false);
+    core->runFrame();
+    core->runFrame();
+  }
+  // 2.5: toque do app -> pixel do LCD (o mesmo cálculo do app no PC e no Android)
+  {
+    int px = -1, py = -1;
+    // imagem 3x em (10, 20): 600 x 480
+    check(pointerToLcd(10, 20, 10, 20, 600, 480, px, py) && px == 0 && py == 0, "toque no canto da imagem = pixel (0,0)");
+    check(pointerToLcd(10 + 599.9f, 20 + 479.9f, 10, 20, 600, 480, px, py) && px == 199 && py == 159, "último pixel");
+    check(!pointerToLcd(9.5f, 100, 10, 20, 600, 480, px, py), "meio pixel à esquerda da imagem fica fora (arredonda para baixo)");
+    check(!pointerToLcd(610, 100, 10, 20, 600, 480, px, py), "borda direita fica fora");
+    check(pointerToLcd(10 + 3 * 100 + 2.9f, 20 + 3 * 50 + 0.1f, 10, 20, 600, 480, px, py) && px == 100 && py == 50,
+          "escala 3: cada pixel do LCD tem 3 pixels da tela");
+    // escala quebrada (celular): 200x160 em 731 x 584,8
+    check(pointerToLcd(100 + 731 * 0.5f, 7 + 584.8f * 0.25f, 100, 7, 731, 584.8f, px, py) && px == 100 && py == 40,
+          "escala quebrada: meio da largura = coluna 100");
+    check(!pointerToLcd(5, 5, 0, 0, 0, 0, px, py), "imagem sem tamanho: nenhum toque");
+    check(!pointerToLcd(NAN, 5, 0, 0, 200, 160, px, py), "coordenada inválida: nenhum toque");
+  }
   // caneta pelo direcional (L liga)
   core->setKeys(KEY_L);
   core->runFrame();
@@ -755,6 +796,423 @@ void fuzzTests() {
   check(true, "6 rodadas com BIOS, cartucho, teclas e estados aleatórios sem travar");
 }
 
+// ------------------------------------------------------------------ 2.5: tabela de ciclos completa
+// Os 256 códigos, em todos os modos de endereçamento, com pilha de 16 e de 8 bits onde muda. Não há manual do
+// SM85CPU disponível: os números são os do código do núcleo sm8500 do MAME (a única tabela pública); onde o
+// comentário do MAME discorda do próprio código (modos @ww/ww(rr) de $30-$39), vale o código, e a dúvida fica
+// registrada no relatório. A tabela trava o comportamento: qualquer mudança de ciclo aparece aqui.
+struct CycRow { std::vector<int> code; int cyc; bool sp8 = false; uint8_t ps1 = 0; int reg = -1; uint8_t val = 0; };
+
+void cycleTableTests() {
+  std::vector<CycRow> rows;
+  auto add = [&](std::vector<int> c, int cyc, bool sp8 = false, uint8_t ps1 = 0, int reg = -1, uint8_t val = 0) {
+    rows.push_back({std::move(c), cyc, sp8, ps1, reg, val});
+  };
+  for (int op = 0; op <= 0x0D; op++) add({op, 0x80}, op == 1 ? 5 : op == 0x0D ? 7 : 4);
+  add({0x0E, 0x80}, 12); add({0x0E, 0x80}, 10, true);
+  add({0x0F, 0x80}, 9); add({0x0F, 0x80}, 8, true);
+  for (int op = 0x10; op <= 0x17; op++) add({op, 0x0A}, 5);
+  add({0x18, 0x80}, 8); add({0x19, 0x80}, 8);
+  static const int C1A[8] = {7, 8, 7, 7, 7, 7, 7, 6};
+  for (int k = 0; k < 8; k++) add({0x1A, (1 << 3) | k}, C1A[k]);
+  static const int C1B[6] = {7, 7, 6, 6, 7, 9};
+  for (int k = 0; k < 6; k++) add({0x1B, (1 << 3) | k}, C1B[k]);
+  add({0x1B, (1 << 3) | 6}, 13); add({0x1B, (1 << 3) | 6}, 8, true);
+  add({0x1B, (1 << 3) | 7}, 12); add({0x1B, (1 << 3) | 7}, 11, true);
+  for (int op : {0x1C, 0x1D}) { add({op, 0x03, 0x20}, 12); add({op, (2 << 3) | 3, 0x10}, 8); }
+  add({0x1E, 0x80}, 12); add({0x1E, 0x80}, 9, true);
+  add({0x1F, 0x80}, 12); add({0x1F, 0x80}, 13, true);
+  // modos: @r, (r)+, @w, w(r), -(r)
+  auto modes8 = [&](int op, int a, int b, int cAbs, int cIdx, int d) {
+    add({op, (1 << 3) | 2}, a); add({op, 0x40 | (1 << 3) | 2}, b); add({op, 0x80 | (1 << 3), 0x90}, cAbs);
+    add({op, 0x80 | (1 << 3) | 2, 0x03}, cIdx); add({op, 0xC0 | (1 << 3) | 2}, d);
+  };
+  for (int op = 0x20; op <= 0x27; op++) modes8(op, 7, 8, 10, 8, 9);
+  modes8(0x28, 6, 7, 10, 7, 8);
+  modes8(0x29, 8, 8, 10, 9, 9);
+  add({0x2A, 0x00, 0x20, 0x05}, 16); add({0x2B, 0x00, 0x20, 0x05}, 12);           // $FFdd: desvia / não
+  add({0x2A, 0x08, 0x20, 0x05}, 14); add({0x2B, 0x08, 0x20, 0x05}, 10);           // dd(r)
+  add({0x2C, 0x02}, 6); add({0x2D}, 4); add({0x2E, 0x00}, 4); add({0x2F, 0x80, 0x01}, 6);
+  // modos de 16 bits: @rr, (rr)+, @ww, ww(rr), -(rr)
+  auto modes16 = [&](int op, int a, int b, int cAbs, int cIdx, int d) {
+    add({op, (1 << 3) | 2}, a); add({op, 0x40 | (1 << 3) | 2}, b); add({op, 0x80 | (1 << 3), 0x50, 0x00}, cAbs);
+    add({op, 0x80 | (1 << 3) | 2, 0x00, 0x03}, cIdx); add({op, 0xC0 | (1 << 3) | 2}, d);
+  };
+  for (int op = 0x30; op <= 0x39; op++) modes16(op, 8, 13, 15, 11, 13);
+  modes16(0x3A, 11, 16, 14, 18, 16);
+  modes16(0x3B, 11, 16, 14, 18, 16);
+  add({0x3C, (1 << 3) | 2}, 7); add({0x3D}, 4);
+  add({0x3E, 0x00}, 7); add({0x3E, 0x40, 0x50, 0x00}, 15); add({0x3E, 0x48, 0x50, 0x00}, 19);
+  add({0x3F, 0x00}, 14); add({0x3F, 0x40, 0x50, 0x00}, 22); add({0x3F, 0x48, 0x50, 0x00}, 26);
+  add({0x3F, 0x00}, 11, true); add({0x3F, 0x40, 0x50, 0x00}, 19, true); add({0x3F, 0x48, 0x50, 0x00}, 23, true);
+  for (int op = 0x40; op <= 0x48; op++) add({op, 0x81, 0x80}, 6);
+  add({0x49, 0x50, 0x00}, 12); add({0x49, 0x50, 0x00}, 10, true);
+  add({0x4A, 0x00, 0x04}, 8); add({0x4B, 0x80, 0x12, 0x34}, 9);
+  add({0x4C, 0x81, 0x00}, 24); add({0x4D, 0x05, 0x00}, 24);
+  add({0x4E, 0x04, 0x83}, 6); add({0x4E, 0x44, 0x83}, 6); add({0x4F, 0x04, 0x83}, 6); add({0x4F, 0xC4, 0x83}, 6);
+  for (int op = 0x50; op <= 0x58; op++) add({op, 0x05, 0x80}, 6);
+  add({0x59}, 2);
+  add({0x5A, 0x02, 0x33}, 7); add({0x5A, 0x42, 0x33}, 7); add({0x5A, 0x82, 0xC6, 0x00}, 11); add({0x5A, 0xC2, 0x33}, 7);
+  add({0x5B, 0x02, 0x33}, 6); add({0x5B, 0x42, 0x33}, 6); add({0x5B, 0x82, 0xC6, 0x00}, 10); add({0x5B, 0xC2, 0x33}, 6);
+  add({0x5C, 0x02, 0x00}, 47); add({0x5D, 0x07, 0x00}, 44); add({0x5E, 0x80, 0x0F, 0x81}, 9); add({0x5F, 0x80, 0x0F, 0x50}, 8);
+  static const int CW[8] = {9, 10, 10, 10, 10, 14, 14, 14}, CWI[8] = {9, 10, 10, 10, 10, 13, 13, 13};
+  for (int k = 0; k < 8; k++) { add({0x60 + k, 0x02, 0x00}, CW[k]); add({0x68 + k, 0x00, 0x12, 0x34}, CWI[k]); }
+  for (int r = 0; r < 8; r++) { add({0x70 + r, 0xFE}, 10, false, 0, r, 2); add({0x70 + r, 0xFE}, 6, false, 0, r, 1); }
+  for (int op = 0x78; op <= 0x7F; op++) add({op, 0x12, 0x34}, 6);
+  for (int b = 0; b < 8; b++) { add({0x80 + b, 0x90, 0x05}, 10); add({0x88 + b, 0x90, 0x05}, 6); }  // bit 0: BBC desvia
+  for (int op = 0x90; op <= 0x9F; op++) add({op, 0x50, 0x00}, 6);
+  for (int op = 0xA0; op <= 0xAF; op++) add({op, 0x80}, 4);
+  for (int op = 0xB0; op <= 0xBF; op++) add({op, 0x80}, 4);
+  for (int op = 0xC0; op <= 0xCF; op++) add({op, 0x00}, 4);
+  for (int op = 0xD0; op <= 0xDF; op++) add({op, 0x05}, op == 0xD0 ? 4 : op == 0xD8 ? 8 : (op & 7) == 0 ? 0 : -1);
+  for (int op = 0xE0; op <= 0xEF; op++) { add({op, 0x21}, 12); add({op, 0x21}, 9, true); }
+  for (int op = 0xF0; op <= 0xF7; op++) add({op}, 2);
+  add({0xF8}, 10); add({0xF8}, 8, true); add({0xF9}, 12); add({0xF9}, 10, true);
+  for (int op = 0xFA; op <= 0xFF; op++) add({op}, 2);
+
+  bool seen[256] = {};
+  int bad = 0;
+  for (const CycRow& row : rows) {
+    int expect = row.cyc;
+    if (expect <= 0) {
+      // BR cc com flags zeradas: desvia nas condições verdadeiras com C=Z=S=V=0 (8), senão 4
+      static const bool TAKEN0[16] = {false, false, false, false, false, false, false, false,
+                                      true, true, true, true, true, true, true, true};
+      expect = TAKEN0[row.code[0] & 15] ? 8 : 4;
+    }
+    CpuRig t;
+    if (row.sp8) { t.cpu.sys = 0; t.cpu.spl = 0xF0; }
+    t.cpu.ps1 = row.ps1;
+    if (row.reg >= 0) t.set(row.reg, row.val);
+    uint16_t a = t.cpu.pc;
+    for (int x : row.code) t.bus.mem[a++] = uint8_t(x);
+    const int c = t.cpu.step();
+    seen[row.code[0] & 0xFF] = true;
+    if (c != expect) {
+      bad++;
+      std::string bytes;
+      for (int x : row.code) bytes += hx(unsigned(x)) + " ";
+      check(false, "ciclos de " + bytes + (row.sp8 ? "(pilha de 8 bits) " : "") + "= " + std::to_string(c) +
+                       " (tabela " + std::to_string(expect) + ")");
+    }
+    if (t.bus.ticks != c) { bad++; check(false, "ciclos passados ao barramento iguais aos devolvidos"); }
+  }
+  int covered = 0;
+  for (bool b : seen) covered += b;
+  check(covered == 256, "tabela de ciclos cobre os 256 códigos (" + std::to_string(covered) + ")");
+  check(bad == 0 && rows.size() > 400, "tabela de ciclos: " + std::to_string(rows.size()) + " formas conferidas");
+  // HALT: 2 ciclos na instrução e 4 por passo parado (como no MAME)
+  {
+    CpuRig t;
+    const int c1 = t.run({0xF1});
+    const int c2 = t.cpu.step();
+    check(c1 == 2 && c2 == 4 && t.cpu.halted && t.bus.ticks == 6, "HALT: 2 ciclos e depois 4 por passo parado");
+  }
+}
+
+// ------------------------------------------------------------------ 2.5: CKC e STOP
+void clockTests() {
+  CpuRig t;
+  check(t.r(0x1A) == 0, "CKC começa em 0");
+  t.run({0xC8 + 0, 0x00});  // (só para andar) MOV IE0,#0
+  t.run({0x58, 0x20, 0x1A});  // MOV CKC,#$20
+  check(t.r(0x1A) == 0x20 && t.cpu.ckcPending && t.cpu.ckcApplied == 0, "CKC escrito fica pendente até o STOP");
+  check(t.bus.mem[0x1A] == 0, "CKC é registrador da CPU (não vai ao barramento)");
+  const int c = t.run({0xF0});
+  check(c == 2 && !t.cpu.ckcPending && t.cpu.ckcApplied == 0x20 && t.cpu.stops == 1, "STOP aplica o CKC pendente");
+  const uint16_t pc = t.cpu.pc;
+  t.run({0xF0});
+  check(t.cpu.pc == pc + 1 && !t.cpu.halted && t.cpu.stops == 2, "STOP sem troca pendente segue adiante (como no MAME)");
+  t.run({0x58, 0x20, 0x1A});
+  check(!t.cpu.ckcPending, "escrever o mesmo CKC não pede troca");
+  // estado: CKC entra no save state da CPU
+  StateIO w;
+  t.cpu.sync(w);
+  CpuRig u;
+  StateIO rd(w.data());
+  u.cpu.sync(rd);
+  check(u.cpu.ckc == 0x20 && u.cpu.ckcApplied == 0x20 && u.cpu.stops == 2, "CKC e STOPs no save state da CPU");
+}
+
+// ------------------------------------------------------------------ 2.5: máquina "quieta" (CPU parada em HALT)
+std::vector<uint8_t> quietInternal() {
+  std::vector<uint8_t> ir(INT_ROM_SIZE, 0xFF);
+  ir[0x20] = 0xF1;            // $1020: HALT
+  ir[0x21] = 0xD8; ir[0x22] = 0xFD;  // BR T,$1020
+  return ir;
+}
+
+void soundTests(const std::vector<uint8_t>& er, const std::vector<uint8_t>& cart) {
+  GameCom g(cart, quietInternal(), er);
+  g.setSampleRate(48000);
+  g.runFrame();
+  // período de cada passo = (SGnT + 1) contagens de 2 ciclos
+  for (int i = 0; i < 16; i++) g.write(uint16_t(0x60 + i), uint8_t(i < 8 ? 0x77 : 0x88));
+  g.write(0x42, 0x1F);
+  g.write(0x46, 0x00);
+  g.write(0x47, 99);
+  g.write(0x40, 0x81);
+  g.tick(200 * 5, false);
+  check(g.soundStepPos(0) == 5, "SG0 com SG0T=99: um passo a cada 200 ciclos (" + std::to_string(g.soundStepPos(0)) + " em 1000)");
+  g.tick(199, false);
+  check(g.soundStepPos(0) == 5, "SG0: ainda não passou o sexto passo em 1199 ciclos");
+  g.tick(1, false);
+  check(g.soundStepPos(0) == 6, "SG0: sexto passo em 1200 ciclos");
+  // SG0T = 0 também toca (período de 2 ciclos)
+  g.write(0x40, 0x00);
+  g.write(0x47, 0);
+  g.write(0x40, 0x81);
+  const int p0 = g.soundStepPos(0);
+  g.tick(20, false);
+  check((g.soundStepPos(0) - p0 + 32) % 32 == 10, "SG0T = 0: um passo a cada 2 ciclos");
+  // registradores com a largura certa
+  g.write(0x46, 0xF3);
+  check(g.read(0x46) == 0x03, "SG0TH guarda 4 bits (período de 12 bits)");
+  g.write(0x42, 0xFF);
+  check(g.read(0x42) == 0x1F, "SG0L guarda 5 bits");
+  g.write(0x4E, 0x12);
+  check(g.read(0x4E) == 0, "SGDA é só escrita");
+  // RAM da onda presa com o canal tocando
+  check(g.read(0x60) == 0, "onda do SG0 lê 0 com o canal tocando");
+  g.write(0x60, 0x11);
+  g.write(0x40, 0x00);
+  check(g.read(0x60) == 0x77, "escrita na onda com o canal tocando não pega");
+  g.write(0x60, 0x11);
+  check(g.read(0x60) == 0x11, "com o canal parado a onda aceita escrita");
+  g.write(0x60, 0x77);
+  // amostras com sinal: 7 -> +108, 8 -> -124 (volume 31, metade)
+  g.write(0x46, 0x00); g.write(0x47, 0xFF);  // passo lento (512 ciclos)
+  g.write(0x40, 0x81);
+  int mn = 999, mx = -999;
+  for (int i = 0; i < 400; i++) { g.tick(100, false); mn = std::min(mn, g.mixOut()); mx = std::max(mx, g.mixOut()); }
+  check(mx == 108 && mn == -124, "onda com sinal: +7 e -8 com volume 31 dão +108/-124 (" + std::to_string(mx) + "/" + std::to_string(mn) + ")");
+  // dois canais no mínimo: corte em -128
+  for (int i = 0; i < 16; i++) g.write(uint16_t(0x70 + i), 0x88);
+  g.write(0x40, 0x00);
+  for (int i = 0; i < 16; i++) { g.write(uint16_t(0x60 + i), 0x88); g.write(uint16_t(0x70 + i), 0x88); }
+  g.write(0x44, 0x1F); g.write(0x48, 0x00); g.write(0x49, 0x10);
+  g.write(0x40, 0x83);
+  g.tick(200, false);
+  check(g.mixOut() == -128, "mistura de 8 bits com corte (" + std::to_string(g.mixOut()) + ")");
+  // DAC direto: toca sozinho, sem os geradores
+  g.write(0x4E, 0xC0);
+  g.write(0x40, 0x8B);
+  g.tick(200, false);
+  check(g.mixOut() == 0x40, "SGC bit 3: só o DAC (SGDA - $80) (" + std::to_string(g.mixOut()) + ")");
+  g.write(0x40, 0x08);
+  g.tick(200, false);
+  check(g.mixOut() == 0, "sem o bit 7 do SGC nada toca");
+  // ruído: só +108 ou -124 com volume 31
+  g.write(0x4A, 0x1F); g.write(0x4C, 0x00); g.write(0x4D, 0x03);
+  g.write(0x40, 0x84);
+  g.tick(400, false);
+  bool hi = false, lo = false, other = false;
+  for (int i = 0; i < 300; i++) {
+    g.tick(37, false);
+    const int m = g.mixOut();
+    if (m == 108) hi = true; else if (m == -124) lo = true; else other = true;
+  }
+  check(hi && lo && !other, "SG2: ruído de dois níveis (+7/-8 vezes o volume)");
+  // estado com som: mesma continuação
+  const auto st = g.saveState();
+  g.tick(5000, false);
+  const int m1 = g.mixOut();
+  const auto st1 = g.saveState();
+  g.loadState(st);
+  g.tick(5000, false);
+  check(g.mixOut() == m1 && g.saveState() == st1, "estado salvo do som: mesma continuação");
+}
+
+void slotTests(const std::vector<uint8_t>& er, const std::vector<uint8_t>& cart) {
+  GameCom g(cart, quietInternal(), er);
+  g.runFrame();
+  std::vector<uint8_t> c2(0x8000);
+  for (size_t i = 0; i < c2.size(); i++) c2[i] = uint8_t(0xC0 ^ i);
+  g.write(0x26, 0x20);  // $4000 = banco $20 do cartucho
+  g.write(0x17, 0x40);
+  check(g.read(0x4005) == 'T' && g.read(0x4000) == cart[0], "P3 = $40: encaixe 1 na janela");
+  g.write(0x17, 0x80);
+  check(g.read(0x4000) == 0xFF && g.read(0x4005) == 0xFF, "P3 = $80 sem segundo cartucho: janela lê $FF");
+  check(!g.hasCart2(), "sem segundo cartucho");
+  g.setCart2(c2);
+  check(g.hasCart2() && g.read(0x4000) == c2[0] && g.read(0x4123) == c2[0x123], "P3 = $80: segundo cartucho na janela");
+  g.write(0x17, 0xC0);
+  check(g.read(0x4000) == 0xFF, "P3 = $C0: nenhum encaixe (lê $FF)");
+  g.write(0x17, 0x00);
+  check(g.read(0x4000) == 0xFF, "P3 = $00: nenhum encaixe");
+  g.write(0x25, 0x01);  // $2000 = banco 1 da ROM do sistema
+  check(g.read(0x2000) == er[0x2000], "banco < $20 é da ROM do sistema com qualquer P3");
+  g.write(0x27, 0x21);  // MMU3 escrito sem encaixe ligado: vale quando ligar
+  g.write(0x17, 0x40);
+  check(g.read(0x6000) == cart[0x2000 % cart.size()], "MMU escrito sem encaixe ligado vale ao ligar (banco fica no MMU)");
+  g.write(0x17, 0x80);
+  check(g.read(0x6000) == c2[0x2000], "a mesma janela troca de cartucho só pelo P3");
+  // DMA da ROM: encaixe 2, e $FF (pixel 3) sem encaixe
+  auto dmaRom = [&](uint8_t p3) {
+    g.write(0x17, p3);
+    g.write(0x30, 0x80); g.write(0x31, 0x07);
+    g.write(0x3C, 0x20); g.write(0x35, 0); g.write(0x36, 0); g.write(0x37, 3); g.write(0x38, 0);
+    g.write(0x39, 0); g.write(0x3A, 0); g.write(0x3B, 0xE4); g.write(0x3D, 0);
+    g.write(0x34, 0x83);
+    for (int i = 0; i < 20 && (g.peekRam(0x34) & 0x80); i++) g.tick(445, true);
+    return g.peekVram(0);
+  };
+  check(dmaRom(0x80) == c2[0], "DMA da ROM lê o segundo cartucho com P3 = $80");
+  check(dmaRom(0xC0) == 0xFF, "DMA da ROM sem encaixe ligado lê $FF");
+  check(dmaRom(0x40) == cart[0], "DMA da ROM volta ao encaixe 1");
+  // o segundo cartucho não entra no estado; o estado guarda o P3
+  g.write(0x17, 0x80);
+  const auto st = g.saveState();
+  g.write(0x17, 0x40);
+  g.loadState(st);
+  check(g.read(0x4000) == c2[0], "estado guarda a escolha do encaixe (P3)");
+  g.setCart2({});
+  check(!g.hasCart2() && g.read(0x4000) == 0xFF, "tirar o segundo cartucho");
+  // pelo createCore: arquivo "gamecom_cart2"
+  setFirmware("gamecom_cart2", c2);
+  setFirmware("gamecom_int", quietInternal());
+  setFirmware("gamecom_ext", er);
+  {
+    auto core = createCore(cart, "teste.tgc", nullptr);
+    auto* gc = core ? dynamic_cast<GameComCore*>(core.get()) : nullptr;
+    check(gc && gc->gc().hasCart2(), "createCore põe o arquivo gamecom_cart2 no segundo encaixe");
+  }
+  setFirmware("gamecom_cart2", {});
+  {
+    auto core = createCore(cart, "teste.tgc", nullptr);
+    auto* gc = core ? dynamic_cast<GameComCore*>(core.get()) : nullptr;
+    check(gc && !gc->gc().hasCart2(), "sem o arquivo, o segundo encaixe fica vazio");
+  }
+  // estado salvo com o segundo cartucho: sem ele (ou com outro), é recusado
+  {
+    g.setCart2(c2);
+    const auto withC2 = g.saveState();
+    g.setCart2({});
+    bool refused = false;
+    try { g.loadState(withC2); } catch (...) { refused = true; }
+    check(refused && g.read(0x4000) == 0xFF, "estado com segundo cartucho recusado sem ele");
+    auto other = c2;
+    other[0] ^= 1;
+    g.setCart2(other);
+    refused = false;
+    try { g.loadState(withC2); } catch (...) { refused = true; }
+    check(refused, "estado com segundo cartucho recusado com outro cartucho");
+    g.setCart2(c2);
+    bool ok = true;
+    try { g.loadState(withC2); } catch (...) { ok = false; }
+    check(ok, "estado com segundo cartucho carrega com o mesmo cartucho");
+    g.setCart2({});
+  }
+  // DMBR adulterado no estado ($FF): limitado a 7 bits; a DMA da ROM não sai do cartucho
+  for (uint8_t p3 : {uint8_t(0x40), uint8_t(0x80)}) {
+    if (p3 == 0x80) g.setCart2(c2);
+    g.write(0x17, p3);
+    g.write(0x30, 0x80); g.write(0x31, 0x07);
+    g.write(0x3C, 0x7F); g.write(0x35, 0); g.write(0x36, 0); g.write(0x37, 159); g.write(0x38, 199);
+    g.write(0x39, 0); g.write(0x3A, 0); g.write(0x3B, 0xE4); g.write(0x3D, 0);
+    g.write(0x34, 0x83);  // modo 2 (ROM -> vídeo), sobrescrevendo
+    auto st = g.saveState();
+    // acha a RAM no estado pelos registradores da DMA recém-escritos
+    size_t at = 0;
+    for (size_t i = 0; i + 0x400 <= st.size(); i++)
+      if (st[i + 0x3C] == 0x7F && st[i + 0x34] == 0x83 && st[i + 0x17] == p3 && st[i + 0x37] == 159 && st[i + 0x38] == 199) { at = i; break; }
+    st[at + 0x3C] = 0xFF;
+    bool ok = true;
+    try { g.loadState(st); } catch (...) { ok = false; }
+    check(at && ok && g.peekRam(0x3C) == 0x7F, "DMBR = $FF no estado vira $7F na carga");
+    for (int i = 0; i < 20 && (g.peekRam(0x34) & 0x80); i++) g.tick(445, true);
+    check(!(g.peekRam(0x34) & 0x80), "DMA da ROM com DMBR adulterado termina sem sair do cartucho");
+    g.setCart2({});
+  }
+  bool threw = false;
+  try { g.setCart2(std::vector<uint8_t>(CART_SPACE + 1)); } catch (...) { threw = true; }
+  check(threw, "segundo cartucho grande demais é recusado");
+}
+
+// timers 0 e 1: pré-divisor da tabela do MAME (metade do valor, em ciclos da CPU) e contador até TMnD
+void timerTests(const std::vector<uint8_t>& er, const std::vector<uint8_t>& cart) {
+  static const int PRE[8] = {1, 512, 1024, 2048, 4096, 8192, 16384, 32768};
+  for (int t = 0; t < 2; t++) {
+    const uint16_t ctl = uint16_t(0x50 + 2 * t), dat = uint16_t(ctl + 1);
+    auto flag = [&](GameCom& g) { return t ? (g.cpu.ir1 & 0x40) != 0 : (g.cpu.ir0 & 0x40) != 0; };
+    for (int sel : {0, 1, 3}) {
+      GameCom g(cart, quietInternal(), er);
+      g.write(dat, 3);
+      g.write(ctl, uint8_t(0x80 | sel));
+      g.tick(3 * PRE[sel] - 1, false);
+      const bool early = flag(g);
+      const uint8_t cnt = g.read(dat);
+      g.tick(1, false);
+      check(!early && cnt == 2 && flag(g) && g.read(dat) == 0,
+            "timer " + std::to_string(t) + " seleção " + std::to_string(sel) + ": interrupção depois de 3 x " +
+                std::to_string(PRE[sel]) + " ciclos e o contador volta a 0");
+    }
+    GameCom g(cart, quietInternal(), er);
+    g.write(dat, 5);
+    g.write(ctl, 0x01);  // bit 7 desligado: parado
+    g.tick(5000, false);
+    check(!flag(g) && g.read(dat) == 0, "timer " + std::to_string(t) + " parado não conta");
+    g.write(ctl, 0x81);
+    g.tick(700, false);
+    g.write(ctl, 0x81);  // reescrever o controle zera o pré-divisor e o contador
+    check(g.read(dat) == 0, "timer " + std::to_string(t) + ": escrever o controle zera o contador");
+    g.tick(511, false);
+    check(g.read(dat) == 0, "timer " + std::to_string(t) + ": pré-divisor recomeça do zero");
+    g.tick(1, false);
+    check(g.read(dat) == 1, "timer " + std::to_string(t) + ": conta depois de 512 ciclos");
+  }
+  // os dois timers são independentes e o HALT não para a contagem
+  {
+    GameCom g(cart, quietInternal(), er);
+    g.write(0x51, 2); g.write(0x50, 0x80);  // timer 0: 2 ciclos
+    g.write(0x53, 4); g.write(0x52, 0x81);  // timer 1: 2048 ciclos
+    g.tick(2047, true);
+    check((g.cpu.ir0 & 0x40) && !(g.cpu.ir1 & 0x40), "timers independentes (timer 1 ainda não chegou)");
+    g.tick(1, true);
+    check(g.cpu.ir1 & 0x40, "timer 1 conta com a CPU em HALT");
+  }
+}
+
+// estado da 2.4 ('GCM1') montado a partir de um 'GCM2': ainda carrega igual
+void oldStateTests(const std::vector<uint8_t>& ir, const std::vector<uint8_t>& er, const std::vector<uint8_t>& cart) {
+  GameCom g(cart, ir, er);
+  for (int i = 0; i < 10; i++) g.runFrame();
+  const auto st = g.saveState();
+  const size_t cpuExtra = 4 + 4 + 7;          // magia + CRC + PC/PS0/PS1/SYS/SPH/SPL
+  const size_t mark = 4;                      // marca do segundo cartucho (só no GCM2)
+  const size_t afterMem = cpuExtra + 7 + 4 + 1 + 2 + 0x108 + 0x400 + 0x4000 + 0x2000;  // + CKC(7) + IE/IR + HALT + pendentes + regs
+  std::vector<uint8_t> v1(st.begin(), st.begin() + 8);
+  v1.insert(v1.end(), st.begin() + long(8 + mark), st.begin() + long(cpuExtra + mark));
+  v1.insert(v1.end(), st.begin() + long(cpuExtra + mark + 7), st.begin() + long(afterMem + mark));
+  v1.insert(v1.end(), 21, 0);                                  // janelas e "cartucho ligado" da 2.4
+  v1.insert(v1.end(), st.begin() + long(afterMem + mark), st.end() - 16 - 4);  // até o DAC (sem a mistura)
+  v1.insert(v1.end(), st.end() - 16, st.end());                // sampleAcc e hpCap
+  v1[3] = '1';
+  GameCom h(cart, ir, er);
+  // sessão anterior com CKC, STOPs e mistura diferentes de zero: o GCM1 não pode herdar nada disso
+  auto dirty = st;
+  dirty[cpuExtra + mark] = 0x5A; dirty[cpuExtra + mark + 1] = 0x5A; dirty[cpuExtra + mark + 2] = 1;
+  dirty[cpuExtra + mark + 3] = 9;
+  for (int k = 0; k < 4; k++) dirty[st.size() - 20 + size_t(k)] = k ? 0 : 0x50;  // mistura (int de 4 bytes)
+  h.loadState(dirty);
+  check(h.cpu.ckc == 0x5A && h.cpu.stops == 9 && h.mixOut() == 0x50, "estado com CKC, STOPs e mistura carregado");
+  bool ok = true;
+  try { h.loadState(v1); } catch (...) { ok = false; }
+  check(ok && h.cycleCount() == g.cycleCount() && h.peekRam(0x91) == g.peekRam(0x91), "estado da 2.4 (GCM1) ainda carrega");
+  check(h.cpu.ckc == 0 && h.cpu.ckcApplied == 0 && !h.cpu.ckcPending && h.cpu.stops == 0 && h.mixOut() == 0,
+        "GCM1 zera CKC, STOPs e mistura (não herda da sessão anterior)");
+  GameCom h2(cart, ir, er);
+  h2.loadState(v1);
+  check(h.saveState() == h2.saveState(), "GCM1: mesmo estado partindo de máquinas diferentes");
+  for (int i = 0; i < 5; i++) { g.runFrame(); h.runFrame(); }
+  check(std::memcmp(g.fb, h.fb, sizeof g.fb) == 0 && g.cycleCount() == h.cycleCount(), "estado da 2.4: mesma continuação");
+  auto bad = st;
+  bad[3] = '9';
+  bool refused = false;
+  try { h.loadState(bad); } catch (...) { refused = true; }
+  check(refused, "versão desconhecida do estado é recusada");
+}
+
 bool writeFile(const std::string& p, const std::vector<uint8_t>& d) {
   std::ofstream f(p, std::ios::binary);
   f.write(reinterpret_cast<const char*>(d.data()), std::streamsize(d.size()));
@@ -771,7 +1229,16 @@ int main(int argc, char** argv) {
     return ok ? 0 : 1;
   }
   cpuTests();
+  cycleTableTests();
+  clockTests();
   machineTests();
+  {
+    const auto ir = buildInternal(), er = buildExternal(), cart = buildCart();
+    soundTests(er, cart);
+    slotTests(er, cart);
+    timerTests(er, cart);
+    oldStateTests(ir, er, cart);
+  }
   fuzzTests();
   std::printf("RESULTADO gamecom: %d verificações, %d falhas\n", checks, fails);
   return fails ? 1 : 0;

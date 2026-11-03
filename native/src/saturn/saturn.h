@@ -57,6 +57,8 @@ public:
   int masterVector();               // o SH-2 mestre aceitou a interrupção
   void lineStart(int line);         // começo da linha: temporizador 0 conta as linhas
   void vblankOut();
+  void tick(int cycles);            // o DMA termina (interrupção, DSTA) depois do tempo da transferência
+  bool dmaActive(int level) const { return dmaLeft_[level] > 0; }
   uint32_t pending() const { return ist_; }
   void sync(StateIO& io);
 
@@ -87,6 +89,9 @@ private:
   uint32_t ist_ = 0, ims_ = 0xBFFF;
   int level_ = 0, vec_ = 0;
   struct Level { uint32_t r = 0, w = 0, c = 0, add = 0x101, en = 0, md = 0; } dma_[3];
+  int32_t dmaLeft_[3] = {};          // ciclos até o fim do DMA de cada nível (0 = parado)
+  int64_t dmaCost_ = 0;              // custo da transferência em andamento (ciclos do SH-2)
+  void dmaEnd(int level);
   uint32_t t0cmp_ = 0, t0cnt_ = 0, t1rel_ = 0, t1md_ = 0;
   uint32_t asr0_ = 0, asr1_ = 0, aref_ = 0, rsel_ = 0;
 };
@@ -129,8 +134,12 @@ public:
   uint16_t fbRead16(uint32_t off) const;
   void fbWrite16(uint32_t off, uint16_t v);
   void fbWrite8(uint32_t off, uint8_t v);
-  void vblankIn();                  // troca de quadro e desenho automático
-  void draw();                      // executa a lista de comandos
+  void vblankIn();                  // apagamento do quadro mostrado (modo automático ou pedido)
+  void vblankOut();                 // troca de quadro e desenho automático (fim do V-blank)
+  void draw();                      // começa o desenho: executa a lista e calcula quanto tempo ele leva
+  void run(int cycles);             // o desenho termina (CEF, interrupção) quando o tempo passa
+  bool drawing() const { return drawing_; }
+  int64_t lastCost() const { return cost_; }   // ciclos do último desenho (para os testes)
   const uint16_t* display() const { return fb[drawBuf ^ 1]; }
   bool eightBit() const { return tvmr_ & 1; }
   int commandsRun = 0;              // comandos do último desenho (para os testes)
@@ -153,6 +162,11 @@ private:
   int sysClipX_ = 0, sysClipY_ = 0, userX0_ = 0, userY0_ = 0, userX1_ = 0, userY1_ = 0, localX_ = 0, localY_ = 0;
   bool drawPending_ = false;
   int64_t budget_ = 0;
+  // tempo de desenho (ciclos do SH-2): comando, linha e ponto; o fim vem depois desse tempo
+  bool drawing_ = false;
+  int64_t cost_ = 0, drawClock_ = 0;
+  void lineCost(const Cmd& c, int pixels);
+  void finish();
 };
 
 // ------------------------------------------------------------------------------------------------ VDP2
@@ -175,25 +189,38 @@ public:
   void sync(StateIO& io);
 
 private:
-  struct Pix { uint32_t rgb; uint8_t pri; uint8_t cc; uint8_t layer; bool ccOn; };
+  // ponto de uma camada na linha: cor, prioridade, proporção e as marcas do cálculo de cor
+  struct Pix { uint32_t rgb; uint8_t pri; uint8_t cc; uint8_t layer; bool ccOn; bool isRgb; bool layerCc; bool selfShad; };
+  // ponto lido de um plano: cor, dado de cor (para o código de função especial) e os bits especiais do nome
+  struct Dot { uint32_t rgb = 0, dcc = 0; bool spr = false, scc = false, msb = false, isRgb = false; };
   struct Tile;                          // como ler um ponto de um plano (NBG ou RBG)
   struct LineScroll { uint32_t lsa; uint32_t x, yBase, yAcc, zx; };
   uint16_t reg(uint32_t off) const { return (off >> 1) < 0x90 ? regs[off >> 1] : 0; }
   uint16_t vr16(uint32_t byteAddr) const { byteAddr &= 0x7FFFE; return uint16_t(vram[byteAddr] << 8 | vram[byteAddr + 1]); }
   uint32_t color(uint32_t idx) const;   // cor da CRAM (0x00BBGGRR com 8 bits por canal)
+  bool colorMsb(uint32_t idx) const;    // bit mais alto da cor na CRAM (cálculo de cor pelo MSB)
+  int cramMode() const { return (regs[7] >> 12) & 3; }
   Tile tileNbg(int n) const;
   Tile tileRbg(int which) const;
-  bool dot(const Tile& t, uint32_t ix, uint32_t iy, uint32_t& rgb) const;
+  bool dot(const Tile& t, uint32_t ix, uint32_t iy, Dot& d) const;
+  // prioridade e cálculo de cor do ponto pelos modos especiais (por tela, caractere, ponto ou MSB)
+  void special(int layerBit, int pri, const Dot& d, uint8_t& outPri, bool& ccOn) const;
   bool windowed(uint8_t ctrl, int x, int y) const;  // ponto escondido pela janela W0/W1
-  void renderNbg(int n, int y, Pix* line, LineScroll* ls);
+  // yEff: NBG0/1 = acumulador de Y da linha (com o mosaico vertical); NBG2/3 = linha efetiva
+  void renderNbg(int n, int y, Pix* line, LineScroll* ls, uint32_t yEff);
   void renderSprite(int y, Pix* line);
-  void renderRbg(int y, Pix* line);
+  struct Rot;                           // parâmetros de rotação de uma linha
+  Rot rotSetup(int ab, int y, bool rbg1) const;
+  uint32_t rotCoeff(const Rot& r, int x) const;
+  bool rotDot(const Rot& r, int x, uint32_t coeff, Dot& d) const;
+  void renderRbg(int which, int y, Pix* line);
   uint32_t backColor(int y) const;
   System& sys_;
   bool vb_ = false, hb_ = false, odd_ = false;
   int line_ = 0;
   uint8_t swin_[704] = {};    // janela de sprite da linha (bit SD dos sprites)
-  uint8_t shadow_[704] = {};  // sombra normal da linha (código 0x7FE dos sprites)
+  uint8_t shadow_[704] = {};  // sombra dos sprites na linha: prioridade do ponto de sombra (0 = nenhum)
+  int winXs_[2] = {}, winXe_[2] = {};   // X das janelas W0/W1 na linha (fixo ou da tabela de janela de linha)
 };
 
 // ------------------------------------------------------------------------------------------------ SCSP
@@ -222,13 +249,17 @@ public:
 private:
   struct Slot {
     uint16_t r[16] = {};
-    uint32_t pos = 0;          // posição na onda (20.12 em amostras)
+    uint32_t pos = 0;          // posição na onda (18.14 em amostras)
     int env = 0x3FF;           // atenuação do envelope (0 = máximo, 0x3FF = mudo)
     int phase = 3;             // 0 ataque, 1 decaimento 1, 2 decaimento 2, 3 soltura
-    bool on = false, back = false;
-    int32_t envAcc = 0;
+    bool on = false, inLoop = false;
+    bool rev = false;          // laço tocando para trás (LPCTL 2 e 3)
+    int32_t lfoTime = 1;       // amostras até o próximo passo do LFO
+    uint8_t lfoCount = 0;      // posição do LFO (8 bits)
     int16_t out = 0;
   };
+  void envStep(Slot& s);       // um passo do envelope (por amostra, com a escala de tecla)
+  int keyScale(const Slot& s) const;
   void keyOnOff();
   int16_t slotStep(int n, int32_t& l, int32_t& r);  // devolve a saída do canal (para a pilha de som)
   void timersStep();
@@ -241,9 +272,24 @@ private:
   uint32_t timerSub_[3] = {};
   uint16_t stack_[64] = {};
   int16_t exl_ = 0, exr_ = 0;
+  // DSP de efeitos: programa de 128 passos de 64 bits, coeficientes, endereços, TEMP (anel de 128), MEMS,
+  // MIXS (entrada dos canais), EFREG (saída) e o anel de eco na RAM de som (RBP/RBL)
+  struct Dsp {
+    uint16_t mprog[512] = {};
+    uint16_t coef[64] = {}, madrs[32] = {}, efreg[16] = {};
+    int32_t temp[128] = {}, mems[32] = {};
+    uint32_t mixs[16] = {};
+    uint32_t sft = 0, y = 0, inputs = 0, readValue = 0, rwAddr = 0;
+    uint16_t frc = 0, adrs = 0, writeValue = 0, mdecCt = 0;
+    uint8_t readPending = 0;
+    bool writePending = false, active = false;
+  } dsp_;
+  void dspRun();
+  uint16_t dspRead(uint32_t off) const;
+  void dspWrite(uint32_t off, uint16_t v, uint16_t mask);
   uint32_t sampleCount_ = 0;
   int64_t cycleDebt_ = 0;
-  uint32_t lfsr_ = 1;
+  uint32_t lfsr_ = 1;          // ruído (17 bits), também usado pelo LFO de ruído
   int16_t delay_[4] = {};
 };
 
@@ -257,17 +303,30 @@ public:
   void write(uint32_t off, uint16_t v);
   uint16_t readData();                 // 0x25818000: dados de 16 bits
   uint32_t readData32();
-  void run(int cycles);                // avança a leitura do disco
+  void writeData(uint16_t v);          // PUT SECTOR DATA: o SH-2 escreve setores na porta
+  void run(int cycles);                // comandos pendentes, a unidade (busca, leitura) e o estado periódico
   uint16_t hirq() const { return hirq_; }
+  uint8_t driveStatus() const { return stat_; }   // para os testes
+  uint32_t position() const { return fad_; }
   bool audioOut(int16_t& l, int16_t& r);   // amostra de CD de áudio (44,1 kHz)
   void sync(StateIO& io);
 
 private:
+  // fases da unidade: parada, ligando o motor, preparando a busca, buscando, lendo e em pausa
+  enum Fase : uint8_t { F_PARADO = 0, F_INICIO, F_GIRO, F_BUSCA, F_TOCA, F_PAUSA, F_FIM };
   void command();
+  int commandDelay(uint8_t cmd) const;
   void status(uint8_t extra = 0, bool reject = false);
   void irq(uint16_t bits) { hirq_ |= bits; }
-  void startPlay(uint32_t start, uint32_t end, int repeat);
-  void readSector();
+  void startSeek(uint32_t start, uint32_t end, int repeat, uint16_t endIrq, bool keepPickup);
+  void driveStep();
+  void periodic();
+  bool endMet() const;
+  bool processSector();
+  int32_t sectorTime(uint32_t fad) const;
+  void finishFs();
+  void softReset();
+  void disconnectInput(int f);
   void route(uint8_t filter, const uint8_t* raw);
   uint32_t fadOfTrack(int t, bool end) const;
   void startTransfer(int part, int offset, int count, bool del);
@@ -279,28 +338,48 @@ private:
   System& sys_;
   cdrom::Disc* disc_ = nullptr;
   uint16_t hirq_ = 0, mask_ = 0, cr_[4] = {}, res_[4] = {};
-  uint8_t stat_ = 1;                   // 1 pausa, 3 tocando, 0 ocupado...
-  uint32_t fad_ = 150, playStart_ = 0, playEnd_ = 0;
+  uint8_t stat_ = 1;                   // 0 ocupado, 1 pausa, 2 parado, 3 tocando, 4 buscando, 5 varrendo...
+  // comando escrito em CR4: responde (CMOK) depois de alguns microssegundos
+  bool cmdPending_ = false;
+  int32_t cmdClock_ = 0;
+  // unidade
+  uint8_t drive_ = F_PARADO;
+  int32_t driveClock_ = 0, periodClock_ = 0;
+  uint32_t fad_ = 150;                 // posição relatada
+  uint32_t cur_ = 150;                 // setor sob a cabeça
+  uint32_t playStart_ = 0, playEnd_ = 0;   // FAD; fim 0 = só posicionar
+  uint32_t playCmdStart_ = 0, playCmdEnd_ = 0;
+  uint8_t playCmdRep_ = 0;
   int repeat_ = 0, repeatMax_ = 0;
-  bool playing_ = false, audioTrack_ = false;
-  int32_t sectorClock_ = 0, periodClock_ = 0;
+  uint16_t endIrq_ = 0;                // PEND (tocar) ou EFLS (ler arquivo) no fim
+  bool held_ = false;                  // setor lido esperando ser entregue
+  bool secDone_ = false;               // um setor foi entregue desde o último estado periódico
+  bool pauseFull_ = false;             // pausa por falta de buffer (volta sozinha)
+  int8_t scan_ = -1;                   // varredura: -1 não, 0 para frente, 1 para trás
+  uint8_t scanCount_ = 0;
+  uint8_t subq_[10] = {};
   int getSecLen_ = 2048, putSecLen_ = 2048;
   // filtros, partições e buffers (200 setores de 2352)
   struct Filter { uint32_t fad = 0, range = 0; uint8_t mode = 0, trueConn = 0, falseConn = 0xFF, file = 0, chan = 0, sm = 0, smMask = 0, ci = 0, ciMask = 0; };
   Filter filt_[24];
   uint8_t cdConn_ = 0xFF, lastDest_ = 0xFF;
   std::vector<std::vector<uint8_t>> part_[24];   // setores brutos (2352) em cada partição
-  struct Xfer { std::vector<uint8_t> data; size_t pos = 0; bool active = false; int part = -1; int count = 0; bool del = false; int offset = 0; } dt_;
-  uint32_t lastXfer_ = 0;
+  struct Xfer { std::vector<uint8_t> data; size_t pos = 0; bool active = false; int part = -1; int count = 0; bool del = false; int offset = 0; bool writing = false; } dt_;
+  uint32_t lastXfer_ = 0;              // tamanho calculado (0x52); bit 31 = resultado já lido
+  uint16_t srchPos_ = 0;               // busca por FAD (0x55/0x56)
+  uint8_t srchPart_ = 0;
+  uint32_t srchFad_ = 0;
   // sistema de arquivos (ISO 9660)
   struct FileEnt { uint32_t fad, size; uint8_t attr, unit, gap, fileNo; };
   std::vector<FileEnt> dir_;
   uint32_t dirOffset_ = 0;
-  bool fileRead_ = false;
-  uint32_t fileFad_ = 0, fileEnd_ = 0;
+  uint32_t curDirFad_ = 0, curDirSize_ = 0;
+  // operação do sistema de arquivos em andamento (lê o disco de verdade): 1 diretório, 2 autenticação
+  uint8_t fsOp_ = 0, fsPart_ = 0;
+  uint32_t fsFad_ = 0, fsSize_ = 0, fsOffset_ = 0;
+  uint8_t authType_ = 0;               // 0 sem autenticação (setores de dados não são guardados), 1 áudio, 2 CD-ROM, 4 Saturn
   std::vector<int16_t> audioQ_;
   size_t audioPos_ = 0;
-  bool authOk_ = false;
 };
 
 // ------------------------------------------------------------------------------------------------ sistema

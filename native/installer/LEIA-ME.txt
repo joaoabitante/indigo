@@ -16,6 +16,14 @@ Licença
 - O Índigo é software livre (GNU GPL versão 3). Ele não traz jogos nem BIOS: use cópias dos seus.
   Créditos de terceiros: veja TERCEIROS.md no código-fonte (github.com/joaoabitante, em breve público).
 
+Novo na 2.5
+- Os consoles experimentais ficaram mais perto do aparelho: Sega Saturn (leitor de CD, efeitos de cor, som),
+  Atari Jaguar, PC-FX (vídeos e imagens comprimidas, mouse), 3DO, Intellivision (.bin com .cfg, troca de
+  bancos, PAL), Atari 5200 e Game.com (segundo cartucho, tela de toque). Continuam experimentais.
+- Na tela de toque: botão para trocar o lado do disco do Famicom Disk System e teclado numérico do Atari 5200
+  e do Intellivision.
+- Estados salvos (save states) desses consoles feitos na 2.4 podem não abrir na 2.5. Os saves normais continuam.
+
 Novo na 2.4
 - 11 consoles novos: Famicom Disk System (.fds, .qd; troca de lado do disco com F4), Super Game Boy (molduras e
   cores dos jogos com suporte), Mega Duck, Watara Supervision e Game & Watch (o .zip do MAME do próprio usuário,

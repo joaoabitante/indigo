@@ -7,6 +7,9 @@
 //      controle, som (frequência do tom), save state determinístico e estados danificados;
 //  (3) formatos: o mesmo cartucho em .rom (Intellicart, com página de RAM), .int e .bin de 10 bits; a EXEC
 //      livre como "BIOS do usuário"; detecção sem roubar as ROMs de teste dos outros consoles.
+//  (4) .bin + .cfg do jzIntv (mapa, [memattr] de 8/16 bits, [vars]), páginas do ECS, troca de bancos do
+//      Intellicart, PAL (50 Hz, quadro de 19968 ciclos) e .cfg de lixo; antes de tudo, a tabela de ciclos
+//      das 1024 instruções contra o manual da GI.
 // uso: indigo-t7_intv [/root/indigo-env/roms] [pasta-para-png]   (--gerar PASTA grava os cartuchos de teste)
 #include <chrono>
 #include <cmath>
@@ -18,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "../src/core/backup.h"
 #include "../src/core/core.h"
 #include "../src/intv/asm1610.h"
 #include "../src/intv/intv.h"
@@ -258,6 +262,75 @@ void cpuTests() {
     g.c.interrupt();
     check(!g.c.halted && g.bus.m[0x2F0] == 0x1001, "interrupção depois do HLT empilha o endereço seguinte ao HLT");
   }
+}
+
+// ------------------------------------------------------------------ (1a) tabela de ciclos
+// Ciclos esperados de cada uma das 1024 instruções, escritos a partir da tabela do manual da GI
+// (jzIntv doc/programming/cp1600_summary.txt), e não do código da CPU:
+//   HLT, SDBD, EIS, DIS, TCI, CLRC, SETC = 4; J/JSR/JE/JD/JSRE/JSRD = 12;
+//   INCR/DECR/COMR/NEGR/ADCR = 6 (7 se o registro é R6 ou R7); GSWD, NOP, SIN, RSWD = 6;
+//   deslocamentos = 6 (8 com 2 posições); registro-registro = 6 (7 se o destino é R6 ou R7);
+//   desvios = 7 (9 se desviou); MVO = 11 direto, 9 nos outros modos;
+//   MVI/ADD/SUB/CMP/AND/XOR = 10 direto, 8 imediato/indireto, 11 pela pilha (@R6), 10 com SDBD
+//   (imediato/indireto). Como no jzIntv, +1 quando o destino da leitura é R6 ou R7 (o manual só cita isso
+//   nas instruções de registro, mas é a mesma escrita no PC/SP). O jzIntv usa 13 no J; o manual diz 12.
+int expectedCycles(uint16_t op, bool sdbd, bool taken) {
+  if (op < 0x008) return op == 4 ? 12 : 4;
+  if (op < 0x030) return (op & 7) >= 6 ? 7 : 6;
+  if (op < 0x040) return 6;
+  if (op < 0x080) return (op & 4) ? 8 : 6;
+  if (op < 0x200) return (op & 7) >= 6 ? 7 : 6;
+  if (op < 0x240) return taken ? 9 : 7;
+  const int opc = (op >> 6) & 7, m = (op >> 3) & 7, reg = op & 7;
+  if (opc == 1) return m == 0 ? 11 : 9;
+  int c = m == 0 ? 10 : m == 6 ? 11 : (sdbd ? 10 : 8);
+  if (reg >= 6) c++;
+  return c;
+}
+
+void cycleTable() {
+  int ok = 0, n = 0;
+  std::string erros;
+  for (int pass = 0; pass < 2; pass++) {
+    for (int op = 0; op < 0x400; op++) {
+      const bool sdbd = pass == 1;
+      if (sdbd && op < 0x240) continue;  // SDBD só muda as instruções de memória
+      Flat bus;
+      CP1610 c(bus);
+      c.reset();
+      c.r[6] = 0x2F0; c.r[1] = c.r[2] = c.r[3] = c.r[4] = c.r[5] = 0x400;
+      uint16_t pc = 0x1000;
+      if (sdbd) bus.m[pc++] = 0x001;
+      bus.m[pc] = static_cast<uint16_t>(op);
+      bus.m[pc + 1] = 0x0010; bus.m[pc + 2] = 0x0020;
+      if (sdbd) c.step();
+      const int cyc = c.step();
+      // desvio tomado: o PC não caiu logo depois das duas palavras
+      const bool taken = op >= 0x200 && op < 0x240 && c.r[7] != pc + 2;
+      const int exp = expectedCycles(static_cast<uint16_t>(op), sdbd, taken);
+      n++;
+      if (cyc == exp) ok++;
+      else if (erros.size() < 200) erros += " " + std::string(sdbd ? "SDBD+" : "") + hex(op) + "=" + std::to_string(cyc) + "/" + std::to_string(exp);
+    }
+  }
+  check(ok == n, "tabela de ciclos do manual da GI: " + std::to_string(ok) + "/" + std::to_string(n) + " instruções" + erros);
+  // casos citados como suspeitos, um a um
+  auto cyc1 = [](std::initializer_list<uint16_t> ws, int steps = 1) {
+    Flat bus;
+    CP1610 c(bus);
+    c.reset();
+    c.r[6] = 0x2F0;
+    uint16_t a = 0x1000;
+    for (uint16_t w : ws) bus.m[a++] = w;
+    int t = 0;
+    for (int i = 0; i < steps; i++) t = c.step();
+    return t;
+  };
+  check(cyc1({0x004, 0x0110, 0x0000}) == 12 && cyc1({0x004, 0x0310, 0x0000}) == 12, "JSR R5 e J: 12 ciclos (manual da GI)");
+  check(cyc1({0x2B0}) == 11 && cyc1({0x2B6}) == 12 && cyc1({0x001, 0x2B0}, 2) == 11, "PULR R0 (MVI@ R6): 11; PULR R6: 12; SDBD não muda @R6");
+  check(cyc1({0x2A0}) == 8 && cyc1({0x001, 0x2A0}, 2) == 10 && cyc1({0x2BF, 0x1234}) == 9 && cyc1({0x280, 0x0300}) == 10,
+        "MVI@ R4: 8 (10 com SDBD); MVII para R7: 9; MVI direto: 10");
+  check(cyc1({0x0B7}) == 7 && cyc1({0x00F}) == 7 && cyc1({0x036}) == 6 && cyc1({0x03F}) == 6, "JR/MOVR para R7 e INCR R7: 7; SIN e RSWD R7: 6");
 }
 
 // ------------------------------------------------------------------ (1b) som: envelope e ruído
@@ -593,6 +666,26 @@ void consoleTest(const std::string& pngDir) {
   core->runFrame(); core->runFrame();
   check((m.sysram[PAD - 0x200] & 0xFF) == static_cast<uint8_t>(~0x42), "teclado: tecla 5 = $42 (" + hex(m.sysram[PAD - 0x200]) + ")");
   ic->setKeypad(-1);
+  // teclado numérico pelos bits KEY_KP* (teclado do PC e teclado na tela de toque do app)
+  core->setKeys(KEY_KP0 << 7);
+  core->runFrame(); core->runFrame();
+  check((m.sysram[PAD - 0x200] & 0xFF) == static_cast<uint8_t>(~0x84), "teclado pelos bits KEY_KP*: tecla 7 = $84 (" + hex(m.sysram[PAD - 0x200]) + ")");
+  core->setKeys(KEY_KPSTAR);
+  core->runFrame(); core->runFrame();
+  const uint16_t clr = m.sysram[PAD - 0x200];
+  core->setKeys(KEY_KPHASH);
+  core->runFrame(); core->runFrame();
+  check((clr & 0xFF) == static_cast<uint8_t>(~0x88) && (m.sysram[PAD - 0x200] & 0xFF) == static_cast<uint8_t>(~0x28),
+        "teclado: * = Clear ($88) e # = Enter ($28) (" + hex(clr) + ", " + hex(m.sysram[PAD - 0x200]) + ")");
+  check(IntvCore::keypadFromKeys(KEY_A | KEY_START) == -1 && IntvCore::keypadFromKeys(KEY_KP0) == 0 &&
+            IntvCore::keypadFromKeys((KEY_KP0 << 9) | KEY_KPHASH) == 9,
+        "teclado: sem bits KEY_KP* nenhuma tecla; o algarismo tem prioridade");
+  ic->setKeypad(4);
+  core->setKeys(KEY_KP0 << 7);
+  core->runFrame(); core->runFrame();
+  check((m.sysram[PAD - 0x200] & 0xFF) == static_cast<uint8_t>(~0x82), "setKeypad() tem prioridade sobre os bits KEY_KP* (" + hex(m.sysram[PAD - 0x200]) + ")");
+  ic->setKeypad(-1);
+  core->setKeys(0);
 
   // som: período $100 → 111860,8 / 256 = 437 Hz
   {
@@ -785,6 +878,292 @@ void formatTests(const std::string& romsDir) {
   }
 }
 
+// ------------------------------------------------------------------ (4) .cfg, páginas do ECS, bancos, PAL
+std::unique_ptr<Core> withCfg(const std::vector<uint8_t>& bin, const std::string& name, const std::string& cfg) {
+  setFirmware("intv_cfg", std::vector<uint8_t>(cfg.begin(), cfg.end()));
+  std::unique_ptr<Core> c;
+  try { c = createCore(bin, name, nullptr); } catch (...) {}
+  setFirmware("intv_cfg", {});
+  return c;
+}
+
+void cfgTests() {
+  setFirmware("intv_exec", {});
+  setFirmware("intv_grom", {});
+  const std::vector<uint16_t> words = buildCart(0x5000);
+  std::unique_ptr<Core> ref = createCore(toRom(words), "teste.rom", nullptr);
+  for (int i = 0; i < 40; i++) ref->runFrame();
+  // (a) .bin com 256 palavras de lixo antes do programa: só abre certo com o .cfg
+  {
+    std::vector<uint16_t> w(0x100, 0x1234);
+    w.insert(w.end(), words.begin(), words.end());
+    const std::vector<uint8_t> bin = toBin(w);
+    char m[160];
+    std::snprintf(m, sizeof m, "; teste\n[mapping]\n$0100 - $%04X = $5000   ; programa\n\n[vars]\nname = \"Teste do CFG\"\n[keys]\nlixo = 1\n",
+                  static_cast<unsigned>(w.size() - 1));
+    const bool semCfg = isIntvRom(bin, "reloc.bin");
+    auto c = withCfg(bin, "reloc.bin", m);
+    bool ok = c && c->system() == "intv";
+    if (ok) for (int i = 0; i < 40; i++) c->runFrame();
+    check(!semCfg && ok && hashFb(*c) == hashFb(*ref), ".bin com o mapa no .cfg ($0100 do arquivo em $5000): mesma tela do .rom; sem o .cfg não é reconhecido");
+    check(ok && c->title() == "Teste do CFG", "título do [vars] do .cfg: \"" + (c ? c->title() : std::string()) + "\"");
+    setFirmware("intv_cfg", std::vector<uint8_t>(m, m + std::strlen(m)));
+    const bool viaRom = createCore(toRom(words), "teste.rom", nullptr) != nullptr && intvTitle(toRom(words), "teste.rom") == "TESTE INDIGO";
+    setFirmware("intv_cfg", {});
+    check(viaRom, "o .cfg só vale para .bin/.int/.itv (um .rom ignora)");
+  }
+  // (b) [memattr]: RAM de 8 e 16 bits, WOM; RAM começa zerada; escrita fora da faixa não pega
+  {
+    auto c = withCfg(toBin(words), "attr.int",
+                     "[mapping]\n$0000 - $0FFF = $5000\n[memattr]\n$D000 - $D0FF = RAM 8\n$C040 - $C0FF = RAM 16\n$9000 - $90FF = WOM 16\n");
+    bool ok = c != nullptr;
+    if (ok) {
+      auto& m = static_cast<IntvCore*>(c.get())->machine();
+      const bool zero = m.read(0xD000) == 0 && m.read(0xC050) == 0;
+      m.write(0xD010, 0x1234); m.write(0xC050, 0x1234); m.write(0xD110, 0x1234); m.write(0x9010, 0x5555);
+      ok = zero && m.read(0xD010) == 0x34 && m.read(0xC050) == 0x1234 && m.read(0xD110) == 0xFFFF && m.read(0x9010) == 0xFFFF &&
+           m.read(0xC03F) == 0xFFFF;
+    }
+    check(ok, "[memattr]: RAM 8 guarda só o byte de baixo, RAM 16 inteira (a partir de $C040, sem cobrir o espelho do STIC), WOM não é lida");
+  }
+  // (c) páginas do ECS: duas páginas em $A000, uma página de RAM em $B000; o programa troca com $xA5y em $xFFF
+  {
+    Asm1610 p(0x5000);
+    p.bidecle("z"); p.bidecle("z"); p.bidecle("m"); p.bidecle("z"); p.bidecle("z"); p.bidecle("t");
+    p.dw(0x03C0);
+    p.label("z"); p.dw(0); p.dw(0); p.dw(1); p.dw(1); p.dw(1); p.dw(1); p.dw(1);
+    p.label("t"); p.dw(100); p.text("PAGINAS");
+    p.label("m");
+    p.mvi(0xA000, 0); p.mvo(0, 0x300);                       // página 0
+    p.mvii(0xAA51, 0); p.mvo(0, 0xAFFF);                      // vira para a página 1
+    p.mvi(0xA000, 0); p.mvo(0, 0x301);
+    p.mvii(0xBA50, 0); p.mvo(0, 0xAFFF);                      // segmento errado: não muda
+    p.mvi(0xA000, 0); p.mvo(0, 0x302);
+    p.mvii(0xBA51, 0); p.mvo(0, 0xBFFF);                      // RAM da página 1 de $B000
+    p.mvii(0x4321, 0); p.mvo(0, 0xB000);
+    p.mvii(0xBA50, 0); p.mvo(0, 0xBFFF);                      // volta à página 0 de $B000 (sem nada)
+    p.mvi(0xB000, 0); p.mvo(0, 0x303);
+    p.mvii(0xBA51, 0); p.mvo(0, 0xBFFF);
+    p.mvi(0xB000, 0); p.mvo(0, 0x304);
+    p.mvii(0xAA50, 0); p.mvo(0, 0xAFFF);
+    p.mvi(0xA000, 0); p.mvo(0, 0x305);
+    p.label("x"); p.b("x");
+    std::vector<uint16_t> w = p.finish();
+    const size_t prog = w.size();
+    w.resize(0x1000, 0);
+    std::vector<uint16_t> pg0(0x100, 0x0A00), pg1(0x100, 0x0A01);
+    w.insert(w.end(), pg0.begin(), pg0.end());
+    w.insert(w.end(), pg1.begin(), pg1.end());
+    char m[256];
+    std::snprintf(m, sizeof m,
+                  "[mapping]\n$0000 - $%04X = $5000\n$1000 - $10FF = $A000 PAGE 0\n$1100 - $11FF = $A000 PAGE 1\n"
+                  "[memattr]\n$B000 - $B0FF = RAM 16 PAGE 1\n",
+                  static_cast<unsigned>(prog - 1));
+    auto c = withCfg(toBin(w), "paginas.bin", m);
+    bool ok = c != nullptr;
+    std::string got;
+    if (ok) {
+      for (int i = 0; i < 10; i++) c->runFrame();
+      auto& mm = static_cast<IntvCore*>(c.get())->machine();
+      for (int i = 0; i < 6; i++) got += " " + hex(mm.sysram[0x100 + i]);
+      ok = mm.sysram[0x100] == 0x0A00 && mm.sysram[0x101] == 0x0A01 && mm.sysram[0x102] == 0x0A01 && mm.sysram[0x103] == 0xFFFF &&
+           mm.sysram[0x104] == 0x4321 && mm.sysram[0x105] == 0x0A00 && mm.page(0xA) == 0 && mm.page(0xB) == 1;
+      // save state guarda a página e a RAM das páginas
+      const std::vector<uint8_t> st = c->saveState();
+      mm.write(0xBFFF, 0xBA50);
+      mm.write(0xAFFF, 0xAA51);
+      const bool mudou = mm.page(0xA) == 1 && mm.read(0xB000) == 0xFFFF;
+      c->loadState(st);
+      const bool volta = mm.page(0xA) == 0 && mm.page(0xB) == 1 && mm.read(0xB000) == 0x4321 && mm.read(0xA000) == 0x0A00;
+      check(mudou && volta && c->saveState() == st, "save state guarda a página de cada segmento e a RAM das páginas");
+      c->reset();
+      for (int i = 0; i < 10; i++) c->runFrame();
+      check(mm.sysram[0x104] == 0x4321 && mm.page(0xB) == 1, "reset volta às páginas 0 e o programa refaz tudo igual");
+    }
+    check(ok, "páginas do ECS ($xA5y em $xFFF): A000 p0/p1, segmento errado ignorado, RAM só na página 1 de $B000:" + got);
+  }
+  // (d) troca de bancos do Intellicart ([bankswitch] e registros $40-$5F)
+  {
+    std::vector<uint16_t> w = words;
+    w.resize(0x1000, 0);
+    for (int i = 0; i < 0x800; i++) w.push_back(static_cast<uint16_t>(0x6000 + i));  // vista direta de $6000
+    for (int i = 0; i < 0x100; i++) w.push_back(static_cast<uint16_t>(0x9000 + i));  // vai para $9000 do Intellicart
+    auto c = withCfg(toBin(w), "bancos.bin",
+                     "[mapping]\n$0000 - $0FFF = $5000\n$1000 - $17FF = $6000\n[preload]\n$1800 - $18FF = $9000\n"
+                     "[bankswitch]\n$6000 - $67FF\n[memattr]\n$8800 - $8FFF = RAM 16\n[bankswitch]\n$8800 - $8FFF\n");
+    bool ok = c != nullptr;
+    if (ok) {
+      auto& m = static_cast<IntvCore*>(c.get())->machine();
+      const bool direto = m.read(0x6010) == 0x6010 && m.read(0x9010) == 0xFFFF;  // preload não fica legível
+      m.write(0x0046, 0x90);
+      const bool banco = m.read(0x6010) == 0x9010 && m.read(0x6100) == 0xFFFF;  // $9100 não tem dados
+      m.write(0x0046, 0x60);
+      const bool volta = m.read(0x6010) == 0x6010;
+      m.write(0x0058 + 0, 0x20);  // $8800-$8FFF (registro $58) aponta para $2000 do Intellicart
+      m.write(0x8805, 0x7777);
+      m.write(0x0058, 0x88);
+      const bool ram = m.read(0x8805) == 0 && (m.write(0x0058, 0x20), m.read(0x8805) == 0x7777);
+      const std::vector<uint8_t> st = c->saveState();
+      m.write(0x8805, 0x1111); m.write(0x0046, 0x90);
+      c->loadState(st);
+      ok = direto && banco && volta && ram && m.read(0x8805) == 0x7777 && m.read(0x6010) == 0x6010;
+    }
+    check(ok, "troca de bancos do Intellicart: $46 = $90 leva $6000 para $9000; RAM com banco e save state");
+  }
+  // (d2) .rom com o bit de banco (8) na tabela de atributos
+  {
+    std::vector<uint16_t> w = words;
+    w.resize(0x2000, 0);
+    for (int i = 0; i < 0x1000; i++) w[0x1000 + i] = static_cast<uint16_t>(0x6000 + i);
+    std::vector<uint8_t> r = toRom(w);
+    const size_t t0 = r.size() - 50;
+    r[t0 + 6] |= 0x09;  // bloco 12 ($6000-$67FF): leitura e banco
+    const uint16_t c2 = crc16(&r[t0], 48);
+    r[t0 + 48] = static_cast<uint8_t>(c2 >> 8); r[t0 + 49] = static_cast<uint8_t>(c2);
+    auto c = createCore(r, "banco.rom", nullptr);
+    bool ok = c != nullptr;
+    if (ok) {
+      auto& m = static_cast<IntvCore*>(c.get())->machine();
+      const bool direto = m.read(0x6010) == 0x6010 && m.read(0x6810) == 0x6810;
+      m.write(0x0046, 0x50);
+      ok = direto && m.read(0x6010) == words[0x10] && m.read(0x6810) == 0x6810;  // $6800 é outro bloco (registro $56)
+    }
+    check(ok, ".rom com bloco de banco: $46 = $50 mostra $5000 do Intellicart em $6000; $6800 não muda");
+  }
+  // (e) PAL: 19968 ciclos por quadro, 50 Hz, a mesma imagem e um retraço mais longo
+  {
+    std::unique_ptr<Core> pal = createCore(toRom(words), "teste (pal).rom", nullptr);
+    auto& m = static_cast<IntvCore*>(pal.get())->machine();
+    auto& n = static_cast<IntvCore*>(ref.get())->machine();
+    for (int i = 0; i < 10; i++) pal->runFrame();
+    const int64_t t0 = m.now;
+    const uint16_t q0 = m.sysram[QUADRO - 0x200];
+    for (int i = 0; i < 30; i++) pal->runFrame();
+    const int64_t dt = m.now - t0;
+    check(m.pal() && !n.pal() && std::fabs(pal->fps() - 50.08) < 0.01 && dt >= 30 * Intv::FRAME_CYCLES_PAL - 20 &&
+              dt <= 30 * Intv::FRAME_CYCLES_PAL + 20 && m.sysram[QUADRO - 0x200] == q0 + 30,
+          "PAL pelo nome: " + std::to_string(pal->fps()) + " Hz, 30 quadros = " + std::to_string(dt) + " ciclos, uma interrupção por quadro");
+    for (int i = 0; i < 10; i++) ref->runFrame();
+    check(hashFb(*pal) == hashFb(*ref) && !pal->note().empty(), "PAL: mesma imagem do NTSC e aviso no note()");
+    // o laço do programa conta mais por quadro no PAL (quadro de 19968 ciclos contra 14934)
+    const uint16_t cp = m.sysram[CONTA - 0x200], cn = n.sysram[CONTA - 0x200];
+    pal->runFrame(); ref->runFrame();
+    const int dp = static_cast<uint16_t>(m.sysram[CONTA - 0x200] - cp), dn = static_cast<uint16_t>(n.sysram[CONTA - 0x200] - cn);
+    check(dp > dn + 60, "PAL: mais voltas do laço por quadro (" + std::to_string(dp) + " contra " + std::to_string(dn) + " no NTSC)");
+    // som: o AY-3-8914 anda no relógio de 1 MHz (período $100 → 1000000 / 2048 = 488 Hz)
+    {
+      pal->setSampleRate(48000);
+      std::vector<float> l(4096), r(4096), all;
+      while (pal->audioAvailable()) pal->pullAudio(l.data(), r.data(), std::min<size_t>(4096, pal->audioAvailable()));
+      for (int i = 0; i < 50; i++) {
+        pal->runFrame();
+        const size_t k = std::min<size_t>(pal->audioAvailable(), 4096);
+        pal->pullAudio(l.data(), r.data(), k);
+        all.insert(all.end(), l.begin(), l.begin() + static_cast<long>(k));
+      }
+      int up = 0;
+      for (size_t i = 1; i < all.size(); i++) if (all[i - 1] < 0 && all[i] >= 0) up++;
+      const double f = up / (all.size() / 48000.0);
+      check(std::fabs(f - 488.28) < 7, "PAL: tom do AY-3-8914 com o relógio de 1 MHz: " + std::to_string(static_cast<int>(f)) + " Hz (esperado 488)");
+    }
+    // estado de NTSC não entra no PAL
+    bool threw = false;
+    try { pal->loadState(ref->saveState()); } catch (const std::exception&) { threw = true; }
+    check(threw, "estado salvo no NTSC é recusado no PAL");
+  }
+  // (f) .cfg ruim: não trava; .cfg sem nada mapeado: erro claro
+  {
+    auto c = withCfg(toBin(words), "nada.bin", "[mapping]\n$0000 - $00FF = $5000\n[memattr]\n$9000 - $90FF = RAM 16 PAGE 99\n");  // linha com PAGE inválido: ignorada
+    std::string err;
+    Cart k;
+    const bool vazio = !parseCfg("[mapping]\n; nada\n[memattr]\n", {}, k, err) && err.find(".cfg") != std::string::npos;
+    uint32_t seed = 12345;
+    auto rnd = [&]() { seed = seed * 1103515245u + 12345u; return (seed >> 16) & 0x7FFF; };
+    const char* pecas[] = {"[mapping]", "[memattr]", "[bankswitch]", "[preload]", "[vars]", "$", "-", "=", "PAGE", "RAM", "8",
+                           "16", "\n", " ", "$FFFF", "$0000", "$5000", "\"", "name", ";", "0x", "99999999", "$A000"};
+    int vivos = 0;
+    for (int i = 0; i < 300; i++) {
+      std::string cfg;
+      for (int j = 0; j < 60; j++) cfg += pecas[rnd() % (sizeof pecas / sizeof *pecas)];
+      Cart cc;
+      std::string e;
+      if (parseCfg(cfg, toBin(words), cc, e)) {
+        Intv mq(cc, freeExec(), freeGrom());
+        mq.runFrame();
+        vivos++;
+      }
+    }
+    check(c != nullptr && vazio && vivos > 0, "300 .cfg de lixo sem travar (" + std::to_string(vivos) + " rodaram); .cfg sem mapa: erro");
+  }
+  // (g) PAGE em hex (A-F) vai para a página; PAGE inválido descarta a linha (não cai no mapa direto) e avisa
+  {
+    std::vector<uint16_t> w(0x200, 0x0123);
+    Cart k;
+    std::string e;
+    const bool hexOk = parseCfg("[mapping]\n$0000 - $00FF = $5000\n$0100 - $01FF = $A000 PAGE A\n", toBin(w), k, e) &&
+                       k.attr[0xA000] == 0 && !k.pmem.empty() && (k.pattr[Cart::pidx(0xA, 10, 0)] & 1) &&
+                       k.pmem[Cart::pidx(0xA, 10, 0)] == 0x0123 && k.cfgWarn.empty();
+    Cart k2;
+    const bool bad = parseCfg("[mapping]\n$0000 - $00FF = $5000\n$0100 - $01FF = $A000 PAGE 99\n"
+                              "[memattr]\n$B000 - $B0FF = RAM 16 PAGE G\n", toBin(w), k2, e) &&
+                     k2.attr[0xA000] == 0 && k2.attr[0xB000] == 0 && k2.pmem.empty() &&
+                     k2.cfgWarn.find("2 linha") != std::string::npos;
+    Cart k3;
+    std::string e3;
+    const bool soRuim = !parseCfg("[mapping]\n$0000 - $00FF = $5000 PAGE Z\n", toBin(w), k3, e3) && e3.find("PAGE") != std::string::npos;
+    check(hexOk && bad && soRuim, "PAGE A-F vai para as páginas 10-15; PAGE inválido descarta a linha e avisa (" + k2.cfgWarn + ")");
+  }
+  // (h) .cfg feito para demorar (milhares de faixas de 64K): recusado logo, sem travar a abertura
+  {
+    std::string cfg = "[mapping]\n$0000 - $00FF = $5000\n[memattr]\n";
+    while (cfg.size() < 65000) cfg += "0 - $FFFF = RAM 8 PAGE 1\n";
+    Cart k;
+    std::string e;
+    const auto t0 = std::chrono::steady_clock::now();
+    const bool recusou = !parseCfg(cfg, toBin(std::vector<uint16_t>(0x100, 1)), k, e) && e.find("faixas") != std::string::npos;
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    // 16 páginas de 64K de RAM (o maior mapa que faz sentido) ainda cabem
+    std::string grande = "[mapping]\n$0000 - $00FF = $5000\n[memattr]\n";
+    for (int pg = 0; pg < 16; pg++) grande += "$0000 - $FFFF = RAM 16 PAGE " + std::to_string(pg) + "\n";
+    Cart k2;
+    const bool cabe = parseCfg(grande, toBin(std::vector<uint16_t>(0x100, 1)), k2, e);
+    check(recusou && cabe && ms < 200, ".cfg com milhares de faixas de 64K recusado em " + std::to_string(static_cast<int>(ms)) +
+                                           " ms; 16 páginas inteiras de RAM ainda abrem");
+  }
+  // (i) espelho da GRAM em $7800: a ROM de uma página do ECS bloqueia como a ROM direta
+  {
+    std::vector<uint16_t> w(0x100, 0x0123);
+    w.resize(0x200, 0x0456);
+    Cart k;
+    std::string e;
+    bool ok = parseCfg("[mapping]\n$0000 - $00FF = $5000\n$0100 - $01FF = $7800 PAGE 1\n", toBin(w), k, e);
+    if (ok) {
+      Intv m(k, freeExec(), freeGrom());
+      m.write(0x7900, 0x55);  // página 0 (sem nada): vai para a GRAM
+      const bool livre = m.stic.gmem[0x900] == 0x55;
+      m.write(0x7FFF, 0x7A51);  // troca para a página 1 (ROM em $7800-$78FF)
+      m.write(0x7810, 0x66);
+      ok = livre && m.page(7) == 1 && m.stic.gmem[0x810] != 0x66 && m.read(0x7810) == 0x0456;
+    }
+    check(ok, "GRAM em $7800: página 0 vazia deixa escrever, página 1 com ROM bloqueia");
+  }
+  // (j) .cfg só vale com o firmware: sem ele, um .bin que não é de Intellivision não vira Intellivision
+  {
+    std::vector<uint8_t> a26(4096, 0xEA);
+    a26[0xFFC] = 0x00; a26[0xFFD] = 0xF0;
+    const std::string cfg = "[mapping]\n$0000 - $07FF = $5000\n";
+    setFirmware("intv_cfg", std::vector<uint8_t>(cfg.begin(), cfg.end()));
+    const bool com = backup::identify(a26, "jogo.bin").sys == "intv";
+    setFirmware("intv_cfg", {});
+    const std::string sem = backup::identify(a26, "jogo.bin").sys;
+    check(com && sem != "intv", ".bin com .cfg é Intellivision; sem o .cfg (firmware limpo) volta a ser " + sem);
+  }
+  // (k) PAL só com "(PAL)" no nome: o cartucho não tem região, "(Europe)" continua NTSC
+  check(isPalName("jogo (pal).bin") && !isPalName("jogo (europe).bin") && !isPalName("jogo (usa, europe).bin") &&
+            !isPalName("jogo (e).bin"),
+        "PAL só pelo \"(PAL)\" no nome; \"(Europe)\" e \"(E)\" rodam a 60 Hz");
+}
+
 // cartuchos de lixo (palavras aleatórias, cabeçalho apontando para o lixo) e estados com bytes trocados:
 // o núcleo não pode travar nem ler fora da memória
 void fuzzTest() {
@@ -829,9 +1208,11 @@ int main(int argc, char** argv) {
   const std::string roms = argc > 1 ? argv[1] : "/root/indigo-env/roms";
   const std::string png = argc > 2 ? argv[2] : "";
   cpuTests();
+  cycleTable();
   psgTests();
   consoleTest(png);
   formatTests(roms);
+  cfgTests();
   fuzzTest();
   std::printf("RESULTADO intv: %d verificações, %d falhas\n", checks, fails);
   return fails ? 1 : 0;

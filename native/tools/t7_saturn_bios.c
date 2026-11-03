@@ -1,5 +1,5 @@
 /* BIOS de teste do Saturn do Índigo: escrita do zero, NÃO é a BIOS da Sega. Serve para os testes rodarem sem a
- * BIOS do usuário. O mestre liga a tela, inicia o bloco de CD, lê o IP.BIN (16 setores do começo do disco) em
+ * BIOS do usuário. O mestre liga a tela, inicia o bloco de CD, autentica o disco, lê o IP.BIN (16 setores do começo do disco) em
  * 0x06002000, confere "SEGA SEGASATURN ", acha o primeiro arquivo da raiz pelo sistema de arquivos do bloco de
  * CD e o carrega no endereço do IP.BIN (0xF0), depois salta para lá. O escravo espera um endereço em
  * 0x06000250 (convenção desta BIOS, não da Sega) e salta para ele.
@@ -53,6 +53,9 @@ void bios_main(void) {
 
   ETAPA = 2;
   if (cd_cmd(&r, 0x0401, 0, 0, 0x040F, 0)) erro(0x10);              /* inicia (com reset do software) */
+  /* autentica o disco (sem isso o bloco de CD não guarda setores de dados) */
+  if (cd_cmd(&r, 0xE000, 0, 0, 0, HIRQ_EFLS)) erro(0x19);
+  if (cd_cmd(&r, 0xE100, 0, 0, 0, 0) || r.r[1] != 4) erro(0x1A);   /* 4 = disco do Saturn */
   if (cd_cmd(&r, 0x3000, 0, 0x0000, 0, HIRQ_ESEL)) erro(0x11);      /* CD -> filtro 0 */
 
   ETAPA = 3;
@@ -62,7 +65,7 @@ void bios_main(void) {
   if (!dest) dest = 0x06004000;
 
   ETAPA = 4;
-  if (cd_cmd(&r, 0x7000, 0, 0x00FF, 0xFFFF, HIRQ_EFLS)) erro(0x14);  /* diretório raiz */
+  if (cd_cmd(&r, 0x7000, 0, 0x17FF, 0xFFFF, HIRQ_EFLS)) erro(0x14);  /* diretório raiz (lido pelo filtro 23) */
   if (cd_cmd(&r, 0x7300, 0, 0x00FF, 0xFFFF, HIRQ_DRDY)) erro(0x15);  /* informação de todos os arquivos */
   words = r.r[1];
   if (words > 32 * 6) words = 32 * 6;

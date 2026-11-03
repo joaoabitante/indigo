@@ -16,6 +16,9 @@ void Sm8500::reset() {
   pending = 0;
   ie0 = ie1 = ir0 = ir1 = 0;
   sys = 0;
+  ckc = ckcApplied = 0;
+  ckcPending = false;
+  stops = 0;
   ps0 = 0;
   ps1 = 0;
   sph = spl = 0;
@@ -31,6 +34,7 @@ uint8_t Sm8500::rd(uint16_t a) {
       case 0x12: return ir0;
       case 0x13: return ir1;
       case 0x19: return sys;
+      case 0x1A: return ckc;
       case 0x1C: return sph;
       case 0x1D: return spl;
       case 0x1E: return ps0;
@@ -50,6 +54,7 @@ void Sm8500::wr(uint16_t a, uint8_t v) {
       case 0x12: ir0 = v; dropCleared(); return;
       case 0x13: ir1 = v; dropCleared(); return;
       case 0x19: sys = v; return;
+      case 0x1A: if (v != ckc) ckcPending = true; ckc = v; return;
       case 0x1C: sph = v; return;
       case 0x1D: spl = v; return;
       case 0x1E: ps0 = v; return;
@@ -885,7 +890,11 @@ int Sm8500::step() {
       pc = s2;
       cyc += sp16 ? 12 : 9;
       break;
-    case 0xF0: cyc += 2; break;                   // STOP (troca de relógio: ignorada)
+    case 0xF0:  // STOP: aplica a troca de relógio pedida em CKC (a divisão do relógio em si não é emulada)
+      stops++;
+      if (ckcPending) { ckcApplied = ckc; ckcPending = false; }
+      cyc += 2;
+      break;
     case 0xF1: halted = true; cyc += 2; break;    // HALT
     case 0xF8: {                                  // RET
       const uint8_t hi = pop(), lo = pop();
@@ -911,8 +920,10 @@ int Sm8500::step() {
   return cyc;
 }
 
-void Sm8500::sync(StateIO& s) {
+void Sm8500::sync(StateIO& s, int version) {
   s.sync(pc); s.sync(ps0); s.sync(ps1); s.sync(sys); s.sync(sph); s.sync(spl);
+  if (version >= 2) { s.sync(ckc); s.sync(ckcApplied); s.sync(ckcPending); s.sync(stops); }
+  else if (s.reading()) { ckc = ckcApplied = 0; ckcPending = false; stops = 0; }  // estado antigo: CKC como no reset
   s.sync(ie0); s.sync(ie1); s.sync(ir0); s.sync(ir1);
   s.sync(halted); s.sync(pending);
   s.raw(regs, sizeof regs);

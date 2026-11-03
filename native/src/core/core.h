@@ -56,6 +56,9 @@ public:
 
   // caneta/toque na tela do jogo, em pixels da imagem do núcleo (só consoles com tela de toque, ex.: Game.com)
   virtual void setPointer(int x, int y, bool down) {}
+  // mouse relativo (consoles com mouse, ex.: PC-FX): movimento em pixels da imagem e botões (bit 0 = esquerdo,
+  // bit 1 = direito)
+  virtual void setMouse(int dx, int dy, uint32_t buttons) {}
 
   // observação para mostrar ao abrir o jogo (por exemplo, como roda um chip do cartucho); vazio = nada
   virtual std::string note() const { return ""; }

@@ -106,8 +106,9 @@ fi
 [ -f roms/gnw/vetores.txt ] || bash "$REPO/native/tools/t7_gnw.sh" "$PWD/roms/gnw"
 # Atari Jaguar: cartuchos de teste próprios (68000 + GPU/DSP), montados com o binutils do m68k
 [ -f roms/jaguar/teste2.j64 ] || bash "$REPO/native/tools/t7_jaguar.sh" "$PWD/roms/jaguar"
-# Saturn: BIOS de teste e CD homebrew próprios (precisa do sh-elf-gcc do 32X, montado acima)
-[ -f roms/saturn/disco/homebrew.cue ] || sh "$REPO/native/tools/t7_saturn.sh" "$PWD/roms/saturn"
+# Saturn: BIOS de teste e CD homebrew próprios (precisa do sh-elf-gcc do 32X, montado acima); v2 = a BIOS
+# autentica o disco (2.5)
+[ -f roms/saturn/v2 ] || sh "$REPO/native/tools/t7_saturn.sh" "$PWD/roms/saturn"
 cp -rn "$REPO/native/tests/roms/smsroms" "$REPO/native/tests/roms/ngproms" roms/ 2>/dev/null || true
 cp -n "$REPO/native/tests/roms/zexall.com" "$REPO/native/tests/roms/zexdoc.com" roms/ 2>/dev/null || true
 

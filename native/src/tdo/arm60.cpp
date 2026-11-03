@@ -134,6 +134,8 @@ int Arm60::step() {
   const uint32_t op = bus_.read32(pc);
   r[15] = pc + 4;
   branched_ = false;
+  inStep_ = true;
+  abortPending_ = false;
   if (cond(op >> 28)) {
     switch ((op >> 25) & 7) {
       case 0:
@@ -166,6 +168,17 @@ int Arm60::step() {
         else undefined();                                             // CDP/MRC/MCR
         break;
     }
+  }
+  inStep_ = false;
+  if (resetPending_) {  // o reinício ganha de um "data abort" da mesma instrução
+    resetPending_ = abortPending_ = false;
+    reset(0);
+    return 1;
+  }
+  if (abortPending_) {  // acesso recusado pelo barramento: "data abort"
+    abortPending_ = false;
+    exception(0x10, ABT, pc + 8, false);
+    branched_ = true;
   }
   int c = 1 + extra_ + (branched_ ? 2 : 0);
   cycles += uint32_t(c);
@@ -375,7 +388,8 @@ void Arm60::singleTransfer(uint32_t op) {
   if (load) {
     const uint32_t v = byte ? bus_.read8(addr) : load32(addr);
     if (!pre || wb) setReg(rn, moved);
-    setReg(rd, v);
+    // "data abort": a base já andou (modelo do ARM6), mas o dado não chega ao registrador
+    if (!abortPending_) setReg(rd, v);
     extra_ += 2;
   } else {
     const uint32_t v = reg(rd, 12);

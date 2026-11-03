@@ -42,4 +42,5 @@ $CC -c -o "$O/som68k.o" "$O/som68k.c"
 sh-elf-ld -T "$HERE/t7_saturn_jogo.ld" -o "$O/jogo.elf" "$O/jogo_ini.o" "$O/jogo.o" "$O/som68k.o" "$LIBGCC"
 sh-elf-objcopy -O binary -j .text "$O/jogo.elf" "$O/1st_read.bin"
 python3 -I "$HERE/t7_saturn_disco.py" "$O/1st_read.bin" "$DEST/disco"
+echo "BIOS de teste que autentica o disco (2.5)" > "$DEST/v2"   # marca para o setup-env.sh refazer as antigas
 echo "testes do Saturn prontos em $DEST"

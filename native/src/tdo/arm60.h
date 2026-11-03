@@ -36,6 +36,12 @@ public:
 
   void setIrq(bool on) { irqLine_ = on; }
   void setFiq(bool on) { fiqLine_ = on; }
+  // o barramento recusou o acesso da instrução atual: ao fim dela a CPU entra no "data abort" (vetor 0x10,
+  // LR = endereço da instrução + 8); fora de uma instrução não tem efeito
+  void dataAbort() { if (inStep_) abortPending_ = true; }
+  // reinício pedido por um registrador (CSTATBITS do CLIO): no meio de uma instrução só vale ao fim dela, para o
+  // resto da instrução (escrita de volta da base) não cair no banco já zerado
+  void requestReset() { if (inStep_) resetPending_ = true; else reset(0); }
 
   // registradores do modo atual (r[15] = endereço da próxima instrução a buscar)
   uint32_t r[16] = {};
@@ -58,6 +64,7 @@ private:
   uint32_t spsr_[6] = {};
   int extra_ = 0;  // ciclos além do básico na instrução atual
   bool branched_ = false;
+  bool inStep_ = false, abortPending_ = false, resetPending_ = false;
 
   static int bankOf(uint32_t mode);
   uint32_t spsrFor(uint32_t mode) const { const int b = bankOf(mode); return b ? spsr_[b] : cpsr; }

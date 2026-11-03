@@ -3,8 +3,8 @@
 //    controlador SCSI do CD (sinais, fase, DMA do CD para a KRAM e "pseudo-DMA" pela porta de dados), quatro
 //    planos de fundo (4, 16, 256 e 64 K cores; BAT+CG ou bitmap; plano 0 com sub-tela e rotação/escala) guiados
 //    pelo microprograma, endereços do ADPCM (dois canais na KRAM, com fim, meio e repetição), interrupção de
-//    linha e do CD/DMA/subcanal/ADPCM, e a transferência para o RAINBOW (o decodificador de vídeo
-//    comprimido HuC6271 ainda não é emulado: o plano dele fica vazio).
+//    linha e do CD/DMA/subcanal/ADPCM, e a transferência para o RAINBOW (rainbow.h): a cada 16 linhas um
+//    bloco comprimido sai da KRAM para o descompressor e a faixa anterior vai para a tela.
 //  - HuC6261: paleta de 512 cores YUV (Y 8 bits, U e V 4 bits), modo de imagem (relógio de 5,37 ou 7,16 MHz,
 //    camadas ligadas), prioridades das 7 camadas, deslocamentos de paleta por camada, combinação dos dois VDCs,
 //    celofane (mistura de cores) e chroma key; converte o resultado YUV em RGB.
@@ -13,6 +13,7 @@
 #include <cstdint>
 
 #include "../core/state.h"
+#include "rainbow.h"
 #include "scsicd.h"
 
 namespace indigo::pcfx {
@@ -65,6 +66,11 @@ public:
   // desenha os 4 planos na linha (YUV de 24 bits com a camada nos 4 bits de cima), 256 pontos + 8 de cada lado
   void drawBgLine(int raster, uint32_t* line272);
 
+  // RAINBOW: começo de cada linha (0..261); preenche line (256 pontos, camada 7 nos bits de cima, 0 =
+  // transparente) e devolve o formato da faixa mostrada (-1 = nenhuma, 0 = paleta, 1 = YUV)
+  int rainbowLine(int raster, uint32_t* line);
+  Rainbow rainbow;
+
   // ADPCM: o som pede meia palavra (4 amostras) do canal
   uint16_t adpcmHalfWord(int ch);
   uint16_t adpcmControl() const { return adpcmControl_; }
@@ -97,8 +103,9 @@ private:
   bool adpcmIrq_ = false;
   // RAINBOW e linha
   uint16_t rbCtrl_ = 0, rbStart_ = 0, rbBlocks_ = 0, rasterLine_ = 0;
-  uint32_t rbKram_ = 0;
-  bool rasterIrq_ = false;
+  uint32_t rbKram_ = 0, rbReadPos_ = 0;
+  bool rasterIrq_ = false, rbPending_ = false;
+  uint8_t rbBusy_ = 0, rbLeft_ = 0;
   // SCSI e DMA
   uint8_t reg01_ = 0, reg02_ = 0, reg03_ = 0;
   uint8_t subCtrl_ = 0, subBuf_ = 0, dataCache_ = 0, dmaLatch_ = 0;

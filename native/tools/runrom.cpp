@@ -63,6 +63,13 @@ std::unique_ptr<Core> makeCore(const std::vector<uint8_t>& rom, const std::strin
       p = e + 1;
     }
   }
+  // Intellivision: .cfg do jzIntv ao lado do .bin (como no app)
+  if (!std::getenv("INDIGO_FW") || !std::strstr(std::getenv("INDIGO_FW"), "intv_cfg=")) {
+    std::string cfg = path;
+    const size_t dot = cfg.find_last_of('.'), slash = cfg.find_last_of('/');
+    if (dot != std::string::npos && (slash == std::string::npos || dot > slash)) cfg.resize(dot);
+    setFirmware("intv_cfg", readFile((cfg + ".cfg").c_str()));
+  }
   return createCore(rom, path, nullptr);
 }
 

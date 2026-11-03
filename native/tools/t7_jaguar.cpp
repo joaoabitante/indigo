@@ -3,7 +3,9 @@
 //                                             por tools/t7_jaguar.sh: o cartucho de teste teste.j64)
 //   indigo-t7_jaguar --png rom quadros saida.png    grava a tela (para conferir a olho)
 // O cartucho de teste (tools/t7_jaguar_rom.s) foi escrito para o Índigo; não há ROM nem BIOS comercial aqui.
+// Os testes de tempo, PAL, entrelaçado e Object Processor montam programas e listas de objetos no próprio teste.
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -367,6 +369,447 @@ static void testRobustez(const std::vector<uint8_t>& cart) {
   }
 }
 
+// ---------------------------------------------------------------- tempo, barramento, PAL e entrelaçado (2.5)
+// cartucho mínimo: o 68000 só conta voltas em 0x3000 (addq.l #1,$3000 / bra.s)
+static std::vector<uint8_t> miniCart() {
+  std::vector<uint8_t> c(0x4000, 0xFF);
+  const uint8_t mark[] = {4, 4, 4, 4, 0x00, 0x80, 0x20, 0x00};
+  std::copy(mark, mark + 8, c.begin() + 0x400);
+  const uint8_t code[] = {0x52, 0xB9, 0x00, 0x00, 0x30, 0x00, 0x60, 0xF8};
+  std::copy(code, code + 8, c.begin() + 0x2000);
+  return c;
+}
+static uint16_t rop(int o, int s, int d) { return uint16_t((o << 10) | ((s & 31) << 5) | (d & 31)); }
+// põe o programa na RAM do RISC (com a parada no fim) e devolve os tiques até ele se desligar
+static int64_t runRisc(Jaguar& j, bool dsp, std::vector<uint16_t> prog, uint32_t at = 0) {
+  auto& r = dsp ? j.dsp : j.gpu;
+  const uint32_t ctrl = dsp ? 0xF1A114 : 0xF02114;
+  // parada: MOVEI ctrl,r20 / MOVEQ 0,r21 / STORE r21,(r20)
+  for (uint16_t w : {rop(38, 0, 20), uint16_t(ctrl & 0xFFFF), uint16_t(ctrl >> 16), rop(35, 0, 21), rop(47, 20, 21)})
+    prog.push_back(w);
+  if (!at) at = r.ramBase;
+  for (size_t i = 0; i < prog.size(); i++) {
+    if (r.local(at)) { uint8_t* p = &r.ram[(at - r.ramBase + i * 2) & r.ramMask]; p[0] = uint8_t(prog[i] >> 8); p[1] = uint8_t(prog[i]); }
+    else j.write16(at + uint32_t(i) * 2, prog[i]);
+  }
+  r.pc = at; r.ctrl = 1;
+  const int64_t t0 = r.clk;
+  int64_t last = t0;
+  for (int n = 0; n < 100000 && r.running(); n++) { r.run(r.clk + 1); if (r.running()) last = r.clk; }
+  (void)last;
+  return r.clk - t0;
+}
+
+static void testTempo() {
+  const auto cart = miniCart();
+  const uint16_t NOP = rop(57, 0, 0);
+  auto movei = [](std::vector<uint16_t>& p, uint32_t v, int d) { p.push_back(rop(38, 0, d)); p.push_back(uint16_t(v)); p.push_back(uint16_t(v >> 16)); };
+  {  // instruções na RAM local: 1 tique cada
+    Jaguar j(cart, "x.j64");
+    const int64_t a = runRisc(j, false, {}), b = runRisc(j, false, std::vector<uint16_t>(10, NOP));
+    check(b - a == 10, "GPU: NOP na RAM local = 1 tique", std::to_string(b - a));
+  }
+  // LOAD da DRAM seguido de uso do registro: o placar espera; da RAM local, não
+  auto loadUse = [&](bool dsp, uint32_t addr, int gap, uint64_t* stalls) {
+    Jaguar j(cart, "x.j64");
+    std::vector<uint16_t> p;
+    movei(p, addr, 1);
+    p.push_back(rop(41, 1, 2));                      // LOAD (r1),r2
+    for (int i = 0; i < gap; i++) p.push_back(NOP);
+    p.push_back(rop(0, 2, 3));                       // ADD r2,r3
+    const int64_t t = runRisc(j, dsp, p);
+    if (stalls) *stalls = dsp ? j.dsp.stalls : j.gpu.stalls;
+    return t;
+  };
+  uint64_t st = 0;
+  const int64_t ext = loadUse(false, 0x1000, 0, &st), loc = loadUse(false, 0xF03800, 0, nullptr);
+  check(ext - loc == 6 && st == 6, "GPU: LOAD da DRAM + uso imediato espera o placar (6 tiques)",
+        std::to_string(ext - loc) + " / " + std::to_string(st));
+  const int64_t ext5 = loadUse(false, 0x1000, 5, &st), loc5 = loadUse(false, 0xF03800, 5, nullptr);
+  check(ext5 - loc5 == 1 && st == 1, "GPU: o placar deixa seguir quem não usa o registro do LOAD",
+        std::to_string(ext5 - loc5) + " / " + std::to_string(st));
+  const int64_t rom = loadUse(false, 0x802000, 0, nullptr);
+  check(rom - loc == 10, "GPU: LOAD do cartucho mais lento que da DRAM", std::to_string(rom - loc));
+  const int64_t dext = loadUse(true, 0x1000, 0, &st), dloc = loadUse(true, 0xF1B800, 0, nullptr);
+  check(dext - dloc == 12 && st == 12, "DSP: LOAD de 32 bits da DRAM em dois acessos de 16 bits (12 tiques)",
+        std::to_string(dext - dloc));
+  {  // DIV: 16 tiques no placar
+    auto divUse = [&](int gap, uint64_t* s) {
+      Jaguar j(cart, "x.j64");
+      std::vector<uint16_t> p;
+      movei(p, 1000, 2); movei(p, 7, 1);
+      p.push_back(rop(21, 1, 2));                    // DIV r1,r2
+      for (int i = 0; i < gap; i++) p.push_back(NOP);
+      p.push_back(rop(0, 2, 3));                     // ADD r2,r3
+      const int64_t t = runRisc(j, false, p);
+      *s = j.gpu.stalls;
+      check(j.gpu.r[2] == 142, "GPU: DIV com o placar dá o mesmo quociente", std::to_string(j.gpu.r[2]));
+      return t;
+    };
+    uint64_t s0 = 0, s1 = 0, s2 = 0;
+    const int64_t t0 = divUse(0, &s0), t16 = divUse(16, &s1);
+    divUse(8, &s2);
+    check(s0 == 16 && s1 == 0 && s2 == 8, "GPU: DIV segura só quem usa o resultado (16 tiques)",
+          std::to_string(s0) + " " + std::to_string(s1) + " " + std::to_string(s2));
+    check(t16 - t0 == 0, "GPU: DIV com 16 instruções no meio não custa mais", std::to_string(t16 - t0));
+    Jaguar j(cart, "x.j64");
+    std::vector<uint16_t> p;
+    movei(p, 1000, 2); movei(p, 7, 1); movei(p, 1000, 4);
+    p.push_back(rop(21, 1, 2)); p.push_back(rop(21, 1, 4));  // duas DIV seguidas
+    runRisc(j, false, p);
+    check(j.gpu.stalls == 16, "GPU: segunda DIV espera a unidade de divisão", std::to_string(j.gpu.stalls));
+  }
+  {  // desvio tomado: atraso + fila; não tomado: só a instrução
+    Jaguar j(cart, "x.j64");
+    const int64_t taken = runRisc(j, false, {rop(53, 1, 0), NOP});     // JR T,+1 (pula para depois do atraso)
+    const int64_t never = runRisc(j, false, {rop(53, 1, 3), NOP});     // condição impossível (Z e não Z)
+    check(taken - never == 1, "GPU: desvio tomado esvazia a fila (+1 tique)", std::to_string(taken - never));
+  }
+  {  // programa rodando da DRAM: cada busca vai ao barramento
+    Jaguar j(cart, "x.j64");
+    const int64_t a = runRisc(j, false, std::vector<uint16_t>(10, NOP), 0x8000);
+    const int64_t b = runRisc(j, false, std::vector<uint16_t>(20, NOP), 0x8000);
+    check(b - a == 70, "GPU: instrução buscada na DRAM = 7 tiques", std::to_string(b - a));
+  }
+  // Blitter: tempo, estado em B_CMD, barramento e interrupção no fim
+  auto blitSetup = [](Jaguar& j, uint32_t flags, uint32_t w, uint32_t h) {
+    j.write32(0xF02200, 0x40000); j.write32(0xF02204, flags); j.write32(0xF0220C, 0);
+    j.write32(0xF02224, 0x50000); j.write32(0xF02228, flags); j.write32(0xF02230, 0);
+    j.write32(0xF02210, 0x0000FFFF & uint32_t(-int32_t(w)));  // A1_STEP: volta x
+    j.write32(0xF0223C, (h << 16) | w);
+  };
+  const uint32_t PIX16 = (4u << 3) | (1u << 16) | (8u << 11);  // 16 bits, modo pixel, largura 64
+  const uint32_t PHR16 = (4u << 3) | (8u << 11);               // 16 bits, modo phrase
+  {
+    Jaguar j(cart, "x.j64");
+    blitSetup(j, PIX16, 64, 1);
+    j.accessTime = 1000;
+    j.write32(0xF02238, 0x00010000);  // PATDSEL: preenchimento
+    const int64_t pix = j.lastBlitCost;
+    check(pix == 4 + 3 + 64 * 2, "Blitter: 64 pixels de preenchimento = 135 tiques", std::to_string(pix));
+    j.accessTime = 1001;
+    const bool busy = (j.read32(0xF02238) & 1) == 0;
+    j.accessTime = 1000 + pix;
+    const bool idle = (j.read32(0xF02238) & 1) == 1;
+    check(busy && idle, "Blitter: B_CMD diz ocupado até o fim do blit");
+    check(j.busFree() == 1000 + pix, "Blitter segura o barramento até o fim", std::to_string(j.busFree()));
+    blitSetup(j, PHR16, 64, 1);
+    j.accessTime = 5000;
+    j.write32(0xF02238, 0x00010000);
+    check(j.lastBlitCost == 4 + 3 + 16 * 2, "Blitter: modo phrase 4x mais rápido (16 phrases)", std::to_string(j.lastBlitCost));
+    blitSetup(j, PIX16, 64, 1);
+    j.write32(0xF02238, 0x00010000 | 1 | 8);  // SRCEN + DSTEN
+    check(j.lastBlitCost == 4 + 3 + 64 * 6, "Blitter: leitura da origem e do destino custam ciclos", std::to_string(j.lastBlitCost));
+    blitSetup(j, PIX16, 8, 4);
+    j.write32(0xF02238, 0x00010000);
+    check(j.lastBlitCost == 4 + 4 * (3 + 8 * 2), "Blitter: custo por linha", std::to_string(j.lastBlitCost));
+  }
+  {  // interrupção 4 do GPU só no fim do blit
+    Jaguar j(cart, "x.j64");
+    runRisc(j, false, {});
+    j.gpu.pc = 0xF03100; j.gpu.ctrl = 1;
+    for (uint32_t a = 0xF03100; a < 0xF03110; a += 4) j.gpu.ramWrite32(a, (uint32_t(rop(53, 0x1F, 0)) << 16) | NOP);  // JR T,-1 sem fim
+    blitSetup(j, PIX16, 64, 100);  // ~13 mil tiques
+    j.accessTime = j.now();
+    j.write32(0xF02238, 0x00010000);
+    check(!(j.gpu.lat & 0x10), "Blitter: sem interrupção do GPU no começo do blit");
+    j.runFrame();
+    check(j.gpu.lat & 0x10, "Blitter: interrupção 4 do GPU no fim do blit");
+  }
+  {  // o 68000 espera o Blitter (menor prioridade no barramento)
+    auto voltas = [&](bool blit) {
+      Jaguar j(cart, "x.j64");
+      j.runFrame();
+      if (blit) { blitSetup(j, PIX16, 64, 600); j.accessTime = j.now(); j.write32(0xF02238, 0x00010000 | 1 | 8); }
+      const uint32_t a = j.read32(0x3000);
+      j.runFrame();
+      return j.read32(0x3000) - a;
+    };
+    const uint32_t livre = voltas(false), preso = voltas(true);
+    // blit de ~230 mil tiques em quadro de ~443 mil: o 68000 roda ~48% do quadro
+    check(preso < livre * 6 / 10 && preso > livre * 4 / 10, "68000 parado enquanto o Blitter usa o barramento",
+          std::to_string(preso) + " de " + std::to_string(livre));
+  }
+  {  // o Object Processor também ocupa o barramento: bitmap largo deixa o 68000 mais lento
+    auto voltas = [&](bool obj) {
+      Jaguar j(cart, "x.j64");
+      if (obj) {
+        // bitmap 16 bits, 80 phrases de largura (320 pontos), 200 linhas, em 0x1000; parada em 0x1010
+        const uint64_t p0 = 0 | (uint64_t(38) << 3) | (uint64_t(200) << 14) | (uint64_t(0x1010 >> 3) << 24) | (uint64_t(0x10000) << 40);
+        const uint64_t p1 = (uint64_t(4) << 12) | (uint64_t(1) << 15) | (uint64_t(80) << 18) | (uint64_t(80) << 28);
+        j.write32(0x1000, uint32_t(p0 >> 32)); j.write32(0x1004, uint32_t(p0));
+        j.write32(0x1008, uint32_t(p1 >> 32)); j.write32(0x100C, uint32_t(p1));
+        j.write32(0x1010, 0); j.write32(0x1014, 4);
+      }
+      j.runFrame();
+      return j.read32(0x3000);
+    };
+    const uint32_t livre = voltas(false), com = voltas(true);
+    check(com < livre * 97 / 100 && com > livre * 8 / 10, "Object Processor ocupa o barramento (68000 mais lento)",
+          std::to_string(com) + " de " + std::to_string(livre));
+  }
+  {  // save state no meio de um blit: mesmo futuro (interrupção no fim, barramento)
+    Jaguar j(cart, "x.j64");
+    j.runFrame();
+    runRisc(j, false, {});
+    j.gpu.pc = 0xF03100; j.gpu.ctrl = 1;
+    for (uint32_t a = 0xF03100; a < 0xF03110; a += 4) j.gpu.ramWrite32(a, (uint32_t(rop(53, 0x1F, 0)) << 16) | NOP);
+    blitSetup(j, PIX16, 64, 600);
+    j.accessTime = j.now();
+    j.write32(0xF02238, 0x00010000 | 1 | 8);
+    const auto s = j.saveState();
+    j.runFrame();
+    const uint32_t v1 = j.read32(0x3000), l1 = j.gpu.lat;
+    j.loadState(s);
+    check(!(j.gpu.lat & 0x10), "save state guarda o blit ainda em andamento");
+    j.runFrame();
+    check(j.read32(0x3000) == v1 && j.gpu.lat == l1, "save state no meio do blit: mesmo futuro",
+          std::to_string(j.read32(0x3000)) + " " + std::to_string(v1));
+    auto bad = s;
+    bad[4 + 100] ^= 0xFF;  // estado adulterado: tem de carregar ou recusar sem travar
+    try { j.loadState(bad); } catch (const std::exception&) {}
+    j.runFrame();
+    check(true, "estado adulterado não trava");
+  }
+  {  // blit longo (~25 M tiques, mais que 2^24): o save state guarda a distância inteira
+    auto rodar = [&](bool salvar) {
+      Jaguar j(cart, "x.j64");
+      j.runFrame();
+      blitSetup(j, PIX16, 64, 32768);
+      j.accessTime = j.now();
+      j.write32(0xF02238, 0x00010000 | 1 | 2 | 8 | 16 | 32);  // SRCEN, SRCENZ, DSTEN, DSTENZ, DSTWRZ
+      const int64_t custo = j.lastBlitCost;
+      if (salvar) { const auto s = j.saveState(); j.loadState(s); }
+      for (int f = 0; f < 120; f++) j.runFrame();
+      return std::pair<int64_t, uint32_t>(custo, j.read32(0x3000));
+    };
+    const auto a = rodar(false), b = rodar(true);
+    check(a.first > (int64_t(1) << 24), "Blitter: blit longo passa de 2^24 tiques", std::to_string(a.first));
+    check(a.second == b.second, "save state com blit longo: mesmo futuro",
+          std::to_string(a.second) + " " + std::to_string(b.second));
+  }
+  {  // relógio do GPU/DSP adulterado (muito atrás ou à frente): o estado carrega preso perto do relógio e o quadro termina
+    Jaguar j(cart, "x.j64");
+    j.runFrame();
+    runRisc(j, false, {});
+    // GPU rodando da DRAM: JR T,-1 sem fim
+    for (uint32_t a = 0x8000; a < 0x8010; a += 4) j.write32(a, (uint32_t(rop(53, 0x1F, 0)) << 16) | NOP);
+    j.gpu.pc = 0x8000; j.gpu.ctrl = 1;
+    j.runFrame();
+    const int64_t agora = j.now();
+    j.gpu.clk = agora - (int64_t(1) << 40);
+    j.dsp.clk = agora - 0xFFFFFFFFll;
+    auto s = j.saveState();
+    j.loadState(s);
+    check(j.gpu.clk >= agora - (int64_t(1) << 20) && j.dsp.clk >= agora - (int64_t(1) << 20),
+          "estado com relógio do GPU/DSP muito atrás: preso perto do relógio", std::to_string(agora - j.gpu.clk));
+    const auto t0 = std::chrono::steady_clock::now();
+    j.runFrame(); j.runFrame();
+    const double seg = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    check(seg < 5.0 && j.gpu.running(), "GPU com relógio adulterado não trava o quadro", std::to_string(seg) + " s");
+    j.gpu.clk = j.now() + (int64_t(1) << 62);
+    s = j.saveState();
+    j.loadState(s);
+    check(j.gpu.clk <= j.now() + (int64_t(1) << 40), "estado com relógio do GPU muito à frente: preso", std::to_string(j.gpu.clk));
+    j.runFrame();
+  }
+  {  // instrução de atraso do desvio passa pelo placar (LOAD de fora, DIV) e LOADP marca o HIDATA
+    auto stallsDe = [&](std::vector<uint16_t> p) {
+      Jaguar j(cart, "x.j64");
+      runRisc(j, false, p);
+      return j.gpu.stalls;
+    };
+    std::vector<uint16_t> p;
+    movei(p, 0x1000, 1);
+    p.push_back(rop(53, 1, 0));   // JR T,+1
+    p.push_back(rop(41, 1, 2));   // atraso: LOAD (r1),r2 da DRAM
+    p.push_back(rop(0, 2, 3));    // ADD r2,r3: espera o LOAD
+    const uint64_t sl = stallsDe(p);
+    check(sl == 6, "GPU: LOAD na instrução de atraso marca o placar", std::to_string(sl));
+    p.clear();
+    movei(p, 1000, 2); movei(p, 7, 1);
+    p.push_back(rop(53, 1, 0));   // JR T,+1
+    p.push_back(rop(21, 1, 2));   // atraso: DIV r1,r2
+    p.push_back(rop(0, 2, 3));    // ADD r2,r3: espera a divisão
+    const uint64_t sd = stallsDe(p);
+    check(sd == 16, "GPU: DIV na instrução de atraso marca o placar", std::to_string(sd));
+    p.clear();
+    movei(p, 0x1000, 1); movei(p, 0xF03800, 5);
+    p.push_back(rop(42, 1, 2));   // LOADP (r1),r2 da DRAM
+    p.push_back(rop(48, 5, 4));   // STOREP r4,(r5): usa o HIDATA
+    const uint64_t sh = stallsDe(p);
+    check(sh > 0, "GPU: STOREP espera o HIDATA do LOADP", std::to_string(sh));
+  }
+  {  // estado antigo (IJG1) é recusado
+    Jaguar j(cart, "x.j64");
+    auto s = j.saveState();
+    s[3] = '1';
+    bool threw = false;
+    try { j.loadState(s); } catch (const std::exception&) { threw = true; }
+    check(threw, "save state do formato anterior é recusado");
+  }
+}
+
+static void testVideoModos() {
+  const auto cart = miniCart();
+  {  // NTSC e PAL
+    auto n = createCore(cart, "jogo.j64", nullptr);
+    auto p = createCore(cart, "Jogo (Europe).j64", nullptr);
+    auto& jn = static_cast<JaguarCore&>(*n).jag();
+    auto& jp = static_cast<JaguarCore&>(*p).jag();
+    check(!jn.pal && jp.pal, "PAL pelo nome do arquivo");
+    check(std::fabs(n->fps() - 60.05) < 0.05, "NTSC: 60 quadros por segundo", std::to_string(n->fps()));
+    check(std::fabs(p->fps() - 50.08) < 0.01, "PAL: 50,08 quadros por segundo", std::to_string(p->fps()));
+    for (const char* nome : {"Jogo (Australia).j64", "Jogo (Netherlands).j64", "Jogo (Scandinavia).j64", "Jogo (G).j64"}) {
+      auto c = createCore(cart, nome, nullptr);
+      check(static_cast<JaguarCore&>(*c).jag().pal, (std::string("PAL pelo nome: ") + nome).c_str());
+    }
+    auto u = createCore(cart, "Jogo (USA).j64", nullptr);
+    check(!static_cast<JaguarCore&>(*u).jag().pal, "NTSC pelo nome: (USA)");
+    check(jp.read16(0xF0003E) == 623 && jp.read16(0xF0002E) == 850 && jp.read16(0xF00040) == 600 && jp.read16(0xF00042) == 34,
+          "PAL: registros de vídeo da partida (VP, HP, VBB, VBE)");
+    check(jn.read16(0xF0003E) == 523 && jn.read16(0xF0002E) == 844 && (jn.read16(0xF00000) & ~0x1E) == 0x1861 && jn.read16(0xF00002) == 0x35CC,
+          "NTSC: registros da partida (VP, HP, MEMCON1/2)");
+    jn.write16(0xF14000, 0xFFFE); jp.write16(0xF14000, 0xFFFE);
+    check((jn.read16(0xF14002) & 0x10) && !(jp.read16(0xF14002) & 0x10), "bit NTSC/PAL no JOYBUTS");
+    // PAL: 624 meias linhas por quadro (VC chega a 623) e o quadro dura 1702 x 312 tiques
+    const int64_t t0 = jp.now();
+    p->runFrame();
+    check(jp.now() - t0 == 851 * 624, "PAL: quadro de 312 linhas de 1702 tiques", std::to_string(jp.now() - t0));
+    check((jp.read16(0xF00006) & 0x7FF) == 623, "PAL: VC chega a 623", std::to_string(jp.read16(0xF00006)));
+    // PAL com janela maior: 280 linhas visíveis
+    jp.write16(0xF00046, 38); jp.write16(0xF00048, 38 + 560);
+    p->runFrame();
+    check(p->height() == 280, "PAL: janela de 280 linhas", std::to_string(p->height()));
+    // som PAL: amostras por segundo seguem o relógio PAL
+    p->setSampleRate(48000);
+    while (p->audioAvailable()) { float l[1024], r[1024]; p->pullAudio(l, r, std::min<size_t>(1024, p->audioAvailable())); }
+    size_t am = 0;
+    for (int f = 0; f < 50; f++) {
+      p->runFrame();
+      float l[4096], r[4096];
+      while (p->audioAvailable()) { const size_t k = std::min<size_t>(4096, p->audioAvailable()); am += k; p->pullAudio(l, r, k); }
+    }
+    check(am >= 47800 && am <= 48200, "PAL: 48000 amostras por segundo", std::to_string(am));
+  }
+  {  // entrelaçado: VP par, VC bit 11 = campo, linhas alternadas na tela
+    auto c = createCore(cart, "jogo.j64", nullptr);
+    auto& j = static_cast<JaguarCore&>(*c).jag();
+    j.write16(0xF0003E, 524);
+    j.write16(0xF00028, 0x6C7);  // RGB16
+    check(j.interlaced(), "VP par liga o entrelaçado");
+    check(std::fabs(c->fps() - 59.94) < 0.03, "entrelaçado: 59,94 campos por segundo", std::to_string(c->fps()));
+    auto lista = [&](uint16_t cor) {
+      for (uint32_t a = 0x10000; a < 0x10010; a += 2) j.write16(a, cor);
+      const uint64_t p0 = (uint64_t(38) << 3) | (uint64_t(10) << 14) | (uint64_t(0x1010 >> 3) << 24) | (uint64_t(0x10000) << 40);
+      const uint64_t p1 = (uint64_t(4) << 12) | (uint64_t(1) << 15) | (uint64_t(0) << 18) | (uint64_t(2) << 28);
+      j.write32(0x1000, uint32_t(p0 >> 32)); j.write32(0x1004, uint32_t(p0));
+      j.write32(0x1008, uint32_t(p1 >> 32)); j.write32(0x100C, uint32_t(p1));
+      j.write32(0x1010, 0); j.write32(0x1014, 4);
+    };
+    const int64_t t0 = j.now();
+    lista(0xF800); c->runFrame();  // campo 1: vermelho
+    check(j.now() - t0 == 845 * 525, "entrelaçado: campo de 262,5 linhas", std::to_string(j.now() - t0));
+    check(j.read16(0xF00006) & 0x800, "VC bit 11 marca o segundo campo");
+    lista(0x003F); c->runFrame();  // campo 2: verde
+    check(!(j.read16(0xF00006) & 0x800), "VC bit 11 volta no primeiro campo");
+    check(c->height() == 480, "entrelaçado: 480 linhas na tela", std::to_string(c->height()));
+    const uint32_t* fb = c->framebuffer();
+    const int w = c->width();
+    check((fb[0 * w + 5] & 0xFFFFFF) == rgb(255, 0, 0) && (fb[1 * w + 5] & 0xFFFFFF) == rgb(0, 255, 0) &&
+              (fb[2 * w + 5] & 0xFFFFFF) == rgb(255, 0, 0) && (fb[19 * w + 5] & 0xFFFFFF) == rgb(0, 255, 0),
+          "entrelaçado: cada campo nas suas linhas", hex(fb[5]) + " " + hex(fb[w + 5]));
+    check((fb[20 * w + 5] & 0xFFFFFF) == 0, "entrelaçado: 10 linhas por campo", hex(fb[20 * w + 5]));
+    j.write16(0xF0003E, 523);
+    c->runFrame();
+    check(c->height() == 240 && !j.interlaced(), "VP ímpar volta ao modo normal");
+  }
+}
+
+// ---------------------------------------------------------------- Object Processor: escala vertical e desvios
+static void testOP() {
+  const auto cart = miniCart();
+  auto c = createCore(cart, "jogo.j64", nullptr);
+  auto& j = static_cast<JaguarCore&>(*c).jag();
+  j.write16(0xF00028, 0x6C7);  // RGB16, 4 tiques por ponto
+  const uint16_t COR[8] = {0xF800, 0x003F, 0x07C0, 0xFFFF, 0xF83F, 0x07FF, 0xFFC0, 0x8410};
+  for (int r = 0; r < 8; r++)  // 8 linhas de origem, 8 pontos cada, uma cor por linha
+    for (int x = 0; x < 8; x++) j.write16(0x10000 + r * 16 + x * 2, COR[r]);
+  auto put64 = [&](uint32_t a, uint64_t v) { j.write32(a, uint32_t(v >> 32)); j.write32(a + 4, uint32_t(v)); };
+  auto bitmap = [&](uint32_t at, int ypos, int h, uint32_t link, bool scaled, int vscale, int rem) {
+    put64(at, (scaled ? 1u : 0u) | (uint64_t(ypos) << 3) | (uint64_t(h) << 14) | (uint64_t(link >> 3) << 24) | (uint64_t(0x10000) << 40));
+    put64(at + 8, (uint64_t(4) << 12) | (uint64_t(1) << 15) | (uint64_t(2) << 18) | (uint64_t(2) << 28));
+    if (scaled) put64(at + 16, 0x20 | (uint64_t(vscale) << 8) | (uint64_t(rem) << 16));
+  };
+  auto stop = [&](uint32_t at) { put64(at, 4); };
+  auto linha = [&](int row) -> int {  // índice da cor da linha (-1 = fundo)
+    const uint32_t v = c->framebuffer()[row * c->width() + 5] & 0xFFFFFF;
+    for (int k = 0; k < 8; k++) {
+      const uint32_t r = COR[k] >> 11, b = (COR[k] >> 6) & 31, g = COR[k] & 63;
+      if (v == (((r << 3) | (r >> 2)) | (((g << 2) | (g >> 4)) << 8) | (((b << 3) | (b >> 2)) << 16))) return k;
+    }
+    return -1;
+  };
+  auto seq = [&](int n) { std::string s; for (int r = 0; r < n; r++) s += std::to_string(linha(r)) + " "; return s; };
+  // escala vertical 2,0 (VSCALE 0x40), REMAINDER 0x20: cada linha de origem duas vezes, HEIGHT acaba em 0
+  bitmap(0x1000, 38, 4, 0x1020, true, 0x40, 0x20); stop(0x1020);
+  c->runFrame();
+  check(seq(9) == "0 0 1 1 2 2 3 3 -1 ", "OP escalado: VSCALE 2,0 repete cada linha", seq(9));
+  // REMAINDER inicial maior: a primeira linha fica mais tempo
+  bitmap(0x1000, 38, 4, 0x1020, true, 0x40, 0x40);
+  c->runFrame();
+  check(seq(10) == "0 0 0 1 1 2 2 3 3 -1 ", "OP escalado: REMAINDER inicial 0x40", seq(10));
+  // VSCALE 0,5: pula linhas de origem
+  bitmap(0x1000, 38, 8, 0x1020, true, 0x10, 0x10);
+  c->runFrame();
+  check(seq(6) == "0 1 3 5 7 -1 ", "OP escalado: VSCALE 0,5 pula linhas", seq(6));
+  // o OP grava de volta o REMAINDER, o HEIGHT e o DATA do objeto escalado
+  {
+    const uint64_t p0 = (uint64_t(j.read32(0x1000)) << 32) | j.read32(0x1004);
+    check(((p0 >> 14) & 0x3FF) == 0 && (p0 >> 40) == 0x10000 + 9 * 16, "OP escalado: HEIGHT e DATA gravados de volta",
+          hex(uint32_t(p0 >> 40)));
+  }
+  // VSCALE 0 vale 1,0
+  bitmap(0x1000, 38, 3, 0x1020, true, 0, 0);
+  c->runFrame();
+  check(seq(4) == "0 1 2 -1 ", "OP escalado: VSCALE 0 vale 1,0", seq(4));
+  // desvios: YPOS em meias linhas (linha 10 da tela = meia linha 58)
+  auto branch = [&](uint32_t at, int ypos, int cc, uint32_t link) {
+    put64(at, 3 | (uint64_t(ypos) << 3) | (uint64_t(cc) << 14) | (uint64_t(link >> 3) << 24));
+  };
+  auto montaDesvio = [&](int cc, int ypos) {
+    // 0x1000: desvio -> 0x1100 (bitmap linha 0); senão 0x1008: desvio sempre falso -> 0x1200 (bitmap linha 1)
+    branch(0x1000, ypos, cc, 0x1100);
+    branch(0x1008, 0x7FE, 0, 0x1000);  // nunca (VC nunca é 0x7FE): segue
+    put64(0x1010, 3 | (uint64_t(0x7FF) << 3) | (uint64_t(0x1200 >> 3) << 24));  // YPOS 0x7FF: sempre
+    put64(0x1100, 0 | (uint64_t(38) << 3) | (uint64_t(100) << 14) | (uint64_t(0x1300 >> 3) << 24) | (uint64_t(0x10000) << 40));
+    put64(0x1108, (uint64_t(4) << 12) | (uint64_t(1) << 15) | (uint64_t(0) << 18) | (uint64_t(2) << 28));
+    put64(0x1200, 0 | (uint64_t(38) << 3) | (uint64_t(100) << 14) | (uint64_t(0x1300 >> 3) << 24) | (uint64_t(0x10010) << 40));
+    put64(0x1208, (uint64_t(4) << 12) | (uint64_t(1) << 15) | (uint64_t(0) << 18) | (uint64_t(2) << 28));
+    stop(0x1300);
+  };
+  montaDesvio(1, 58); c->runFrame();  // VC < YPOS
+  check(linha(0) == 0 && linha(9) == 0 && linha(10) == 1 && linha(30) == 1, "OP desvio VC < YPOS", seq(12));
+  montaDesvio(2, 58); c->runFrame();  // VC > YPOS
+  check(linha(0) == 1 && linha(10) == 1 && linha(11) == 0 && linha(40) == 0, "OP desvio VC > YPOS", seq(12));
+  montaDesvio(0, 58); c->runFrame();  // VC = YPOS
+  check(linha(9) == 1 && linha(10) == 0 && linha(11) == 1, "OP desvio VC = YPOS (só uma linha)", seq(12));
+  j.write16(0xF00026, 1);
+  montaDesvio(3, 0); c->runFrame();   // bandeira do OP ligada
+  check(linha(0) == 0 && linha(50) == 0, "OP desvio pela bandeira (OBF = 1)");
+  j.write16(0xF00026, 0);
+  montaDesvio(3, 0); c->runFrame();
+  check(linha(0) == 1 && linha(50) == 1, "OP desvio pela bandeira (OBF = 0)");
+  montaDesvio(4, 0); c->runFrame();   // segunda metade da linha: o OP roda no começo, não desvia
+  check(linha(0) == 1, "OP desvio pela segunda metade da linha (não toma no começo)");
+  // objeto de parada com interrupção: bit 3 pede a interrupção do OP ao 68000 (se habilitada)
+  j.write16(0xF000E0, 1u << 2);
+  put64(0x1000, 4 | 8);
+  c->runFrame();
+  check(j.read16(0xF000E0) & 4, "OP: objeto de parada com interrupção");
+  check(j.read16(0xF00016) == 0x000C, "OP: OB3 mostra o objeto de parada", hex(j.read16(0xF00016)));
+}
+
 // nenhum arquivo dos outros consoles (pasta das ROMs de teste) pode virar Jaguar
 static void testOthers(const std::string& romsDir, const std::string& jagDir) {
   const std::string propria = std::filesystem::weakly_canonical(jagDir).string();
@@ -414,6 +857,9 @@ int main(int argc, char** argv) {
   if (!rom2.empty()) testCart2(rom2);
   testLoaders(rom);
   testRobustez(rom);
+  testTempo();
+  testVideoModos();
+  testOP();
   testOthers(std::filesystem::path(dir).parent_path().string(), dir);
   std::printf("RESULTADO jaguar: %d verificações, %d falhas\n", checks, fails);
   return fails ? 1 : 0;

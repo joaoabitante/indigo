@@ -2,6 +2,23 @@
 
 Gerado de `web/changelog.js` (o mesmo texto aparece no cartão “Registro” da página).
 
+## 03/11/2026 · App 2.5: consoles experimentais mais perto do aparelho
+
+- Sega Saturn: leitor de CD com os comandos e os tempos que a BIOS espera, efeitos de cor, sombras e mosaico do vídeo, tempo de desenho do VDP1 e som com envelope, LFO e efeitos (DSP).
+- Atari Jaguar (tempos da CPU e do desenho, objetos de vídeo, PAL), PC-FX (vídeos e imagens comprimidas, mouse), 3DO (som DSPP, CD e registradores mais completos), Intellivision (.bin com .cfg, troca de bancos, PAL), Atari 5200 (vídeo ciclo a ciclo e colisões) e Game.com (timers, segundo cartucho, tela de toque).
+- Na tela de toque: botão para trocar o lado do disco do Famicom Disk System e teclado numérico do Atari 5200 e do Intellivision.
+- Os sete continuam experimentais: ainda não foram testados com BIOS e jogos de verdade. Estados salvos (save states) desses consoles feitos na 2.4 podem não abrir.
+
+**Testes:** Centenas de verificações novas nos testes desses consoles; revalidação de 1043 comparações iguais e robustez com 0 problemas.
+
+## 02/11/2026 · App 2.4: 11 consoles novos
+
+- Famicom Disk System (.fds e .qd, com a troca de lado do disco no F4 ou no menu), Super Game Boy (molduras e cores dos jogos com suporte), Mega Duck, Watara Supervision e Game & Watch (com o .zip do MAME do próprio usuário, que traz o desenho da tela).
+- Experimentais: Atari 5200 (com o teclado do controle no teclado numérico), Intellivision, Tiger Game.com, PC-FX, Atari Jaguar e Sega Saturn. Funcionam com os testes, mas ainda não foram testados com jogos de verdade.
+- Famicom Disk System, Atari 5200, Intellivision, Game.com, PC-FX e Saturn pedem a BIOS do seu console: abra o arquivo uma vez no Índigo. O Índigo não traz nenhuma BIOS.
+
+**Testes:** Um teste novo por console (mais de 1.100 verificações, com BIOS de teste escritas para o Índigo); revalidação de 1043 comparações iguais e robustez com 0 problemas.
+
 ## 01/11/2026 · App 2.3: revisão de segurança
 
 - Arquivos .zip, .chd, .cue e backups .indigo estragados ou maliciosos agora são recusados sem fechar o app e sem gravar nada fora da pasta do Índigo.

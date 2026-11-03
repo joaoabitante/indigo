@@ -182,6 +182,12 @@ if(INDIGO_APP)
     target_link_libraries(indigo PRIVATE indigo_core SDL3::SDL3-static)
   endif()
   target_compile_definitions(indigo PRIVATE INDIGO_VERSION="${PROJECT_VERSION}")
+  # teste do uso no app (controles de toque e consoles da estante), sem janela: tools/t_app_uso.cpp
+  if(INDIGO_TOOLS AND INDIGO_LINUX)
+    add_executable(indigo-t_app_uso tools/t_app_uso.cpp src/app/ui.cpp src/app/text.cpp)
+    target_include_directories(indigo-t_app_uso PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/gen" src/app)
+    target_link_libraries(indigo-t_app_uso PRIVATE indigo_core SDL3::SDL3)
+  endif()
   if(WIN32)
     # ícone e informações do programa
     enable_language(RC)

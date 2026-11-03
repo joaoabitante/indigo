@@ -88,10 +88,11 @@ static inline int cd_take(int p, int n, u32* dst) {
   return 0;
 }
 
-/* lê n setores a partir do FAD para dst pela partição 0 (filtro 0 ligado ao CD) */
+/* lê n setores a partir do FAD para dst pela partição 0 (liga o CD ao filtro 0) */
 static inline int cd_read(u32 fad, int n, u32* dst) {
   CdRes r;
   int got = 0, t;
+  if (cd_cmd(&r, 0x3000, 0, 0x0000, 0, HIRQ_ESEL)) return -5;
   if (cd_cmd(&r, 0x1000 | 0x80 | (u16)(fad >> 16), (u16)fad, 0x0080 | (u16)(n >> 16), (u16)n, 0)) return -1;
   for (t = 0; got < n && t < 400000; t++) {
     int c = cd_count(0);

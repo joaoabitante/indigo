@@ -11,8 +11,12 @@
 // dados e de bits, recorte, Gouraud, Z, sombra); GPU e DSP (as 64 instruções, bancos, interrupções, divisão,
 // MAC, MMULT); temporizadores do Tom e do Jerry; DAC I2S (som estéreo de 16 bits); controle (porta 1);
 // EEPROM 93C46 do cartucho (128 bytes, vira o save); save state.
-// O que falta: tempo exato (cada instrução RISC conta 1 ciclo; Blitter instantâneo; sem disputa de barramento),
-// modo entrelaçado, CD (Jaguar CD), segundo controle e acessórios, ROM de ondas exata do Jerry (gerada aqui).
+// Tempo (aproximado): o GPU e o DSP pagam o acesso fora da RAM local e usam o placar (LOAD de fora e DIV); o
+// Blitter leva um tempo que depende do que lê e grava, segura o barramento (o 68000 e os RISC esperam), mostra
+// "ocupado" em B_CMD e interrompe o GPU no fim; o Object Processor também ocupa o barramento no começo da linha.
+// Vídeo NTSC ou PAL (PAL pelo nome do arquivo: "(Europe)", "(E)", "(PAL)"...); modo entrelaçado (VP par).
+// O que falta: tempo exato de cada ciclo de memória, CD (Jaguar CD), segundo controle e acessórios, ROM de ondas
+// exata do Jerry (gerada aqui).
 #pragma once
 #include <cstdint>
 #include <memory>
@@ -37,10 +41,18 @@ enum Pad : uint32_t {
 
 class Jaguar : public md::M68kBus {
 public:
-  static constexpr int64_t CLOCK = 26590906;  // relógio do sistema (NTSC)
-  static constexpr int FB_W = 1304, FB_H = 288;
+  static constexpr int64_t CLOCK = 26590906;      // relógio do sistema (NTSC)
+  static constexpr int64_t CLOCK_PAL = 26593900;  // relógio do sistema (PAL)
+  static constexpr int FB_W = 1304, FB_H = 576;   // altura: 288 linhas, o dobro no modo entrelaçado
 
-  Jaguar(const std::vector<uint8_t>& file, const std::string& nome);
+  Jaguar(const std::vector<uint8_t>& file, const std::string& nome, bool pal = false);
+  const bool pal;           // aparelho PAL (50 Hz)
+  int64_t clock() const { return pal ? CLOCK_PAL : CLOCK; }
+  double frameRate() const;  // quadros (campos) por segundo com os registros de vídeo atuais
+  bool interlaced() const { return !(reg16(0x3E) & 1); }  // VP par = entrelaçado
+  int64_t accessTime = 0;    // relógio de quem está acessando o barramento agora (68000, GPU, DSP, OP)
+  int64_t busFree() const { return busFree_; }  // até quando o Blitter/OP seguram o barramento
+  bool blitBusy() const { return accessTime < blitEnd_; }
   void reset();
   void runFrame();
 
@@ -81,9 +93,14 @@ public:
   size_t audioAvailable() const { return (audW_ - audR_) / 2; }
   void pullAudio(float* l, float* r, size_t n);
   uint64_t blits = 0;  // contagem (diagnóstico/testes)
+  int64_t lastBlitCost = 0;  // tiques do último blit (diagnóstico/testes)
+  int64_t now() const { return now_; }
 
 private:
   bool blitting_ = false;  // Blitter no meio de uma cópia
+  int64_t busFree_ = 0, blitEnd_ = 0;
+  bool blitIrq_ = false;   // interrupção de fim do blit ainda por dar ao GPU
+  int opPhrases_ = 0;      // phrases lidas pelo OP na linha (tempo de barramento)
   bool j64_ = false;       // .j64: sempre cartucho, mesmo que comece com 0x601B/0x0150
   // Tom/Jerry
   uint16_t tomRead16(uint32_t off);
@@ -97,7 +114,7 @@ private:
   void updateIpl();
   uint8_t tomPending() const;
   // vídeo
-  void opLine(int hl);
+  void opLine(int hl, int field);
   void drawBitmap(uint64_t p0, uint64_t p1, uint32_t hscale);
   void renderRow(int row);
   void beginFrame();
@@ -165,7 +182,7 @@ public:
   const uint32_t* framebuffer() const override { return m_->fb.data(); }
   int width() const override { return m_->outW; }
   int height() const override { return m_->outH; }
-  double fps() const override { return double(Jaguar::CLOCK) / (845.0 * 524.0); }
+  double fps() const override { return m_->frameRate(); }
   void setSampleRate(int rate) override { m_->setSampleRate(rate); }
   size_t audioAvailable() const override { return m_->audioAvailable(); }
   void pullAudio(float* l, float* r, size_t n) override { m_->pullAudio(l, r, n); }

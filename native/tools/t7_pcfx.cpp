@@ -10,7 +10,12 @@
 //  7) tela: imagem calculada aqui (VDC A com fundo e sprite, VDC B por cima, fundos 0 e 1 do KING com as
 //     prioridades do HuC6261 e a conversão YUV -> RGB) comparada ponto a ponto;
 //  8) som: PSG a 998,7 Hz, CD-DA (faixa 2, seno de 441 Hz, direita com metade), ADPCM tocando, silêncio antes;
-//  9) save state determinístico e estado de lixo recusado; velocidade (informativa).
+//  9) RAINBOW (vídeo comprimido): tabelas de Huffman, IDCT, faixas YUV (com tabelas, escala, colunas vazias e
+//     bytes de enchimento) e de paleta com repetição, codificadas aqui e comparadas com uma IDCT de ponto
+//     flutuante; depois o programa no V810 passa o fluxo pela KRAM e a tela é conferida, com chroma key;
+// 10) mouse na porta 2 lido pelo programa (identificação, movimento acumulado, botões);
+// 11) save state determinístico e estado de lixo recusado; velocidade (informativa).
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -24,6 +29,7 @@
 #include "../src/cdrom/cdrom.h"
 #include "../src/core/core.h"
 #include "../src/pcfx/pcfx.h"
+#include "t7_pcfx_rb.h"
 
 using namespace indigo;
 using namespace indigo::pcfx;
@@ -42,7 +48,8 @@ uint32_t rd32(const Pcfx& s, uint32_t a) {
   return uint32_t(s.ram[a]) | uint32_t(s.ram[a + 1]) << 8 | uint32_t(s.ram[a + 2]) << 16 | uint32_t(s.ram[a + 3]) << 24;
 }
 enum { R_DONE, R_FRAMES, R_VBL, R_TIMER, R_RASTER, R_PAD, R_SUM, R_DSTAT, R_CPU, R_BRAM, R_KING, R_PHASE, R_PADIRQ,
-       R_PIOSUM, R_TOC, R_CDCMD, R_SPRX, R_ADPCM, R_SUBQ, R_GO2, R_DONE2 };
+       R_PIOSUM, R_TOC, R_CDCMD, R_SPRX, R_ADPCM, R_SUBQ, R_GO2, R_DONE2, R_GO3, R_DONE3, R_RBLEN, R_MOUSE, R_MOUSEX,
+       R_MOUSEY, R_MOUSEB, R_MOUSEN, R_CKY, R_CKU, R_CKV };
 uint32_t res(const Pcfx& s, int i) { return rd32(s, 0x100000 + uint32_t(i) * 4); }
 
 // mesma fórmula do programa (palc) e da conversão do HuC6261
@@ -57,6 +64,95 @@ uint32_t rgbOf(uint16_t c) {
   const int g = cl(y + int(0 - 0.394610164141414 * u - 0.580500315656566 * v));
   const int b = cl(y + int(0 + 2.031999684343434 * u - 0.000481376262626 * v));
   return 0xFF000000u | uint32_t(b) << 16 | uint32_t(g) << 8 | uint32_t(r);
+}
+
+uint32_t rgbYuv(uint32_t p) {
+  const int y = (p >> 16) & 0xFF, u = int((p >> 8) & 0xFF) - 128, v = int(p & 0xFF) - 128;
+  auto cl = [](int x) { return x < 0 ? 0 : x > 255 ? 255 : x; };
+  const int r = cl(y + int(0 - 0.000039457070707 * u + 1.139827967171717 * v));
+  const int g = cl(y + int(0 - 0.394610164141414 * u - 0.580500315656566 * v));
+  const int b = cl(y + int(0 + 2.031999684343434 * u - 0.000481376262626 * v));
+  return 0xFF000000u | uint32_t(b) << 16 | uint32_t(g) << 8 | uint32_t(r);
+}
+int chanDiff(uint32_t a, uint32_t b) {
+  int m = 0;
+  for (int sh = 0; sh < 24; sh += 8) m = std::max(m, std::abs(int((a >> sh) & 0xFF) - int((b >> sh) & 0xFF)));
+  return m;
+}
+
+// vídeo de teste do RAINBOW: 15 faixas de 256x16. Faixas 0..11 YUV (0 com as tabelas, 3 com escala nova, 5 com
+// três colunas vazias, 7 com a última coluna vazia), 12..14 de paleta (tipos F0, F1 e F3)
+struct RbVideo {
+  std::vector<uint8_t> stream;
+  std::vector<size_t> starts;       // começo de cada faixa no fluxo
+  rbt::Out ref[15];                  // YUV esperado (faixas YUV)
+  uint8_t idx[15][4096] = {};        // índices esperados (faixas de paleta)
+  double psnrY = 0;
+  int stuffed = 0, scaleQ0 = 0;
+  uint8_t qAfterScale[2][64] = {};
+  static constexpr uint32_t NULLC = 0x9070A0;  // registros de corrida nula 0x10, -0x10, 0x20
+  static bool isYuv(int k) { return k < 12; }
+};
+RbVideo makeRbVideo() {
+  RbVideo v;
+  rbt::Encoder enc;
+  enc.nullColor = RbVideo::NULLC;
+  double se = 0;
+  int n = 0;
+  for (int k = 0; k < 15; k++) {
+    v.starts.push_back(v.stream.size());
+    std::vector<uint8_t> blk;
+    if (RbVideo::isYuv(k)) {
+      static rbt::Strip st;
+      for (int y = 0; y < 16; y++)
+        for (int x = 0; x < 256; x++) {
+          const int gy = k * 16 + y;
+          double l = 128 + 70 * std::sin(x / 23.0) * std::cos(gy / 17.0) + 30 * std::sin((x + gy) / 7.0);
+          if ((x - 128) * (x - 128) + (gy - 100) * (gy - 100) < 40 * 40) l = 235;  // disco claro (bordas duras)
+          if (x >= 200 && ((x / 4 + gy / 4) & 1)) l = 20;                        // xadrez fino
+          st.y[y][x] = std::clamp(int(l), 0, 255);
+        }
+      for (int y = 0; y < 8; y++)
+        for (int x = 0; x < 128; x++) {
+          st.u[y][x] = std::clamp(128 + int(60 * std::sin(x / 19.0 + k)), 0, 255);
+          st.v[y][x] = std::clamp(128 + int(50 * std::cos((k * 8 + y) / 11.0)) - (x > 64 ? 40 : 0), 0, 255);
+        }
+      rbt::Opt o;
+      o.tables = k == 0;
+      if (k == 3) o.scale = 8;
+      if (k == 5) { o.nullFrom = 4; o.nullCount = 3; }
+      if (k == 7) { o.nullFrom = 15; o.nullCount = 1; }
+      blk = enc.yuv(st, o, v.ref[k]);
+      if (k == 3) { std::memcpy(v.qAfterScale, enc.q, sizeof v.qAfterScale); v.scaleQ0 = enc.q[0][0]; }
+      for (int y = 0; y < 16; y++)
+        for (int x = 0; x < 256; x++) {
+          const int c = x / 16;
+          if ((k == 5 && c >= 4 && c < 7) || (k == 7 && c == 15)) continue;
+          const double d = double((v.ref[k].px[y][x] >> 16) & 0xFF) - st.y[y][x];
+          se += d * d;
+          n++;
+        }
+    } else {
+      static const int types[3] = {0xF0, 0xF1, 0xF3};
+      const int type = types[k - 12];
+      const int maxIdx = type == 0xF0 ? 15 : type == 0xF1 ? 31 : 127;
+      for (int i = 0; i < 4096; i++) {
+        const int x = i & 255, y = i >> 8;
+        int c = ((x / 24) * 7 + y / 4) % (maxIdx + 1);
+        if (x < 40) c = 0;                       // transparente
+        if (y >= 8 && x >= 100) c = maxIdx;      // corrida longa (passa de 256 com o fim da linha)
+        v.idx[k][i] = uint8_t(c);
+      }
+      blk = rbt::Encoder::rle(type, v.idx[k], v.stuffed);
+    }
+    v.stream.insert(v.stream.end(), blk.begin(), blk.end());
+    // lixo entre as faixas (sem 0xFF): o chip procura o próximo marcador
+    for (int i = 0; i < k % 3; i++) v.stream.push_back(uint8_t(0x11 * (i + 1)));
+  }
+  v.stuffed += enc.stuffed;
+  v.psnrY = n ? 10 * std::log10(255.0 * 255.0 / (se / n)) : 0;
+  if (v.stream.size() & 1) v.stream.push_back(0);
+  return v;
 }
 
 // a tela do programa de teste depois do quadro 200 (parada), com o VDC deslocado (dx, dy)
@@ -265,11 +361,203 @@ int main(int argc, char** argv) {
       std::fclose(f);
     }
     check(seen > 10000 && bad == 0, "fundo 0 com zoom 2x e fundo 1 esticados para 341 pontos");
+    // alinhamento VDC -> KING a 7,16 MHz: o VDC começa 8 + (HDS+1)*8 pontos depois do fim do HSYNC (203 ciclos do
+    // começo da linha) e a imagem do HuC6261 aos 341 ciclos; com HDS = 2 o VDC fica 14 pontos à esquerda, e as
+    // listras do VDC A (a partir do ponto 128 dele) começam no ponto 114 da tela (linha 150, sem fundos do KING)
+    int edge = -1;
+    for (int x = 100; x < 140 && edge < 0; x++) if (fb[150 * 341 + x] == rgbOf(palc(16 + 2)) || fb[150 * 341 + x] == rgbOf(palc(16 + 3))) edge = x;
+    std::printf("  listras do VDC a partir do ponto %d\n", edge);
+    check(edge == 114 && fb[150 * 341 + 113] == rgbOf(palc(1)), "VDC a 7,16 MHz alinhado com o KING pelo tempo do HSYNC");
+  }
+
+  const uint32_t framesSom = res(s, R_FRAMES);  // a conta do som usa os quadros até aqui
+  std::printf("RAINBOW (descompressor):\n");
+  const RbVideo vid = makeRbVideo();
+  {
+    check(rbt::prefixFree(RB_DC_Y) && rbt::prefixFree(RB_DC_UV) && rbt::prefixFree(RB_AC_Y) && rbt::prefixFree(RB_AC_UV),
+          "tabelas de Huffman do chip sem código que comece outro");
+    // IDCT inteira: só DC dá bloco liso; coeficientes variados ficam a 1 da IDCT de ponto flutuante
+    int32_t b[64] = {};
+    b[0] = 80;
+    rbIdct(b);
+    bool flat = true;
+    for (int i = 0; i < 64; i++) flat &= b[i] == 10;
+    int worst = 0;
+    uint32_t x = 777;
+    for (int t = 0; t < 200; t++) {
+      int32_t c[64];
+      double in[64];
+      for (int i = 0; i < 64; i++) { x ^= x << 13; x ^= x >> 17; x ^= x << 5; c[i] = int32_t(x % 801) - 400; if (i > 20 && (x & 3)) c[i] = 0; in[i] = c[i]; }
+      rbIdct(c);
+      for (int yy = 0; yy < 8; yy++)
+        for (int xx = 0; xx < 8; xx++) {
+          double sum = 0;
+          for (int v = 0; v < 8; v++)
+            for (int u = 0; u < 8; u++)
+              sum += (u ? 1 : 1 / std::sqrt(2.0)) * (v ? 1 : 1 / std::sqrt(2.0)) * in[v * 8 + u] *
+                     std::cos((2 * xx + 1) * u * M_PI / 16) * std::cos((2 * yy + 1) * v * M_PI / 16);
+          worst = std::max(worst, std::abs(c[yy * 8 + xx] - int(std::lround(sum / 4))));
+        }
+    }
+    check(flat && worst <= 1, "IDCT 8x8: DC 80 -> 10 em todo o bloco; 200 blocos aleatórios a no máximo 1 da exata (" + std::to_string(worst) + ")");
+
+    // decodifica as 15 faixas direto da "KRAM" (página 0, palavra 0x30000)
+    static uint16_t kr[262144];
+    std::memset(kr, 0, sizeof kr);
+    for (size_t i = 0; i < vid.stream.size(); i += 2) kr[0x30000 + i / 2] = uint16_t(vid.stream[i] | vid.stream[i + 1] << 8);
+    static Rainbow rb;
+    rb.reset();
+    rb.write16(0x208, 0x10); rb.write16(0x20C, 0xFFF0); rb.write16(0x210, 0x20);
+    uint32_t pos = 0x30000 << 1;
+    rb.decodeBlock(true, kr, pos);
+    check(rb.format(rb.backBuffer()) == -1, "com o RAINBOW desligado nada é descomprimido");
+    rb.write16(0x204, 1);
+    pos = 0x30000 << 1;
+    int yuvWorst = 0, yuvExact = 0, yuvTotal = 0, idxBad = 0, nullBad = 0;
+    bool fmtOk = true, qOk = true, posOk = true;
+    for (int k = 0; k < 15; k++) {
+      rb.decodeBlock(k == 0, kr, pos);
+      const int bb = rb.backBuffer();
+      fmtOk &= rb.format(bb) == (RbVideo::isYuv(k) ? 1 : 0);
+      if (RbVideo::isYuv(k)) {
+        const uint32_t* px = rb.yuv(bb);
+        for (int y = 0; y < 16; y++)
+          for (int xx = 0; xx < 256; xx++) {
+            const uint32_t a = px[y * 256 + xx], e = vid.ref[k].px[y][xx];
+            const bool isNull = (k == 5 && xx / 16 >= 4 && xx / 16 < 7) || (k == 7 && xx / 16 == 15);
+            if (isNull) { nullBad += a != RbVideo::NULLC; continue; }
+            int d = 0;
+            for (int sh = 0; sh < 24; sh += 8) d = std::max(d, std::abs(int((a >> sh) & 0xFF) - int((e >> sh) & 0xFF)));
+            yuvWorst = std::max(yuvWorst, d);
+            yuvExact += d == 0;
+            yuvTotal++;
+          }
+        if (k == 3)
+          for (int t = 0; t < 2; t++)
+            for (int i = 0; i < 64; i++) qOk &= rb.quant(t, i) == vid.qAfterScale[t][i];
+      } else {
+        idxBad += std::memcmp(rb.idx(bb), vid.idx[k], 4096) != 0;
+      }
+      // a leitura para no fim do bloco ou pouco antes (o resto é pulado na busca do próximo marcador)
+      if (k < 14) posOk &= (pos >> 1) - 0x30000 <= vid.starts[size_t(k) + 1] / 2 + 1;
+      rb.swapBuffers();
+    }
+    std::printf("  fluxo de %zu bytes (%d bytes de enchimento), Y a %.1f dB do original; YUV: %d de %d pontos exatos, "
+                "maior diferença %d\n", vid.stream.size(), vid.stuffed, vid.psnrY, yuvExact, yuvTotal, yuvWorst);
+    check(fmtOk, "formato de cada faixa (12 YUV, 3 de paleta)");
+    check(yuvWorst <= 1 && yuvExact * 10 > yuvTotal * 9, "faixas YUV iguais à IDCT de ponto flutuante (diferença <= 1)");
+    check(vid.psnrY > 28, "codificação de ida e volta fiel à imagem original (PSNR do Y > 28 dB)");
+    check(vid.stuffed > 0, "o fluxo tem bytes 0xFF com enchimento");
+    check(qOk && vid.scaleQ0 == 8, "código de escala refaz as tabelas de quantização (Y x2, DC do UV / 4)");
+    check(nullBad == 0, "colunas vazias pintadas com a cor dos registros de corrida nula");
+    check(idxBad == 0, "faixas de paleta com repetição (F0, F1, F3; contagens longas) iguais");
+    check(posOk, "cada bloco lido só até o seu fim");
+
+    // leitura das linhas: rolagem, modo infinito, paleta e transparência; 16 linhas e o buffer se apaga
+    rb.reset();
+    rb.write16(0x204, 1);
+    pos = uint32_t(0x30000 * 2 + vid.starts[1]);
+    rb.decodeBlock(true, kr, pos);   // faixa 1 (YUV)
+    rb.swapBuffers();
+    const uint32_t* front = rb.yuv(rb.backBuffer() ^ 1);
+    std::vector<uint32_t> f0(front, front + 4096);
+    uint32_t pal[512];
+    for (int i = 0; i < 512; i++) pal[i] = 0x10000u * uint32_t(i & 0xFF) + 0x0101u;
+    uint32_t line[256];
+    rb.write16(0x200, 10);
+    int t1 = rb.fetchRaster(line, pal, 0, 7u << 28);
+    bool scrollOk = t1 == 1 && line[0] == (f0[10] | 7u << 28) && line[245] == (f0[255] | 7u << 28) && line[246] == 0;
+    rb.write16(0x204, 3);  // modo infinito
+    rb.fetchRaster(line, pal, 0, 7u << 28);
+    scrollOk &= line[246] == (f0[256 + 0] | 7u << 28) && line[0] == (f0[256 + 10] | 7u << 28);
+    for (int i = 2; i < 16; i++) rb.fetchRaster(line, pal, 0, 0);
+    scrollOk &= rb.fetchRaster(line, pal, 0, 0) == -1 && line[0] == 0;
+    check(scrollOk, "linhas do RAINBOW: rolagem horizontal, modo infinito e fim da faixa depois de 16 linhas");
+    rb.write16(0x200, 0);
+    rb.write16(0x204, 1);
+    pos = uint32_t(0x30000 * 2 + vid.starts[12]);
+    rb.decodeBlock(true, kr, pos);   // faixa 12 (paleta)
+    rb.swapBuffers();
+    const int t2 = rb.fetchRaster(line, pal, 0x80, 7u << 28);
+    check(t2 == 0 && line[0] == 0 && line[100] == (pal[0x80 + vid.idx[12][100]] | 7u << 28),
+          "paleta do RAINBOW com o deslocamento da camada; índice 0 transparente");
+    // bytes 0x8000 bytes sem marcador: a busca desiste e o buffer fica vazio, sem travar
+    for (int i = 0; i < 0x4000; i++) kr[0x20000 + i] = 0x1234;
+    pos = 0x20000 * 2;
+    rb.decodeBlock(true, kr, pos);
+    const bool g1 = rb.format(rb.backBuffer()) == 0 && rb.idx(rb.backBuffer())[0] == 0;
+    const uint32_t p1 = pos;
+    rb.decodeBlock(false, kr, pos);
+    check(g1 && p1 - 0x40000 <= 0x210 && pos - p1 <= 8, "lixo sem marcador: desiste em 512 bytes e depois não procura mais");
+  }
+
+  std::printf("Vídeo comprimido na tela e mouse:\n");
+  {
+    for (size_t i = 0; i < vid.stream.size(); i++) s.ram[0x180000 + i] = vid.stream[i];
+    auto w32 = [&](int r, uint32_t v) { for (int i = 0; i < 4; i++) s.ram[0x100000 + uint32_t(r) * 4 + uint32_t(i)] = uint8_t(v >> (8 * i)); };
+    w32(R_RBLEN, uint32_t(vid.stream.size() / 2));
+    w32(R_GO3, 1);
+    int sentX = 0, sentY = 0;
+    for (int f = 0; f < 24; f++) {
+      if (f >= 4 && f < 14) { core.setMouse(7, -4, 1); sentX += 7; sentY -= 4; }
+      else if (f == 14) { core.setMouse(300, 0, 2); sentX += 300; }
+      else core.setMouse(0, 0, 0);
+      core.runFrame();
+    }
+    check(res(s, R_DONE3) == 0x33454E4F, "o programa armou o RAINBOW");
+    check(core.width() == 256, "volta a 256 pontos");
+    const uint32_t* fb = core.framebuffer();
+    const uint32_t bpc = rgbOf(palc(0));
+    int worst = 0, exact = 0, total = 0, palBad = 0, nullBad = 0;
+    for (int y = 0; y < 240; y++)
+      for (int x = 0; x < 256; x++) {
+        const int k = y / 16;
+        const uint32_t got = fb[y * 256 + x];
+        if (RbVideo::isYuv(k)) {
+          const bool isNull = (k == 5 && x / 16 >= 4 && x / 16 < 7) || (k == 7 && x / 16 == 15);
+          if (isNull) { nullBad += got != rgbYuv(RbVideo::NULLC); continue; }
+          const int d = chanDiff(got, rgbYuv(vid.ref[k].px[y & 15][x]));
+          worst = std::max(worst, d);
+          exact += d == 0;
+          total++;
+        } else {
+          const int i = vid.idx[k][(y & 15) * 256 + x];
+          palBad += got != (i ? rgbOf(palc(0x80 + i)) : bpc);
+        }
+      }
+    std::printf("  YUV: %d de %d pontos exatos, maior diferença de canal %d; paleta: %d diferentes\n", exact, total, worst, palBad);
+    check(worst <= 4 && exact * 10 > total * 8 && nullBad == 0, "faixas YUV na tela (linhas 22 a 213), com as colunas vazias");
+    check(palBad == 0, "faixas de paleta na tela, com a cor de trás onde o índice é 0");
+    std::printf("  mouse: último %08X, X %d (enviado %d), Y %d (enviado %d), botões %u, %u leituras\n", res(s, R_MOUSE),
+                int32_t(res(s, R_MOUSEX)), sentX, int32_t(res(s, R_MOUSEY)), sentY, res(s, R_MOUSEB), res(s, R_MOUSEN));
+    check(s.mouseOn(1) && !s.mouseOn(0) && (res(s, R_MOUSE) >> 28) == 0xD, "mouse na porta 2 (identificação 0xD), controle na 1");
+    check(int32_t(res(s, R_MOUSEX)) == sentX && int32_t(res(s, R_MOUSEY)) == sentY,
+          "movimento somado igual ao enviado (300 de uma vez sai em partes de até 127)");
+    check(res(s, R_MOUSEB) == 3 && res(s, R_MOUSEN) >= 15, "botões esquerdo e direito; uma leitura por quadro");
+
+    // chroma key: Y de 0x80 para cima vira transparente (aparece a cor de trás)
+    w32(R_CKY, 0xFF80); w32(R_CKU, 0xFF00); w32(R_CKV, 0xFF00);
+    w32(R_GO3, 2);
+    for (int f = 0; f < 3; f++) core.runFrame();
+    check(res(s, R_DONE3) == 0x34454E4F, "o programa ligou o chroma key");
+    int keyBad = 0, keyed = 0;
+    for (int y = 0; y < 192; y++)
+      for (int x = 0; x < 256; x++) {
+        const int k = y / 16;
+        if ((k == 5 && x / 16 >= 4 && x / 16 < 7) || (k == 7 && x / 16 == 15)) continue;
+        const uint32_t e = vid.ref[k].px[y & 15][x];
+        const int yy = int((e >> 16) & 0xFF);
+        if (std::abs(yy - 0x80) <= 1) continue;
+        const uint32_t got = fb[y * 256 + x];
+        if (yy > 0x80) { keyed++; keyBad += got != bpc; }
+        else keyBad += chanDiff(got, rgbYuv(e)) > 4;
+      }
+    check(keyed > 5000 && keyBad == 0, "chroma key do HuC6261 no plano YUV (" + std::to_string(keyed) + " pontos chaveados)");
   }
 
   std::printf("Som:\n");
   {
-    const int off = FRAMES - int(res(s, R_FRAMES));  // quadros do console antes do programa ligar as interrupções
+    const int off = FRAMES - int(framesSom);  // quadros do console antes do programa ligar as interrupções
     std::printf("  o programa começou a contar no quadro %d\n", off);
     auto win = [&](int f0, int f1) { return std::make_pair(frameAt[size_t(f0 + off)], frameAt[size_t(f1 + off)]); };
     auto [s0, e0] = win(10, 50);
@@ -343,6 +631,28 @@ int main(int argc, char** argv) {
     std::printf("  %zu instantes e %zu doubles achados no estado; %d de %d adulterações recusadas\n", i64.size(), f64.size(),
                 recusados, testes);
     check(i64.size() >= 8 && f64.size() >= 2 && !travou, "relógios adulterados no estado não travam o núcleo");
+    // estados embaralhados com o RAINBOW e o mouse em uso: recusados ou rodam sem cair; o bom volta igual
+    {
+      uint32_t z = 4242;
+      int aceitos = 0;
+      for (int k = 0; k < 150; k++) {
+        std::vector<uint8_t> bad = boa;
+        for (int m = 0; m < 24; m++) { z ^= z << 13; z ^= z >> 17; z ^= z << 5; bad[z % bad.size()] ^= uint8_t(z >> 8 | 1); }
+        try { core.loadState(bad); } catch (const std::exception&) { continue; }
+        aceitos++;
+        core.setMouse(int(z % 9) - 4, 3, z & 3);
+        for (int i = 0; i < 2; i++) core.runFrame();
+      }
+      core.loadState(boa);
+      core.setMouse(0, 0, 0);
+      for (int i = 0; i < 3; i++) core.runFrame();
+      const std::vector<uint32_t> c1(core.framebuffer(), core.framebuffer() + core.width() * 240);
+      core.loadState(boa);
+      for (int i = 0; i < 3; i++) core.runFrame();
+      const std::vector<uint32_t> c2(core.framebuffer(), core.framebuffer() + core.width() * 240);
+      std::printf("  150 estados embaralhados com o RAINBOW ligado: %d aceitos e rodados\n", aceitos);
+      check(c1 == c2 && res(s, R_DONE3) == 0x34454E4F, "estados embaralhados com o RAINBOW não derrubam; o estado bom volta igual");
+    }
     for (int i = 0; i < 5; i++) core.runFrame();
     check(res(s, R_DONE) == 0x454E4F44, "o jogo continua depois dos estados adulterados");
   }

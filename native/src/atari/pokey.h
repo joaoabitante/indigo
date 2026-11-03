@@ -41,6 +41,7 @@ public:
 
 private:
   uint8_t irqMask() const { return ext ? 0xC7 : 0x07; }
+  uint64_t firstPulse(int i, uint64_t now) const;  // primeiro pulso do canal i depois de STIMER
   void recalc(uint64_t now);
   uint8_t audf[4] = {}, audc[4] = {}, audctl = 0, skctl = 0, irqen = 0, irqst = 0xFF;
   uint32_t period[4] = {1, 1, 1, 1};

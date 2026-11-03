@@ -1,11 +1,15 @@
 // VDP2 do Saturn: planos NBG0-NBG3 (células de 8x8/16x16 ou bitmap) com rolagem por linha, RBG0 (rotação com a
 // tabela de parâmetros A/B e a tabela de coeficientes), camada de sprites (o quadro do VDP1), tela de fundo,
-// janelas retangulares W0/W1, prioridades, cálculo de cor (proporção ou soma com a camada de baixo) e
-// deslocamento de cor.
+// janelas retangulares W0/W1, prioridades (por tela, por caractere ou por ponto), cálculo de cor (proporção ou
+// soma; por tela, caractere, ponto ou MSB; proporção da camada de cima ou da de baixo; estendido com a terceira
+// camada; tela de cor de linha; gradação), sombra normal e por MSB e deslocamento de cor.
 //
-// Fora daqui (ainda): RBG1, janela de linha e de sprite, rolagem por célula vertical, mosaico, tela de cor de
-// linha, cálculo de cor especial e o entrelaçado do VDP1 (no modo de densidade dupla o quadro de sprites vale
-// para as duas linhas de cada par).
+// Também: janela de linha (X das janelas por linha numa tabela), rolagem vertical por célula (NBG0/NBG1) e
+// mosaico horizontal e vertical.
+// RBG1 (parâmetro B no lugar do NBG0) e a troca de parâmetros A/B por coeficiente ou pela janela de rotação.
+// Fora daqui (ainda): o entrelaçado do VDP1 (no modo de densidade dupla o quadro de sprites vale para as
+// duas linhas de cada par).
+// A mistura das camadas segue o comportamento medido no aparelho e descrito no Mednafen (ver TERCEIROS.md).
 // A imagem é montada de uma vez no começo do V-blank, com os registradores desse momento.
 #include <algorithm>
 #include <cstring>
@@ -22,11 +26,14 @@ inline uint32_t rgb555(uint16_t c) {
   return (r << 3 | r >> 2) | (g << 3 | g >> 2) << 8 | (b << 3 | b >> 2) << 16;
 }
 inline int32_t sx(uint32_t v, int bits) { return int32_t(v << (32 - bits)) >> (32 - bits); }
+// média de duas cores (canal a canal, arredondando para baixo)
+inline uint32_t avg(uint32_t a, uint32_t b) { return ((a + b) - ((a ^ b) & 0x010101)) >> 1; }
 }  // namespace
 
 struct Vdp2::Tile {
   int bpp = 4, colors = 0;
   bool charSize = false, bitmap = false, pnd1 = false, aux = false, tpOff = false, rot = false;
+  bool bmSpr = false, bmScc = false;    // bits especiais do bitmap (BMPNA/BMPNB)
   uint32_t bmW = 512, bmH = 256, supp = 0, craOffs = 0, mapOffs = 0, bmPal = 0;
   int plsz = 0, over = 0;
   uint32_t mapAddr[16] = {};
@@ -78,6 +85,12 @@ uint32_t Vdp2::color(uint32_t idx) const {
   return rgb555(uint16_t(cram[a] << 8 | cram[a + 1]));
 }
 
+bool Vdp2::colorMsb(uint32_t idx) const {
+  const int mode = cramMode();
+  if (mode == 2 || mode == 3) return cram[(idx & 0x3FF) * 4] & 0x80;
+  return cram[(idx & (mode == 0 ? 0x3FF : 0x7FF)) * 2] & 0x80;
+}
+
 uint32_t Vdp2::backColor(int y) const {
   const uint16_t u = reg(0xAC), l = reg(0xAE);
   uint32_t a = ((uint32_t(u & 7) << 16) | l) * 2;
@@ -88,14 +101,12 @@ uint32_t Vdp2::backColor(int y) const {
 bool Vdp2::windowed(uint8_t ctrl, int x, int y) const {
   if (!(ctrl & 0x2A)) return false;  // nenhuma janela ligada para esta camada
   const bool andLogic = ctrl & 0x80;
-  const bool hires = outW >= 640;
   bool v[2];
   for (int w = 0; w < 2; w++) {
     const bool en = ctrl & (w ? 0x08 : 0x02), area = ctrl & (w ? 0x04 : 0x01);
     if (!en) { v[w] = andLogic; continue; }
     const uint32_t b = w ? 0xC8 : 0xC0;
-    int xs = reg(b) & 0x3FF, xe = reg(b + 4) & 0x3FF;
-    if (!hires) { xs >>= 1; xe >>= 1; }
+    const int xs = winXs_[w], xe = winXe_[w];
     const int ys = reg(b + 2) & 0x1FF, ye = reg(b + 6) & 0x1FF;
     const bool in = x >= xs && x <= xe && y >= ys && y <= ye;
     v[w] = in != area;
@@ -123,6 +134,8 @@ Vdp2::Tile Vdp2::tileNbg(int n) const {
   t.craOffs = uint32_t((reg(0xE4) >> (n * 4)) & 7) << 8;
   t.mapOffs = (reg(0x3C) >> (n * 4)) & 7;
   t.bmPal = n < 2 ? uint32_t((reg(0x2C) >> (n * 8)) & 7) << 4 : 0;
+  t.bmScc = n < 2 && ((reg(0x2C) >> (n * 8 + 4)) & 1);
+  t.bmSpr = n < 2 && ((reg(0x2C) >> (n * 8 + 5)) & 1);
   const uint16_t pncn = reg(0x30 + uint32_t(n) * 2);
   t.pnd1 = pncn & 0x8000;
   t.aux = pncn & 0x4000;
@@ -151,6 +164,8 @@ Vdp2::Tile Vdp2::tileRbg(int which) const {
   t.craOffs = uint32_t(reg(0xE6) & 7) << 8;
   t.mapOffs = (reg(0x3E) >> (which * 4)) & 7;
   t.bmPal = uint32_t(reg(0x2E) & 7) << 4;
+  t.bmScc = reg(0x2E) & 0x10;
+  t.bmSpr = reg(0x2E) & 0x20;
   const uint16_t pncr = reg(0x38);
   t.pnd1 = pncr & 0x8000;
   t.aux = pncr & 0x4000;
@@ -165,8 +180,9 @@ Vdp2::Tile Vdp2::tileRbg(int which) const {
   return t;
 }
 
-bool Vdp2::dot(const Tile& t, uint32_t ix, uint32_t iy, uint32_t& rgb) const {
+bool Vdp2::dot(const Tile& t, uint32_t ix, uint32_t iy, Dot& d) const {
   uint32_t cgByte, palno;
+  bool spr = false, scc = false;
   int cx;
   if (t.rot && t.over >= 2) {  // fora do plano (ou de 512x512): transparente
     uint32_t wx, wy;
@@ -180,6 +196,8 @@ bool Vdp2::dot(const Tile& t, uint32_t ix, uint32_t iy, uint32_t& rgb) const {
     cgByte = (t.mapOffs << 17) + (py * t.bmW + (px & ~7u)) * uint32_t(t.bpp) / 8;
     cx = int(px & 7);
     palno = t.bmPal;
+    spr = t.bmSpr;
+    scc = t.bmScc;
   } else {
     const uint32_t mapidx = t.rot ? (((ix >> (9 + (t.plsz & 1))) & 3) | ((iy >> (9 + ((t.plsz & 2) ? 1 : 0) - 2)) & 0xC))
                                   : (((ix >> (9 + (t.plsz & 1))) & 1) | ((iy >> (9 + ((t.plsz & 2) ? 1 : 0) - 1)) & 2));
@@ -196,9 +214,13 @@ bool Vdp2::dot(const Tile& t, uint32_t ix, uint32_t iy, uint32_t& rgb) const {
       palno = w0 & 0x7F;
       vflip = w0 & 0x8000;
       hflip = w0 & 0x4000;
+      spr = w0 & 0x2000;
+      scc = w0 & 0x1000;
       charno = w1 & 0x7FFF;
     } else {
       palno = t.bpp >= 8 ? ((w0 >> 12) & 7u) << 4 : ((w0 >> 12) & 0xFu) | ((t.supp >> 5) & 7) << 4;
+      spr = t.supp & 0x200;
+      scc = t.supp & 0x100;
       if (!t.aux) {
         vflip = w0 & 0x800;
         hflip = w0 & 0x400;
@@ -216,68 +238,129 @@ bool Vdp2::dot(const Tile& t, uint32_t ix, uint32_t iy, uint32_t& rgb) const {
     const uint32_t celly = (iy & 7) ^ (vflip ? 7 : 0);
     cgByte = (charno * 32 + celly * uint32_t(t.bpp)) & 0x7FFFF;
   }
+  d.spr = spr;
+  d.scc = scc;
+  d.isRgb = false;
+  uint32_t idx;
   switch (t.bpp) {
     case 4: {
       const uint8_t b = vram[(cgByte + uint32_t(cx) / 2) & 0x7FFFF];
-      const uint32_t d = (cx & 1) ? (b & 0xF) : (b >> 4);
-      rgb = color(((palno << 4) & ~0xFu) + t.craOffs + d);
-      return d || t.tpOff;
+      d.dcc = (cx & 1) ? (b & 0xF) : (b >> 4);
+      idx = ((palno << 4) & ~0xFu) + t.craOffs + d.dcc;
+      break;
     }
     case 8: {
-      const uint32_t d = vram[(cgByte + uint32_t(cx)) & 0x7FFFF];
-      rgb = color(((palno << 4) & ~0xFFu) + t.craOffs + d);
-      return d || t.tpOff;
+      d.dcc = vram[(cgByte + uint32_t(cx)) & 0x7FFFF];
+      idx = ((palno << 4) & ~0xFFu) + t.craOffs + d.dcc;
+      break;
     }
     case 16: {
-      const uint16_t d = vr16(cgByte + uint32_t(cx) * 2);
-      if (t.colors == 2) { rgb = color(t.craOffs + (d & 0x7FF)); return (d & 0x7FF) || t.tpOff; }
-      rgb = rgb555(d);
-      return (d & 0x8000) || t.tpOff;
+      const uint16_t v = vr16(cgByte + uint32_t(cx) * 2);
+      if (t.colors == 2) { d.dcc = v & 0x7FF; idx = t.craOffs + d.dcc; break; }
+      d.rgb = rgb555(v);
+      d.isRgb = true;
+      return (v & 0x8000) || t.tpOff;
     }
     default: {
       const uint32_t a = (cgByte + uint32_t(cx) * 4) & 0x7FFFC;
-      rgb = uint32_t(vram[a + 3]) | uint32_t(vram[a + 2]) << 8 | uint32_t(vram[a + 1]) << 16;
+      d.rgb = uint32_t(vram[a + 3]) | uint32_t(vram[a + 2]) << 8 | uint32_t(vram[a + 1]) << 16;
+      d.isRgb = true;
       return (vram[a] & 0x80) || t.tpOff;
     }
   }
+  d.rgb = color(idx);
+  d.msb = colorMsb(idx);
+  return d.dcc || t.tpOff;
 }
 
-void Vdp2::renderNbg(int n, int y, Pix* line, LineScroll* ls) {
+// SFPRMD/SFCCMD: 2 bits por camada (0 por tela, 1 pelo bit do caractere, 2 pelo bit do caractere e o código de
+// função especial do ponto, 3 = MSB da cor para o cálculo de cor); SFSEL escolhe o código A ou B (SFCODE)
+void Vdp2::special(int bit, int pri, const Dot& d, uint8_t& outPri, bool& ccOn) const {
+  const int pm = (reg(0xEA) >> (bit * 2)) & 3, cm = (reg(0xEE) >> (bit * 2)) & 3;
+  const uint8_t code = uint8_t(reg(0x26) >> (((reg(0x24) >> bit) & 1) * 8));
+  const bool match = !d.isRgb && ((code >> ((d.dcc >> 1) & 7)) & 1);
+  if (pm == 1) outPri = uint8_t((pri & ~1) | (d.spr ? 1 : 0));
+  else if (pm == 2) outPri = uint8_t((pri & ~1) | ((d.spr && match) ? 1 : 0));
+  else outPri = uint8_t(pri);
+  const bool en = reg(0xEC) & (1 << bit);
+  switch (cm) {
+    case 0: ccOn = en; break;
+    case 1: ccOn = en && d.scc; break;
+    case 2: ccOn = en && d.scc && match; break;
+    default: ccOn = en && (d.isRgb || d.msb); break;
+  }
+}
+
+void Vdp2::renderNbg(int n, int y, Pix* line, LineScroll* ls, uint32_t yEff) {
   const uint16_t bgon = reg(0x20);
   if (!(bgon & (1 << n))) return;
   const int pri = n < 2 ? (reg(0xF8) >> (n * 8)) & 7 : (reg(0xFA) >> ((n - 2) * 8)) & 7;
   if (!pri) return;
   const Tile t = tileNbg(n);
-  const bool ccOn = reg(0xEC) & (1 << n);
+  const bool layerCc = reg(0xEC) & (1 << n);
   const int ratio = (n < 2 ? reg(0x108) >> (n * 8) : reg(0x10A) >> ((n - 2) * 8)) & 31;
   const uint8_t win = uint8_t(reg(n < 2 ? 0xD0 : 0xD2) >> ((n & 1) * 8));
   uint32_t sxv, iy, zx = 0x100;
   if (n < 2) {
     sxv = ls->x;
-    iy = (ls->yBase + ls->yAcc) >> 8;
+    iy = (ls->yBase + yEff) >> 8;
     zx = ls->zx;
   } else {
     sxv = uint32_t(reg(n == 2 ? 0x90 : 0x94) & 0x7FF) << 8;
-    iy = uint32_t((reg(n == 2 ? 0x92 : 0x96) & 0x7FF) + y);
+    iy = uint32_t((reg(n == 2 ? 0x92 : 0x96) & 0x7FF) + yEff);
   }
+  // mosaico horizontal (MZCTL): o ponto do começo de cada bloco se repete
+  const uint16_t mz = reg(0x22);
+  const int hs = (mz & (1 << n)) ? ((mz >> 8) & 0xF) + 1 : 1;
+  // rolagem vertical por célula (NBG0/NBG1, sem mosaico): um deslocamento de Y por coluna de 8 pontos, da
+  // tabela em VCSTA (as entradas dos dois planos se alternam quando os dois usam)
+  const uint16_t scrctl = reg(0x9A);
+  auto vcsOn = [&](int k) { return ((scrctl >> (k * 8)) & 1) && (reg(0x20) & (1 << k)) && !(mz & (1 << k)); };
+  const bool vcs = n < 2 && vcsOn(n);
+  const uint32_t vcBase = (uint32_t(reg(0x9C) & 7) << 16 | (reg(0x9E) & 0xFFFE)) * 2;
+  const uint32_t vcStride = (vcsOn(0) && vcsOn(1)) ? 8 : 4, vcOff = (n == 1 && vcsOn(0)) ? 4 : 0;
   const int W = outW;
   for (int x = 0; x < W; x++) {
-    const uint32_t ix = (sxv + uint32_t(x) * zx) >> 8;
-    uint32_t rgb;
-    if (!dot(t, ix, iy, rgb)) continue;
+    const int mx = x - x % hs;
+    const uint32_t ix = (sxv + uint32_t(mx) * zx) >> 8;
+    if (vcs) {
+      const uint32_t a = vcBase + uint32_t(x >> 3) * vcStride + vcOff;
+      const uint32_t v = uint32_t(vr16(a)) << 8 | (vr16(a + 2) >> 8);
+      iy = (ls->yBase + yEff + v) >> 8;
+    }
+    Dot d;
+    if (!dot(t, ix, iy, d)) continue;
     if (windowed(win, x, y)) continue;
-    line[W * (L_NBG0 + n) + x] = Pix{rgb, uint8_t(pri), uint8_t(ratio), uint8_t(L_NBG0 + n), ccOn};
+    uint8_t p;
+    bool ccOn;
+    special(n, pri, d, p, ccOn);
+    if (!p) continue;
+    line[W * (L_NBG0 + n) + x] = Pix{d.rgb, p, uint8_t(ratio), uint8_t(L_NBG0 + n), ccOn, d.isRgb, layerCc, false};
   }
 }
 
-void Vdp2::renderRbg(int y, Pix* line) {
-  const uint16_t bgon = reg(0x20);
-  if (!(bgon & 0x10)) return;
-  const int pri = reg(0xFC) & 7;
-  if (!pri) return;
-  const int ab = (reg(0xB0) & 3) == 1 ? 1 : 0;  // RPMD: A ou B (os modos de troca usam A)
-  const Tile t = tileRbg(ab);
-  // tabela de parâmetros (endereços em palavras de 16 bits)
+// parâmetros de rotação A ou B de uma linha (tabela de parâmetros em RPTA; endereços em palavras de 16 bits)
+struct Vdp2::Rot {
+  Tile t;
+  int32_t Xsp = 0, Ysp = 0, Xp0 = 0, Yp = 0, dX = 0, dY = 0, kx0 = 0, ky0 = 0, DKAx = 0;
+  uint32_t KA = 0;
+  uint8_t ktctl = 0;
+};
+
+Vdp2::Rot Vdp2::rotSetup(int ab, int y, bool rbg1) const {
+  Rot r;
+  r.t = tileRbg(ab);
+  if (rbg1) {  // RBG1: os formatos de caractere, nome e cores do NBG0
+    const Tile n0 = tileNbg(0);
+    r.t.colors = n0.colors; r.t.bpp = n0.bpp; r.t.charSize = n0.charSize; r.t.bitmap = false;
+    r.t.pnd1 = n0.pnd1; r.t.aux = n0.aux; r.t.supp = n0.supp; r.t.craOffs = n0.craOffs;
+    r.t.tpOff = reg(0x20) & 0x100;
+    const unsigned psshift = 13 - (r.t.pnd1 ? 1 : 0) - (r.t.charSize ? 2 : 0);
+    for (int i = 0; i < 16; i++) {
+      const uint32_t m = (reg(0x60 + uint32_t(i / 2) * 2) >> ((i & 1) * 8)) & 0x3F;
+      r.t.mapAddr[i] = ((r.t.mapOffs << 6) + (m & ~uint32_t(r.t.plsz))) << psshift;
+    }
+  }
   const uint32_t a = ((uint32_t(reg(0xBC) & 7) << 16 | (reg(0xBE) & 0xFFFE)) & 0x7FFBE) + uint32_t(ab) * 0x40;
   auto w32 = [&](uint32_t wi) { return uint32_t(vr16((a + wi) * 2)) << 16 | vr16((a + wi + 1) * 2); };
   auto w16 = [&](uint32_t wi) { return uint32_t(vr16((a + wi) * 2)); };
@@ -289,51 +372,97 @@ void Vdp2::renderRbg(int y, Pix* line) {
   const int32_t Px = sx(w16(0x1A), 14), Py = sx(w16(0x1B), 14), Pz = sx(w16(0x1C), 14);
   const int32_t Cx = sx(w16(0x1E), 14), Cy = sx(w16(0x1F), 14), Cz = sx(w16(0x20), 14);
   const int32_t Mx = sx(w32(0x22) >> 6, 24), My = sx(w32(0x24) >> 6, 24);
-  const int32_t kx0 = sx(w32(0x26), 24), ky0 = sx(w32(0x28), 24);
+  r.kx0 = sx(w32(0x26), 24); r.ky0 = sx(w32(0x28), 24);
   const uint32_t KAst = w32(0x2A) >> 6;
-  const int32_t DKAst = sx(w32(0x2C) >> 6, 20), DKAx = sx(w32(0x2E) >> 6, 20);
+  const int32_t DKAst = sx(w32(0x2C) >> 6, 20);
+  r.DKAx = sx(w32(0x2E) >> 6, 20);
   const int32_t XstA = Xst + DXst * y, YstA = Yst + DYst * y;
-  const int32_t Xsp = int32_t((int64_t(M[0]) * (XstA - Px * 1024) + int64_t(M[1]) * (YstA - Py * 1024) + int64_t(M[2]) * (Zst - Pz * 1024)) >> 10);
-  const int32_t Ysp = int32_t((int64_t(M[3]) * (XstA - Px * 1024) + int64_t(M[4]) * (YstA - Py * 1024) + int64_t(M[5]) * (Zst - Pz * 1024)) >> 10);
-  const int32_t Xp0 = M[0] * (Px - Cx) + M[1] * (Py - Cy) + M[2] * (Pz - Cz) + Cx * 1024 + Mx;
-  const int32_t Yp = M[3] * (Px - Cx) + M[4] * (Py - Cy) + M[5] * (Pz - Cz) + Cy * 1024 + My;
-  const int32_t dX = (M[0] * DX + M[1] * DY) >> 10, dY = (M[3] * DX + M[4] * DY) >> 10;
+  r.Xsp = int32_t((int64_t(M[0]) * (XstA - Px * 1024) + int64_t(M[1]) * (YstA - Py * 1024) + int64_t(M[2]) * (Zst - Pz * 1024)) >> 10);
+  r.Ysp = int32_t((int64_t(M[3]) * (XstA - Px * 1024) + int64_t(M[4]) * (YstA - Py * 1024) + int64_t(M[5]) * (Zst - Pz * 1024)) >> 10);
+  r.Xp0 = M[0] * (Px - Cx) + M[1] * (Py - Cy) + M[2] * (Pz - Cz) + Cx * 1024 + Mx;
+  r.Yp = M[3] * (Px - Cx) + M[4] * (Py - Cy) + M[5] * (Pz - Cz) + Cy * 1024 + My;
+  r.dX = (M[0] * DX + M[1] * DY) >> 10;
+  r.dY = (M[3] * DX + M[4] * DY) >> 10;
   // coeficientes (KTCTL: bit 0 liga, bit 1 = 1 palavra, bits 3-2 = o que o coeficiente troca)
-  const uint8_t ktctl = uint8_t(reg(0xB4) >> (ab * 8));
-  const bool useCoeff = ktctl & 1, coeff1 = ktctl & 2;
-  const uint32_t KA = (uint32_t((reg(0xB6) >> (ab * 8)) & 7) << 26) + KAst + uint32_t(DKAst * y);
-  const bool ccOn = reg(0xEC) & 0x10;
-  const int ratio = reg(0x10C) & 31;
-  const uint8_t win = uint8_t(reg(0xD4));
+  r.ktctl = uint8_t(reg(0xB4) >> (ab * 8));
+  r.KA = (uint32_t((reg(0xB6) >> (ab * 8)) & 7) << 26) + KAst + uint32_t(DKAst * y);
+  return r;
+}
+
+// coeficiente do ponto x (bit 31 = transparente); sem tabela devolve 0
+uint32_t Vdp2::rotCoeff(const Rot& r, int x) const {
+  if (!(r.ktctl & 1)) return 0;
+  const bool one = r.ktctl & 2;
+  uint32_t off = (r.KA + uint32_t(r.DKAx * x)) >> 10;
+  if (!one) off <<= 1;
+  off &= 0x3FFFF;
+  if (one) {
+    const uint16_t tmp = vr16(off * 2);
+    return (uint32_t(sx(uint32_t(tmp) << 6, 21)) & 0x00FFFFFF) | uint32_t(tmp & 0x8000) << 16;
+  }
+  return uint32_t(vr16(off * 2)) << 16 | vr16(off * 2 + 2);
+}
+
+bool Vdp2::rotDot(const Rot& r, int x, uint32_t coeff, Dot& d) const {
+  int32_t kx = r.kx0, ky = r.ky0, Xp = r.Xp0;
+  if (r.ktctl & 1) {
+    if (coeff & 0x80000000u) return false;  // coeficiente transparente
+    const int32_t e = sx(coeff, 24);
+    switch ((r.ktctl >> 2) & 3) {
+      case 0: kx = ky = e; break;
+      case 1: kx = e; break;
+      case 2: ky = e; break;
+      default: Xp = e << 2; break;
+    }
+  }
+  const uint32_t ix = (uint32_t(Xp) + uint32_t((int64_t(kx) * int32_t(r.Xsp + r.dX * x)) >> 16)) >> 10;
+  const uint32_t iy = (uint32_t(r.Yp) + uint32_t((int64_t(ky) * int32_t(r.Ysp + r.dY * x)) >> 16)) >> 10;
+  return dot(r.t, ix, iy, d);
+}
+
+// RBG0 (which = 0) ou RBG1 (which = 1: parâmetro B, ocupa o lugar do NBG0 com os registradores dele)
+void Vdp2::renderRbg(int which, int y, Pix* line) {
+  const uint16_t bgon = reg(0x20);
+  if (!(bgon & (which ? 0x20 : 0x10))) return;
+  const int pri = which ? reg(0xF8) & 7 : reg(0xFC) & 7;
+  if (!pri) return;
+  // RPMD: 0 = A, 1 = B, 2 = A e, onde o coeficiente de A é transparente, B; 3 = escolhido pela janela de rotação
+  const int mode = which ? 1 : ((bgon & 0x20) ? 0 : reg(0xB0) & 3);
+  const bool needA = mode != 1, needB = mode >= 1;
+  Rot ra, rb;
+  if (needA) ra = rotSetup(0, y, false);
+  if (needB) rb = rotSetup(1, y, which == 1);
+  const int bit = which ? 0 : 4, layer = which ? L_NBG0 : L_RBG0;
+  const bool layerCc = reg(0xEC) & (1 << bit);
+  const int ratio = which ? reg(0x108) & 31 : reg(0x10C) & 31;
+  const uint8_t win = uint8_t(which ? reg(0xD0) : reg(0xD4));
+  const uint8_t rpw = uint8_t(reg(0xD6));
+  const uint16_t mz = reg(0x22);
+  const int hs = (!which && (mz & 0x10)) ? ((mz >> 8) & 0xF) + 1 : 1;
   const int W = outW;
   for (int x = 0; x < W; x++) {
-    int32_t kx = kx0, ky = ky0, Xp = Xp0;
-    if (useCoeff) {
-      uint32_t off = (KA + uint32_t(DKAx * x)) >> 10;
-      if (!coeff1) off <<= 1;
-      off &= 0x3FFFF;
-      uint32_t c;
-      if (coeff1) {
-        const uint16_t tmp = vr16(off * 2);
-        c = (uint32_t(sx(uint32_t(tmp) << 6, 21)) & 0x00FFFFFF) | uint32_t(tmp & 0x8000) << 16;
-      } else {
-        c = uint32_t(vr16(off * 2)) << 16 | vr16(off * 2 + 2);
+    const int mx = x - x % hs;
+    Dot d;
+    bool ok;
+    switch (mode) {
+      case 0: ok = rotDot(ra, mx, rotCoeff(ra, mx), d); break;
+      case 1: ok = rotDot(rb, mx, rotCoeff(rb, mx), d); break;
+      case 2: {
+        const uint32_t ca = rotCoeff(ra, mx);
+        ok = (ra.ktctl & 1) && (ca & 0x80000000u) ? rotDot(rb, mx, rotCoeff(rb, mx), d) : rotDot(ra, mx, ca, d);
+        break;
       }
-      if (c & 0x80000000u) continue;  // coeficiente transparente
-      const int32_t e = sx(c, 24);
-      switch ((ktctl >> 2) & 3) {
-        case 0: kx = ky = e; break;
-        case 1: kx = e; break;
-        case 2: ky = e; break;
-        default: Xp = e << 2; break;
-      }
+      default:
+        ok = windowed(rpw, mx, y) ? rotDot(rb, mx, rotCoeff(rb, mx), d) : rotDot(ra, mx, rotCoeff(ra, mx), d);
+        break;
     }
-    const uint32_t ix = (uint32_t(Xp) + uint32_t((int64_t(kx) * int32_t(Xsp + dX * x)) >> 16)) >> 10;
-    const uint32_t iy = (uint32_t(Yp) + uint32_t((int64_t(ky) * int32_t(Ysp + dY * x)) >> 16)) >> 10;
-    uint32_t rgb;
-    if (!dot(t, ix, iy, rgb)) continue;
+    if (!ok) continue;
     if (windowed(win, x, y)) continue;
-    line[W * L_RBG0 + x] = Pix{rgb, uint8_t(pri), uint8_t(ratio), uint8_t(L_RBG0), ccOn};
+    uint8_t p;
+    bool ccOn;
+    special(bit, pri, d, p, ccOn);
+    if (!p) continue;
+    line[W * layer + x] = Pix{d.rgb, p, uint8_t(ratio), uint8_t(layer), ccOn, d.isRgb, layerCc, false};
   }
 }
 
@@ -345,6 +474,7 @@ void Vdp2::renderSprite(int y, Pix* line) {
   const bool ccEnable = reg(0xEC) & 0x40;
   const int ccCond = (spctl >> 12) & 3, ccNum = (spctl >> 8) & 7;
   const uint8_t win = uint8_t(reg(0xD4) >> 8);
+  const uint16_t sdctl = reg(0xE2);
   int prio[8], ratio[8];
   for (int i = 0; i < 8; i++) {
     prio[i] = (reg(0xF0 + uint32_t(i / 2) * 2) >> ((i & 1) * 8)) & 7;
@@ -372,14 +502,15 @@ void Vdp2::renderSprite(int y, Pix* line) {
     }
     uint32_t rgb;
     int pr = 0, cc = 0;
+    bool isRgb = false, msb = false, selfShad = false, doShad = false;
     if (mixed && (src & 0x8000)) {
       if (type & 8) { if (!(src & 0xFF)) continue; }
+      else if (winEn && type >= 2 && type <= 7) { if (!(src & 0x7FFF)) continue; }
       rgb = rgb555(src);
+      isRgb = true;
     } else {
       if (type & 8) src &= 0xFF;
       if (!src) continue;
-      // tipos 2-7: bit 15 = janela de sprite (com SPWINEN) — o ponto vira janela e não aparece
-      if (winEn && type >= 2 && type <= 7 && (src & 0x8000)) { swin_[x] = 1; continue; }
       uint32_t dc;
       switch (type) {
         case 0x0: pr = (src >> 14) & 3; cc = (src >> 11) & 7; dc = src & 0x7FF; break;
@@ -402,22 +533,32 @@ void Vdp2::renderSprite(int y, Pix* line) {
       // sombra normal: o código mais alto menos 1 (0x7FE, 0x3FE...) escurece a camada de baixo
       static const uint16_t SHADOW[16] = {0x7FE, 0x7FE, 0x7FE, 0x7FE, 0x3FE, 0x7FE, 0x3FE, 0x1FE,
                                           0x7E, 0x3E, 0x3E, 0x3E, 0xFE, 0xFE, 0xFE, 0xFE};
-      if (dc == SHADOW[type]) { if (prio[pr]) shadow_[x] = 1; continue; }
+      // tipos 2-7: o bit 15 (SD) é a janela de sprite (com SPWINEN) ou a sombra por MSB
+      const bool sd = type >= 2 && type <= 7 && (src & 0x8000);
+      if (dc == SHADOW[type]) doShad = true;
+      else if (sd && winEn) { swin_[x] = 1; if (!(src & 0x7FFF)) continue; }
+      else if (sd) {
+        if (src & 0x7FFF) selfShad = true;          // o próprio sprite sai escurecido
+        else if (sdctl & 0x100) doShad = true;     // sombra transparente (TPSHDSL)
+        else continue;
+      }
       rgb = color(cao + dc);
+      msb = colorMsb(cao + dc);
     }
     const int p = prio[pr];
     if (!p) continue;
     if (windowed(win, x, y)) continue;
+    if (doShad) { shadow_[x] = uint8_t(p); continue; }   // não aparece: escurece o que estiver abaixo dele
     bool ccOn = ccEnable;
     if (ccOn) {
       switch (ccCond) {
         case 0: ccOn = p <= ccNum; break;
         case 1: ccOn = p == ccNum; break;
         case 2: ccOn = p >= ccNum; break;
-        default: ccOn = src & 0x8000; break;
+        default: ccOn = isRgb || msb; break;
       }
     }
-    line[W * L_SPRITE + x] = Pix{rgb, uint8_t(p), uint8_t(ratio[cc]), uint8_t(L_SPRITE), ccOn};
+    line[W * L_SPRITE + x] = Pix{rgb, uint8_t(p), uint8_t(ratio[cc]), uint8_t(L_SPRITE), ccOn, isRgb, ccEnable, selfShad};
   }
 }
 
@@ -433,7 +574,19 @@ void Vdp2::render() {
   }
   std::vector<Pix> layers(size_t(W) * 6);
   const uint16_t ccctl = reg(0xEC), clofen = reg(0x110), clofsl = reg(0x112), scrctl = reg(0x9A), sdctl = reg(0xE2);
-  const bool ccAdd = ccctl & 0x100;
+  const bool ccAdd = ccctl & 0x100, ccRatioBelow = ccctl & 0x200;
+  const bool cram0 = cramMode() == 0, hires = (regs[0] & 6) != 0;
+  const uint16_t lnclen = reg(0xE8);
+  static const int lceBit[7] = {5, 4, 0, 1, 2, 3, -1};  // LNCLEN: NBG0-3 bits 0-3, RBG0 4, sprite 5 (fundo: nunca)
+  // modos especiais da mistura (como no aparelho): gradação, estendido e o de alta resolução com CRAM 1/2
+  enum { SP_NONE, SP_GRAD, SP_EXCC, SP_HIRES } ;
+  int special = SP_NONE;
+  if (!hires) {
+    if (ccctl & 0x8000) { if (cram0) special = SP_GRAD; }
+    else if (ccctl & 0x400) special = SP_EXCC;
+  } else if (!cram0) {
+    special = SP_HIRES;
+  }
   int offs[2][3];
   for (int s = 0; s < 2; s++)
     for (int c = 0; c < 3; c++) {
@@ -456,7 +609,24 @@ void Vdp2::render() {
     ls[n].lsa = (uint32_t(reg(0xA0 + uint32_t(n) * 4) & 7) << 16 | (reg(0xA2 + uint32_t(n) * 4) & 0xFFFE));
   }
   const uint32_t zx0[2] = {ls[0].zx, ls[1].zx};
+  uint32_t mosY[4] = {};
   for (int y = 0; y < outH; y++) {
+    // janelas W0/W1: X fixo ou da tabela de janela de linha (LWTA: 2 palavras por linha, início e fim)
+    for (int w = 0; w < 2; w++) {
+      const uint32_t b = w ? 0xC8 : 0xC0;
+      int xs = reg(b) & 0x3FF, xe = reg(b + 4) & 0x3FF;
+      const uint16_t lw = reg(0xD8 + uint32_t(w) * 4);
+      if (lw & 0x8000) {
+        const uint32_t a = ((uint32_t(lw & 7) << 16 | (reg(0xDA + uint32_t(w) * 4) & 0xFFFE)) + uint32_t(y) * 2) * 2;
+        xs = vr16(a) & 0x3FF;
+        xe = vr16(a + 2) & 0x3FF;
+      }
+      if (xs >= 0x380) xs = 0;               // valores negativos da tabela (como no aparelho)
+      if (xe >= 0x380) { xs = 2; xe = 0; }
+      if (outW < 640) { xs >>= 1; xe >>= 1; }
+      winXs_[w] = xs;
+      winXe_[w] = xe;
+    }
     for (int n = 0; n < 2; n++) {
       const uint8_t sc = uint8_t(scrctl >> (n * 8));
       const int lss = (sc >> 4) & 3;
@@ -473,50 +643,95 @@ void Vdp2::render() {
       }
       if (!(sc & 8)) ls[n].zx = zx0[n];
     }
-    for (auto& p : layers) p = Pix{0, 0, 0, 0xFF, false};
+    for (auto& p : layers) p = Pix{0, 0, 0, 0xFF, false, false, false, false};
     renderSprite(dd ? y >> 1 : y, layers.data());
-    renderRbg(y, layers.data());
-    for (int n = 0; n < 4; n++) renderNbg(n, y, layers.data(), n < 2 ? &ls[n] : nullptr);
+    renderRbg(0, y, layers.data());
+    // mosaico vertical: o plano repete a linha do começo de cada bloco
+    const uint16_t mz = reg(0x22);
+    const int vs = ((mz >> 12) & 0xF) + 1;
+    const bool rbg1 = reg(0x20) & 0x20;   // RBG1 ligado: ocupa o NBG0 e desliga NBG1-3
+    if (rbg1) renderRbg(1, y, layers.data());
+    for (int n = 0; n < 4 && !rbg1; n++) {
+      const uint32_t cur = n < 2 ? ls[n].yAcc : uint32_t(y);
+      if (!(mz & (1 << n)) || y % vs == 0) mosY[n] = cur;
+      renderNbg(n, y, layers.data(), n < 2 ? &ls[n] : nullptr, mosY[n]);
+    }
     for (int n = 0; n < 2; n++) ls[n].yAcc += zy[n];
     const uint32_t back = backColor(y);
+    // tela de cor de linha (LCTA): uma cor da CRAM para a tela toda ou uma por linha
+    const uint16_t lcta = reg(0xA8);
+    const uint32_t lcAddr = ((uint32_t(lcta & 7) << 16 | reg(0xAA)) + ((lcta & 0x8000) ? uint32_t(y) : 0)) * 2;
+    const uint32_t lineRgb = color(vr16(lcAddr) & 0x7FF);
+    const Pix backPix{back, 0, uint8_t((reg(0x10E) >> 8) & 31), uint8_t(L_BACK), false, true, false, false};
+    const Pix linePix{lineRgb, 0, uint8_t(reg(0x10E) & 31), 7, false, false, bool(ccctl & 0x20), false};
+    const Pix nullPix{0, 0, 0, 8, false, false, false, false};
+    // gradação (CCCTL bit 15): a camada escolhida passa por um filtro de média na horizontal
+    static const int gradLayer[8] = {L_SPRITE, L_RBG0, L_NBG0, L_SPRITE, L_NBG1, L_NBG2, L_NBG3, L_SPRITE};
+    const int gl = gradLayer[(ccctl >> 12) & 7];
+    uint32_t blur[2] = {layers[size_t(W * gl)].rgb, layers[size_t(W * gl)].rgb};
     uint32_t* o = out + y * W;
     for (int x = 0; x < W; x++) {
-      // as duas camadas de cima (prioridade maior; empate pela ordem fixa)
-      const Pix* top = nullptr;
-      const Pix* sec = nullptr;
+      // as quatro camadas de cima (prioridade maior; empate pela ordem fixa); abaixo delas, o fundo
+      const Pix* st[4] = {&backPix, &nullPix, &nullPix, &nullPix};
+      int n = 0;
       for (int l = 0; l < 6; l++) {
         const Pix& p = layers[size_t(W * l + x)];
         if (!p.pri) continue;
-        if (!top || p.pri > top->pri) { sec = top; top = &p; }
-        else if (!sec || p.pri > sec->pri) sec = &p;
+        int k = std::min(n, 3);
+        if (n >= 4 && p.pri <= st[3]->pri) continue;
+        while (k > 0 && p.pri > st[k - 1]->pri) { st[k] = st[k - 1]; k--; }
+        st[k] = &p;
+        if (n < 4) n++;
       }
-      uint32_t rgb;
-      int layer;
-      if (!top) { rgb = back; layer = L_BACK; }
-      else {
-        rgb = top->rgb;
-        layer = top->layer;
-        if (top->ccOn) {
-          const uint32_t below = sec ? sec->rgb : back;
-          uint32_t r = 0;
-          for (int sh = 0; sh < 24; sh += 8) {
-            const int a = int((rgb >> sh) & 0xFF), b = int((below >> sh) & 0xFF);
-            const int c = ccAdd ? std::min(255, a + b) : (a * (32 - top->cc) + b * top->cc) / 32;
-            r |= uint32_t(c) << sh;
+      if (n < 4) { st[n] = &backPix; for (int k = n + 1; k < 4; k++) st[k] = &nullPix; }
+      const Pix* top = st[0];
+      uint32_t rgb = top->rgb;
+      const int layer = top->layer;
+      const uint32_t cur = layers[size_t(W * gl + x)].rgb;
+      const uint32_t gradRgb = avg(avg(blur[0], blur[1]), cur);
+      blur[0] = blur[1];
+      blur[1] = cur;
+      if (top->ccOn) {
+        const Pix* p2 = st[1];
+        const Pix* p3 = st[2];
+        const Pix* p4 = st[3];
+        uint32_t sec = p2->rgb;
+        uint8_t ratio2 = p2->cc;
+        if (special == SP_GRAD && (top->layer == gl || p2->layer == gl)) {
+          sec = gradRgb;
+        } else if (lceBit[layer] >= 0 && (lnclen & (1 << lceBit[layer]))) {   // a cor de linha entra como a segunda camada
+          p4 = p3; p3 = p2; p2 = &linePix;
+          sec = lineRgb;
+          ratio2 = linePix.cc;
+          if (special == SP_EXCC) {
+            if (cram0) sec = avg(sec, p3->layerCc ? (p3->rgb >> 1) & 0x7F7F7F : p3->rgb);
+            else if (p3->isRgb) sec = avg(sec, (p3->layerCc && p4->isRgb) ? avg(p3->rgb, p4->rgb) : p3->rgb);
           }
-          rgb = r;
+        } else if (special == SP_EXCC && p2->layerCc && (cram0 || p3->isRgb)) {
+          sec = avg(sec, p3->rgb);                   // estendido: a segunda já misturada com a terceira
         }
+        if (special == SP_HIRES && !p2->isRgb) sec = rgb;
+        uint32_t r = 0;
+        const int fr = 31 - (ccRatioBelow ? ratio2 : top->cc), sr = 32 - fr;   // proporção medida no aparelho
+        for (int sh = 0; sh < 24; sh += 8) {
+          const int a = int((rgb >> sh) & 0xFF), b = int((sec >> sh) & 0xFF);
+          const int c = ccAdd ? std::min(255, a + b) : (a * fr + b * sr) >> 5;
+          r |= uint32_t(c) << sh;
+        }
+        rgb = r;
       }
       // deslocamento de cor por camada (CLOFEN: NBG0-3 bits 0-3, RBG0 4, fundo 5, sprite 6)
       static const int bitOf[7] = {6, 4, 0, 1, 2, 3, 5};
       const int bit = bitOf[layer];
-      if (shadow_[x] && layer != L_SPRITE && (sdctl & (1 << bit))) rgb = (rgb >> 1) & 0x7F7F7F;
       if (clofen & (1 << bit)) {
-        const int s = (clofsl >> bit) & 1;
+        const int sl = (clofsl >> bit) & 1;
         uint32_t r = 0;
-        for (int c = 0; c < 3; c++) r |= uint32_t(std::clamp(int((rgb >> (8 * c)) & 0xFF) + offs[s][c], 0, 255)) << (8 * c);
+        for (int c = 0; c < 3; c++) r |= uint32_t(std::clamp(int((rgb >> (8 * c)) & 0xFF) + offs[sl][c], 0, 255)) << (8 * c);
         rgb = r;
       }
+      // sombra: o sprite de sombra precisa estar acima da camada de cima (SDCTL liga por camada); MSB escurece o próprio
+      if (top->selfShad || (shadow_[x] && shadow_[x] >= top->pri && layer != L_SPRITE && (sdctl & (1 << bit))))
+        rgb = (rgb >> 1) & 0x7F7F7F;
       o[x] = 0xFF000000u | rgb;
     }
   }

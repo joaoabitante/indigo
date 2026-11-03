@@ -9,6 +9,7 @@
         .equ VDL,   0x000F0000
         .equ CCBS,  0x000E0000
         .equ PAD,   0x000FFE00
+        .equ PADSRC, 0x000FFE40
         .equ SINAL, 0x000FFF00
         .equ BRANCO, 0x000E8000
         .equ BASEF, 0x3F660000
@@ -39,16 +40,18 @@ inicio:
         mov     r8, #0                  @ ângulo
 laco:
         bl      espera_quadro
-        @ controle: dois bytes do PBUS lidos no quadro anterior; pede a próxima leitura
+        @ controle: o DMA do PBUS (canal 23) lido no quadro anterior; o controle 1 vem na 2ª palavra.
+        @ Pede a próxima leitura: destino, contagem (12 bytes - 4), origem e o bit 15 do MCTL.
         ldr     r0, =PAD
-        ldrb    r9, [r0, #0]
+        ldrb    r9, [r0, #4]
         ldr     r1, =MADAM
         str     r0, [r1, #0x570]
-        mov     r2, #4
+        mov     r2, #8
         str     r2, [r1, #0x574]
-        ldr     r1, =CLIO
-        mov     r2, #0x80000000
-        str     r2, [r1, #0x304]
+        ldr     r2, =PADSRC
+        str     r2, [r1, #0x578]
+        mov     r2, #0xE000
+        str     r2, [r1, #8]
         @ direcional (bits 4..1 = baixo, cima, direita, esquerda) ou quique sozinho
         tst     r9, #0x1E
         beq     quica
@@ -78,7 +81,7 @@ limites:
         movge   r5, #208
         mvnge   r7, #0
         @ botão A: marca e muda o tom do DSP
-        ldr     r0, =CLIO + 0x3040      @ EI[0x10] = passo da fase
+        ldr     r0, =CLIO + 0x3440      @ EI[0x10] = passo da fase
         tst     r9, #0x01
         ldreq   r1, =654
         ldrne   r1, =1308
@@ -92,7 +95,7 @@ limites:
         bl      monta_cels
         ldr     r1, =MADAM
         ldr     r0, =CCBS
-        str     r0, [r1, #0x5A0]
+        str     r0, [r1, #0x5A4]
         str     r0, [r1, #0x100]
         b       laco
 
@@ -232,11 +235,15 @@ monta_cels:
         str     r0, [r10, #56]
         ldmfd   sp!, {r4-r11, pc}
 
+@ SPORT: cor (0x2000) e preenchimento das 75 páginas da tela (0x4000 + 4 * página, máscara inteira)
 limpa_tela:
         ldr     r1, =SPORT
+        add     r1, r1, #0x2000         @ deslocamento imediato do ARM só vai até 4095
+        str     r0, [r1]
+        add     r1, r1, #0x2000
+        mvn     r3, #0
         mov     r2, #75
-1:      str     r0, [r1]
-        add     r1, r1, #2048
+1:      str     r3, [r1], #4
         subs    r2, r2, #1
         bne     1b
         mov     pc, lr
@@ -254,31 +261,32 @@ espera_quadro:
         beq     2b
         mov     pc, lr
 
-@ DSP: fase += passo (EI 0x10); saída = +0x1800 ou -0x1800 conforme o sinal da fase
+@ DSP (conjunto de instruções do DSPP): fase += passo (EI 0x10); saída = +0x1800 ou -0x1800 conforme o sinal
+@ da fase. Programa carregado uma instrução por palavra (CLIO 0x2000), DSP reiniciado e ligado (0x17FC).
 dsp_init:
-        ldr     r0, =CLIO + 0x1800
+        ldr     r0, =CLIO + 0x2000
         ldr     r1, =microcodigo
         mov     r2, #16
 1:      ldr     r3, [r1], #4
         str     r3, [r0], #4
         subs    r2, r2, #1
         bne     1b
-        ldr     r0, =CLIO + 0x3040
+        ldr     r0, =CLIO + 0x3440
         ldr     r1, =654
         str     r1, [r0]
-        ldr     r0, =CLIO + 0x17E8
-        mov     r1, #1
+        ldr     r0, =CLIO + 0x17FC
+        mov     r1, #5                  @ reinicia e roda
         str     r1, [r0]
         mov     pc, lr
 
         .ltorg
         .balign 4
 microcodigo:
-        .word   0x6520, 0x0100, 0x0010, 0x0100   @ [0x100] = [0x100] + [0x010]
-        .word   0xA80B                           @ negativo: vai para 11
-        .word   0xC3F0, 0x1800, 0xC3F1, 0x1800   @ DAC = +0x1800
-        .word   0x9000, 0x0000                   @ SLEEP
-        .word   0xC3F0, 0xE800, 0xC3F1, 0xE800   @ DAC = -0x1800
-        .word   0x9000                           @ SLEEP
+        .word   0x6520, 0x8100, 0x8010, 0x8100   @ [0x100] = [0x100] + [0x010]  (A+B, 3 endereços)
+        .word   0xA80B                           @ negativo (N): vai para 11
+        .word   0x9BFE, 0xE300, 0x9BFF, 0xE300   @ MOVED: DAC = +0x1800 (imediato deslocado)
+        .word   0x8380, 0x0000                   @ SLEEP
+        .word   0x9BFE, 0xFD00, 0x9BFF, 0xFD00   @ DAC = -0x1800
+        .word   0x8380                           @ SLEEP
 
         .include "t9b_3do_dados.inc"

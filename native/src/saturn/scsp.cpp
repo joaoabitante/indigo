@@ -1,9 +1,12 @@
-// SCSP do Saturn (Yamaha YMF292): 32 canais de PCM (8 ou 16 bits, com laço), envelope ADSR, volume e pan
-// diretos, temporizadores A/B/C, interrupções do 68000 e do SH-2 mestre, DMA interno e a RAM de som de 512 KB
-// do 68000 (src/md/m68k.h).
+// SCSP do Saturn (Yamaha YMF292): 32 canais de PCM (8 ou 16 bits, com laço), envelope ADSR com o relógio e as
+// curvas do chip (ataque exponencial, escala de tecla, EGHOLD, LPSLNK), LFO de altura e de amplitude (4 formas de
+// onda), FM pela pilha de som, ruído, volume e pan diretos, a entrada externa (CD) pelos canais 16/17,
+// temporizadores A/B/C, interrupções do 68000 e do SH-2 mestre, DMA interno e a RAM de som de 512 KB do 68000
+// (src/md/m68k.h). Envelope, LFO, atenuação e volumes seguem o comportamento medido no aparelho e descrito no
+// Mednafen (ver TERCEIROS.md).
 //
-// Fora daqui (ainda): modulação FM entre canais, LFO, o DSP de efeitos (a saída de efeito entra direto, sem eco)
-// e MIDI. O envelope usa uma curva aproximada (tempo dobra a cada 4 passos de taxa), não a tabela do chip.
+// O DSP de efeitos roda o programa de 128 passos por amostra (eco/reverberação no anel da RAM de som); a saída
+// de efeito de cada canal é o EFREG do DSP. Fora daqui (ainda): MIDI.
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -13,20 +16,14 @@
 namespace indigo::saturn {
 
 namespace {
-// ganho por atenuação (1/32 de 3 dB por passo de 0,09375 dB) e passo do envelope por taxa efetiva
-struct Tables {
-  int32_t gain[4096];   // Q15
-  int32_t step[64];     // passo do envelope por amostra, Q16 em unidades de atenuação
-  Tables() {
-    for (int i = 0; i < 4096; i++) gain[i] = int32_t(std::lround(32767.0 * std::pow(10.0, -i * 0.09375 / 20.0)));
-    for (int r = 0; r < 64; r++) {
-      if (r < 2) { step[r] = 0; continue; }
-      const double samples = std::pow(2.0, (62 - r) / 4.0) * 4.0;  // tempo para o envelope todo
-      step[r] = int32_t(std::min(1024.0 * 65536.0, 1024.0 * 65536.0 / samples));
-    }
-  }
-};
-const Tables& tables() { static const Tables t; return t; }
+// volume de um envio (nível 0-7 e pan de 5 bits) em 1.14: cada passo de nível dobra; o pan atenua um lado
+inline void panVolume(int level, int pan, int32_t& l, int32_t& r) {
+  const int32_t base = level ? 0x80 << level : 0;
+  int32_t p = base >> ((pan & 0xF) >> 1);
+  if (pan & 1) p -= p >> 2;
+  if ((pan & 0xF) == 0xF) p = 0;
+  if (pan & 0x10) { l = base; r = p; } else { l = p; r = base; }
+}
 }  // namespace
 
 Scsp::Scsp(System& s) : sys_(s) {}
@@ -46,6 +43,7 @@ void Scsp::reset() {
   cycleDebt_ = 0;
   lfsr_ = 1;
   std::memset(delay_, 0, sizeof delay_);
+  dsp_ = Dsp{};
   cpuOn = false;
   cpu.reset();
   cpu.ipl = 0;
@@ -70,11 +68,11 @@ void Scsp::keyOnOff() {
     if (kb && !s.on) {
       s.on = true;
       s.pos = 0;
-      s.back = false;
+      s.inLoop = false;
+      s.rev = false;
       s.phase = 0;
-      s.env = 0x3FF;
-      s.envAcc = 0;
-      if ((s.r[4] & 31) >= 31) s.env = 0;
+      // ataque instantâneo (taxa + escala >= 32) começa no máximo; os outros, em 0x280
+      s.env = (s.r[4] & 31) + keyScale(s) >= 0x20 ? 0 : 0x280;
     } else if (!kb && s.on) {
       s.on = false;
       s.phase = 3;
@@ -95,7 +93,7 @@ uint16_t Scsp::readReg(uint32_t off) {
       case 0x408: {               // monitor de canal: CA (endereço), fase e nível do envelope
         const int n = (common_[4] >> 11) & 31;
         const Slot& s = slot_[n];
-        return uint16_t((((s.pos >> 12) >> 12) & 0xF) << 7 | (s.phase & 3) << 5 | ((s.env >> 5) & 31));
+        return uint16_t((((s.pos >> 14) >> 12) & 0xF) << 7 | (s.phase & 3) << 5 | ((s.env >> 5) & 31));
       }
       case 0x41E: return scieb_;
       case 0x420: return scipd_;
@@ -105,6 +103,7 @@ uint16_t Scsp::readReg(uint32_t off) {
     }
   }
   if (off >= 0x600 && off < 0x680) return stack_[(off - 0x600) >> 1];
+  if (off >= 0x700 && off < 0xEE4) return dspRead(off);
   return 0;
 }
 
@@ -170,6 +169,132 @@ void Scsp::writeReg(uint32_t off, uint16_t v, uint16_t mask) {
     }
   }
   if (off >= 0x600 && off < 0x680) stack_[(off - 0x600) >> 1] = uint16_t((stack_[(off - 0x600) >> 1] & ~mask) | (v & mask));
+  if (off >= 0x700 && off < 0xEE4) dspWrite(off, v, mask);
+}
+
+// ------------------------------------------------------------------------------------------------ DSP
+namespace {
+inline int32_t sext(uint32_t v, int bits) { return int32_t(v << (32 - bits)) >> (32 - bits); }
+// formato de ponto flutuante do anel (16 bits): sinal, expoente de 4 bits e 11 de mantissa
+inline uint32_t dspFloatToInt(uint16_t in) {
+  const uint32_t sign = uint32_t(int32_t((in & 0x8000) << 16) >> 1);
+  const uint32_t exp = (in >> 11) & 0xF;
+  uint32_t r = in & 0x7FF;
+  if (exp < 12) r |= 0x800;
+  r <<= 11 + 8;
+  r ^= sign;
+  return uint32_t(int32_t(r) >> (8 + std::min<uint32_t>(11, exp)));
+}
+inline uint16_t intToDspFloat(uint32_t in) {
+  const uint32_t s8 = in << 8;
+  const uint32_t sign = uint32_t(int32_t(s8) >> 31);
+  const uint32_t x = ((s8 ^ sign) << 1) | (1u << 19);
+  uint32_t exp = 0;
+  while (exp < 32 && !(x & (0x80000000u >> exp))) exp++;
+  const uint32_t sh = exp - (exp == 12 ? 1 : 0);
+  uint32_t r = uint32_t(int32_t(s8) >> (19 - sh));
+  r &= 0x87FF;
+  r |= exp << 11;
+  return uint16_t(r);
+}
+}  // namespace
+
+uint16_t Scsp::dspRead(uint32_t off) const {
+  if (off < 0x780) return uint16_t(dsp_.coef[(off - 0x700) >> 1] << 3);
+  if (off < 0x7C0) return dsp_.madrs[(off - 0x780) >> 1];
+  if (off >= 0x800 && off < 0xC00) return dsp_.mprog[(off - 0x800) >> 1];
+  if (off >= 0xC00 && off < 0xE00) { const uint32_t t = uint32_t(dsp_.temp[(off - 0xC00) >> 2]); return uint16_t((off & 2) ? (t >> 8) & 0xFFFF : t & 0xFF); }
+  if (off >= 0xE00 && off < 0xE80) { const uint32_t t = uint32_t(dsp_.mems[(off - 0xE00) >> 2]); return uint16_t((off & 2) ? (t >> 8) & 0xFFFF : t & 0xFF); }
+  if (off >= 0xE80 && off < 0xEC0) { const uint32_t t = dsp_.mixs[(off - 0xE80) >> 2]; return uint16_t((off & 2) ? (t >> 4) & 0xFFFF : t & 0xF); }
+  if (off >= 0xEC0 && off < 0xEE0) return dsp_.efreg[(off - 0xEC0) >> 1];
+  if (off >= 0xEE0) return uint16_t(off & 2 ? exr_ : exl_);
+  return 0;
+}
+
+void Scsp::dspWrite(uint32_t off, uint16_t v, uint16_t mask) {
+  auto mix = [&](uint16_t old) { return uint16_t((old & ~mask) | (v & mask)); };
+  if (off < 0x780) { uint16_t& c = dsp_.coef[(off - 0x700) >> 1]; c = uint16_t(mix(uint16_t(c << 3)) >> 3); return; }
+  if (off < 0x7C0) { uint16_t& m = dsp_.madrs[(off - 0x780) >> 1]; m = mix(m); return; }
+  if (off >= 0x800 && off < 0xC00) {
+    uint16_t& w = dsp_.mprog[(off - 0x800) >> 1];
+    w = mix(w);
+    dsp_.active = false;
+    for (uint16_t x : dsp_.mprog) if (x) { dsp_.active = true; break; }
+    return;
+  }
+  auto part = [&](uint32_t cur, int lowBits) -> uint32_t {   // palavra baixa: lowBits bits; alta: os 16 de cima
+    if (off & 2) return (cur & ((1u << lowBits) - 1)) | uint32_t(mix(uint16_t(cur >> lowBits))) << lowBits;
+    return (cur & ~((1u << lowBits) - 1)) | (mix(uint16_t(cur)) & ((1u << lowBits) - 1));
+  };
+  if (off >= 0xC00 && off < 0xE00) { int32_t& t = dsp_.temp[(off - 0xC00) >> 2]; t = sext(part(uint32_t(t), 8) & 0xFFFFFF, 24); return; }
+  if (off >= 0xE00 && off < 0xE80) { int32_t& t = dsp_.mems[(off - 0xE00) >> 2]; t = sext(part(uint32_t(t), 8) & 0xFFFFFF, 24); return; }
+  if (off >= 0xE80 && off < 0xEC0) { uint32_t& t = dsp_.mixs[(off - 0xE80) >> 2]; t = part(t, 4) & 0xFFFFF; return; }
+  if (off >= 0xEC0 && off < 0xEE0) { uint16_t& e = dsp_.efreg[(off - 0xEC0) >> 1]; e = mix(e); return; }
+}
+
+// um quadro de som do DSP: os 128 passos (multiplicação, soma, deslocamento, TEMP, MEMS, EFREG e o anel)
+void Scsp::dspRun() {
+  Dsp& d = dsp_;
+  const uint32_t rbp = common_[1] & 0x7F, rbl = (common_[1] >> 7) & 3;
+  for (int step = 0; step < 128; step++) {
+    const uint64_t in = uint64_t(d.mprog[step * 4]) << 48 | uint64_t(d.mprog[step * 4 + 1]) << 32 |
+                        uint64_t(d.mprog[step * 4 + 2]) << 16 | d.mprog[step * 4 + 3];
+    auto bit = [&](int b) { return bool((in >> b) & 1); };
+    const unsigned masa = (in >> 2) & 0x1F, cra = (in >> 9) & 0x3F, ewa = (in >> 24) & 0xF, iwa = (in >> 32) & 0x1F;
+    const unsigned ira = (in >> 38) & 0x3F, ysel = (in >> 45) & 3, twa = (in >> 48) & 0x7F, tra = (in >> 56) & 0x7F;
+    const bool shft0 = bit(20), shft1 = bit(21);
+    // entrada: MEMS, MIXS ou a entrada externa (CD)
+    if (ira & 0x20) {
+      if (ira & 0x10) { if (!(ira & 0xE)) d.inputs = uint32_t(int32_t(ira & 1 ? exr_ : exl_) << 8); }
+      else d.inputs = uint32_t(sext(d.mixs[ira & 0xF], 20) << 4);
+    } else {
+      d.inputs = uint32_t(d.mems[ira & 0x1F]);
+    }
+    const int32_t inputs = int32_t(d.inputs);
+    const uint16_t yin = (ysel & 2) ? ((ysel & 1) ? uint16_t((d.y >> 4) & 0xFFF) : uint16_t((d.y >> 11) & 0x1FFF))
+                                    : ((ysel & 1) ? d.coef[cra] : d.frc);
+    if (bit(19)) d.y = uint32_t(inputs) & 0xFFFFFF;
+    int32_t so = int32_t(uint32_t(sext(d.sft, 26)) << (shft0 ^ shft1));
+    if (!shft1) {
+      if (so > 0x7FFFFF) so = 0x7FFFFF;
+      else if (so < -0x800000) so = 0x800000;
+    }
+    so = sext(uint32_t(so), 24);
+    if (bit(22)) d.frc = (shft0 && shft1) ? uint16_t(so & 0xFFF) : uint16_t((so >> 11) & 0x1FFF);
+    {
+      const int32_t temp = d.temp[(tra + d.mdecCt) & 0x7F];
+      const int32_t x = bit(47) ? inputs : temp;
+      const uint32_t prod = uint32_t((int64_t(sext(yin, 13)) * x) >> 12);
+      uint32_t sga = bit(16) ? d.sft : uint32_t(temp);
+      if (bit(18)) sga = uint32_t(-int32_t(sga));
+      if (bit(17)) sga = 0;
+      d.sft = (prod + sga) & 0x3FFFFFF;
+    }
+    if (bit(28)) d.efreg[ewa] = uint16_t(so >> 8);
+    if (bit(55)) d.temp[(twa + d.mdecCt) & 0x7F] = so;
+    if (bit(37)) d.mems[iwa] = int32_t(d.readValue);
+    // acesso à RAM de som pedido no passo anterior
+    if (d.readPending) {
+      const uint32_t a = (d.rwAddr & 0x3FFFF) * 2;
+      const uint16_t w = (d.rwAddr & 0x40000) ? 0 : uint16_t(ram[a] << 8 | ram[a + 1]);
+      d.readValue = d.readPending == 2 ? uint32_t(int32_t(int16_t(w)) << 8) : dspFloatToInt(w);
+      d.readPending = 0;
+    } else if (d.writePending) {
+      if (!(d.rwAddr & 0x40000)) { const uint32_t a = (d.rwAddr & 0x3FFFF) * 2; ram[a] = uint8_t(d.writeValue >> 8); ram[a + 1] = uint8_t(d.writeValue); }
+      d.writePending = false;
+    }
+    {
+      uint16_t addr = uint16_t(d.madrs[masa] + (bit(0) ? 1 : 0));
+      if (bit(1)) addr = uint16_t(addr + sext(d.adrs, 12));
+      if (!bit(31)) { addr = uint16_t(addr + d.mdecCt); addr &= uint16_t((0x2000u << rbl) - 1); }
+      d.rwAddr = (addr + (rbp << 12)) & 0x7FFFF;
+      if (bit(29)) d.readPending = bit(8) ? 2 : 1;
+      if (bit(30)) { d.writePending = true; d.writeValue = bit(8) ? uint16_t(so >> 8) : intToDspFloat(uint32_t(so)); }
+    }
+    if (bit(23)) d.adrs = (shft0 && shft1) ? uint16_t((so >> 12) & 0xFFF) : uint16_t((inputs >> 16) & 0xFFF);
+  }
+  if (!d.mdecCt) d.mdecCt = uint16_t(0x2000u << rbl);
+  d.mdecCt--;
 }
 
 void Scsp::timersStep() {
@@ -190,98 +315,172 @@ void Scsp::timersStep() {
   updateIrq();
 }
 
+// escala de tecla (KRS): a taxa do envelope sobe com a oitava; 0xF desliga
+int Scsp::keyScale(const Slot& s) const {
+  const int krs = (s.r[5] >> 10) & 0xF;
+  if (krs == 0xF) return 0;
+  const int oct = int((s.r[8] >> 11) & 0xF) - (((s.r[8] >> 11) & 0x8) ? 16 : 0);
+  return std::clamp(krs + oct, 0, 0xF);
+}
+
+// envelope: o relógio do chip conta amostras; taxas altas andam todo passo, as baixas a cada 2^n amostras.
+// Ataque soma ~nível >> n (curva exponencial), os decaimentos somam 16 >> n.
+void Scsp::envStep(Slot& s) {
+  const int ks = keyScale(s);
+  const int rates[4] = {s.r[4] & 31, (s.r[4] >> 6) & 31, (s.r[4] >> 11) & 31, s.r[5] & 31};
+  const int raw = rates[s.phase & 3];
+  const int rate = std::min(0x1F, raw + ks);
+  const uint32_t sc = sampleCount_, scxc = (sc ^ (sc - 1)) & (sc ^ 1);
+  const int wbt = (0x18 - std::min(0x18, rate)) >> 1;
+  const int adj = (rate < 0x18) ? (rate & 1) : 0;
+  bool clock = raw && (((scxc | (scxc >> adj)) >> (wbt + adj)) & 1);
+  if (s.phase == 0 && raw + ks >= 0x20) clock = false;
+  const int cache = s.env;
+  if (clock) {
+    const int32_t inc = s.phase == 0 ? ~cache : 16;
+    const int emax = std::max(0x18, std::min(0x1E, rate));
+    const int sh = ((0x20 - emax) >> 1) + (emax & 1 & int(sc >> (wbt + 1)));
+    s.env = std::clamp(cache + (inc >> sh), 0, 0x3FF);
+  }
+  if (s.phase == 1) {
+    if ((cache >> 5) == ((s.r[5] >> 5) & 31)) s.phase = 2;
+  } else if (s.phase == 0) {
+    const bool lpslnk = s.r[5] & 0x4000;
+    if ((lpslnk && s.inLoop) || (!lpslnk && cache == 0)) s.phase = 1;
+  }
+}
+
 int16_t Scsp::slotStep(int n, int32_t& outL, int32_t& outR) {
   Slot& s = slot_[n];
-  if (s.phase == 3 && s.env >= 0x3FF) return 0;
-  const auto& T = tables();
   const uint16_t* r = s.r;
-  // envelope
-  const int ar = r[4] & 31, d1r = (r[4] >> 6) & 31, d2r = (r[4] >> 11) & 31, rr = r[5] & 31, dl = (r[5] >> 5) & 31;
-  int rate = 0;
-  switch (s.phase) {
-    case 0: rate = ar; break;
-    case 1: rate = d1r; break;
-    case 2: rate = d2r; break;
-    default: rate = rr; break;
-  }
-  s.envAcc += T.step[std::min(63, rate * 2)];
-  const int d = s.envAcc >> 16;
-  s.envAcc &= 0xFFFF;
-  if (s.phase == 0) {
-    s.env -= d * 4;
-    if (s.env <= 0) { s.env = 0; s.phase = 1; }
-  } else {
-    s.env = std::min(0x3FF, s.env + d);
-    if (s.phase == 1 && s.env >= dl << 5) s.phase = 2;
-  }
-  // amostra
-  const bool pcm8 = r[0] & 0x10;
-  const uint32_t sa = (uint32_t(r[0] & 0xF) << 16 | r[1]) & 0xFFFFF;
-  const uint32_t lsa = r[2], lea = r[3];
-  const int loop = (r[0] >> 5) & 3;
-  // modulação (FM): a soma de duas saídas da pilha de som desloca a leitura da onda
-  int32_t mod = 0;
-  const int mdl = (r[7] >> 12) & 0xF;
-  if (mdl > 4) {
-    const uint32_t g = sampleCount_ * 32 + uint32_t(n);
-    const int32_t m = int16_t(stack_[(g + ((r[7] >> 6) & 0x3F)) & 63]) + int16_t(stack_[(g + (r[7] & 0x3F)) & 63]);
-    mod = (m * 64) >> (16 - mdl);  // em 1/64 de amostra
-  }
-  const int32_t pos6 = int32_t((s.pos >> 6) & 0x3F) + (mod & 0x3F);  // fração para a interpolação
-  const uint32_t idx = (s.pos >> 12) + uint32_t(mod >> 6) + uint32_t(pos6 >> 6);
-  const int32_t frac = pos6 & 0x3F;
-  int32_t smp;
-  auto pcmAt = [&](uint32_t i) -> int32_t {
-    if (pcm8) return int32_t(int8_t(ram[(sa + i) & 0x7FFFF])) << 8;
-    const uint32_t a = (sa + i * 2) & 0x7FFFE;
-    return int16_t(ram[a] << 8 | ram[a + 1]);
-  };
-  switch ((r[0] >> 7) & 3) {
-    case 0: {
-      // interpolação linear entre a amostra atual e a seguinte (dentro do laço)
-      const uint32_t nxt = (idx + 1 > lea && ((r[0] >> 5) & 3)) ? lsa : idx + 1;
-      smp = (pcmAt(idx) * (64 - frac) + pcmAt(nxt) * frac) >> 6;
-      break;
+  // LFO (r9): LFORE, LFOF, PLFOWS/PLFOS (altura), ALFOWS/ALFOS (amplitude)
+  const uint16_t lr = r[9];
+  int plfo = 0;
+  {
+    const int ps = (lr >> 5) & 7;
+    if (ps) {
+      switch ((lr >> 8) & 3) {
+        case 0: plfo = int8_t(s.lfoCount & ~1); break;
+        case 1: plfo = int8_t((s.lfoCount & 0x80) ? 0x80 : 0x7E); break;
+        case 2: plfo = int8_t(((s.lfoCount & 0x3F) ^ ((s.lfoCount & 0x40) ? 0x3F : 0) ^ ((s.lfoCount & 0x80) ? 0x7F : 0)) << 1); break;
+        default: plfo = int8_t(lfsr_ & 0xFE); break;
+      }
+      plfo >>= (7 - ps);
+      plfo = ((0x40 ^ ((r[8] & 0x3FF) >> 4)) * plfo) >> 6;
     }
-    case 1:  // ruído
-      lfsr_ = (lfsr_ >> 1) ^ (uint32_t(-(int32_t(lfsr_ & 1))) & 0xB400u);
-      smp = int16_t(lfsr_);
-      break;
-    default: smp = 0; break;
   }
-  static const uint16_t SBX[4] = {0, 0x7FFF, 0x8000, 0xFFFF};
-  smp = int16_t(uint16_t(smp) ^ SBX[(r[0] >> 9) & 3]);
-  // passo: (1024 + FNS) * 2^OCT / 1024 amostras por amostra de saída
-  const int oct = int((r[8] >> 11) & 0xF) - (((r[8] >> 11) & 0x8) ? 16 : 0);
-  uint32_t inc = (0x400u | (r[8] & 0x3FF)) << 2;
-  inc = oct >= 0 ? inc << oct : inc >> -oct;
-  s.pos += inc;
-  if ((s.pos >> 12) > lea) {
-    if (loop == 0) { s.pos = lea << 12; s.phase = 3; s.env = 0x3FF; s.on = false; }
-    else s.pos = (lsa << 12) + (s.pos - ((lea + 1) << 12));
-    if ((s.pos >> 12) > lea) s.pos = lsa << 12;
+  envStep(s);
+  int32_t smp = 0;
+  const bool silent = s.phase == 3 && s.env >= 0x3FF;
+  if (!silent) {
+    const bool pcm8 = r[0] & 0x10;
+    const uint32_t sa = (uint32_t(r[0] & 0xF) << 16 | r[1]) & 0xFFFFF;
+    const uint32_t lsa = r[2], lea = r[3];
+    const int loop = (r[0] >> 5) & 3;
+    if (!s.inLoop && (s.pos >> 14) >= lsa) s.inLoop = true;
+    // modulação (FM): a soma de duas saídas da pilha de som desloca a leitura da onda
+    int32_t mod = 0;
+    const int mdl = (r[7] >> 12) & 0xF;
+    if (mdl > 4) {
+      const uint32_t g = sampleCount_ * 32 + uint32_t(n);
+      const int32_t m = int16_t(stack_[(g + ((r[7] >> 6) & 0x3F)) & 63]) + int16_t(stack_[(g + (r[7] & 0x3F)) & 63]);
+      mod = (m * 64) >> (16 - mdl);  // em 1/64 de amostra
+    }
+    const int32_t pos6 = int32_t((s.pos >> 8) & 0x3F) + (mod & 0x3F);  // fração para a interpolação
+    const uint32_t idx = (s.pos >> 14) + uint32_t(mod >> 6) + uint32_t(pos6 >> 6);
+    const int32_t frac = pos6 & 0x3F;
+    auto pcmAt = [&](uint32_t i) -> int32_t {
+      if (pcm8) return int32_t(int8_t(ram[(sa + i) & 0x7FFFF])) << 8;
+      const uint32_t a = (sa + i * 2) & 0x7FFFE;
+      return int16_t(ram[a] << 8 | ram[a + 1]);
+    };
+    switch ((r[0] >> 7) & 3) {
+      case 0: {
+        // interpolação linear entre a amostra atual e a seguinte (dentro do laço)
+        const uint32_t nxt = (idx + 1 > lea && loop) ? (loop == 1 ? lsa : lea) : idx + 1;
+        smp = (pcmAt(idx) * (64 - frac) + pcmAt(nxt) * frac) >> 6;
+        break;
+      }
+      case 1: smp = int16_t(uint16_t(lfsr_ << 8)); break;   // ruído
+      default: smp = 0; break;
+    }
+    static const uint16_t SBX[4] = {0, 0x7FFF, 0x8000, 0xFFFF};
+    smp = int16_t(uint16_t(smp) ^ SBX[(r[0] >> 9) & 3]);
+    // passo: ((1024 + FNS) + PLFO) * 2^OCT / 1024 amostras por amostra de saída (fração de 14 bits)
+    const int oct = int((r[8] >> 11) & 0xF) - (((r[8] >> 11) & 0x8) ? 16 : 0);
+    const int32_t f = int32_t(0x400 | (r[8] & 0x3FF)) + plfo;
+    const uint32_t step = uint32_t((int64_t(f) << (oct + 8)) >> 4);
+    // LPCTL: 0 sem laço, 1 para frente, 2 para trás (LEA -> LSA, de novo), 3 alternado (vai e volta)
+    const int64_t lo = int64_t(lsa) << 14, hi = int64_t(lea + 1) << 14;
+    if (!s.rev) {
+      s.pos += step;
+      if ((s.pos >> 14) > lea) {
+        const int64_t over = int64_t(s.pos) - hi;
+        if (loop == 0) { s.pos = lea << 14; s.phase = 3; s.env = 0x3FF; s.on = false; }
+        else if (loop == 1) s.pos = uint32_t(lo + over);
+        else { s.rev = true; s.pos = uint32_t(std::max(lo, hi - 1 - over)); }
+        if ((s.pos >> 14) > lea) s.pos = lsa << 14;
+      }
+    } else {
+      const int64_t p = int64_t(s.pos) - int64_t(step);
+      if (p < lo) {
+        const int64_t under = lo - p;
+        if (loop == 3) { s.rev = false; s.pos = uint32_t(std::min(hi - 1, lo + under)); }
+        else s.pos = uint32_t(std::max(lo, hi - 1 - under));
+        if (loop < 2) s.rev = false;   // o programa trocou o LPCTL no meio
+      } else {
+        s.pos = uint32_t(p);
+      }
+    }
   }
-  // volume: envelope + TL (SDIR = sem envelope nem TL); saída direta (ou a de efeito, sem o DSP) com pan
-  const int tl = r[6] & 0xFF;
-  const int att = (r[6] & 0x100) ? 0 : s.env + tl * 4;
-  if (att > 0x3FF) return 0;
-  int32_t v = (smp * T.gain[att]) >> 15;
-  s.out = int16_t(v);
-  int sdl = (r[0xB] >> 13) & 7, pan = (r[0xB] >> 8) & 31;
-  if (!sdl) { sdl = (r[0xB] >> 5) & 7; pan = r[0xB] & 31; }
-  if (!sdl) return s.out;
-  v >>= (7 - sdl);
-  const int pa = (pan & 0xF) == 0xF ? 4095 : (pan & 0xF) * 32;  // 3 dB por passo
-  const int32_t att2 = T.gain[std::min(4095, pa)];
-  int32_t l = v, rr2 = v;
-  if (pan & 0x10) l = (l * att2) >> 15; else rr2 = (rr2 * att2) >> 15;
-  outL += l;
-  outR += rr2;
+  // LFO anda entre a leitura do PLFO e a do ALFO; o ruído anda uma vez por canal
+  if (--s.lfoTime <= 0) {
+    s.lfoCount++;
+    const int lf = (lr >> 10) & 31;
+    s.lfoTime = (((8 - (lf & 3)) << 7) >> (lf >> 2)) - 4;
+  }
+  if (lr & 0x8000) s.lfoCount = 0;
+  lfsr_ = (lfsr_ >> 1) | (((lfsr_ >> 5) ^ lfsr_) & 1) << 16;
+  if (silent) { s.out = 0; return 0; }
+  // atenuação: envelope + TL + ALFO (SDIR = sem nada); 0x40 passos = 6 dB, com 64 degraus dentro de cada
+  if (!(r[6] & 0x100)) {
+    int lvl = (s.phase == 0 && (r[4] & 0x20)) ? 0 : s.env;   // EGHOLD: ataque no máximo
+    lvl += (r[6] & 0xFF) << 2;
+    const int as = lr & 7;
+    if (as) {
+      uint8_t a;
+      switch ((lr >> 3) & 3) {
+        case 0: a = uint8_t(s.lfoCount & ~1); break;
+        case 1: a = uint8_t((int8_t(s.lfoCount) >> 7) & ~1); break;
+        case 2: a = uint8_t((s.lfoCount ^ uint8_t(int8_t(s.lfoCount) >> 7)) << 1); break;
+        default: a = uint8_t(lfsr_ & 0xFE); break;
+      }
+      lvl += a >> (7 - as);
+    }
+    lvl = std::min(lvl, 0x3FF);
+    smp = (int16_t(smp) * ((lvl & 0x3F) ^ 0x7F)) >> ((lvl >> 6) + 7);
+  }
+  s.out = int16_t(smp);
+  // envio para o DSP (IMXL/ISEL) e saída direta (DISDL/DIPAN)
+  const int imxl = r[10] & 7;
+  if (imxl) {
+    uint32_t& m = dsp_.mixs[(r[10] >> 3) & 0xF];
+    m = (m + uint32_t((int32_t(s.out) << 4) >> (7 - imxl))) & 0xFFFFF;
+  }
+  const int sdl = (r[0xB] >> 13) & 7;
+  if (sdl) {
+    int32_t vl, vr;
+    panVolume(sdl, (r[0xB] >> 8) & 31, vl, vr);
+    outL += (s.out * vl) >> 14;
+    outR += (s.out * vr) >> 14;
+  }
   return s.out;
 }
 
 void Scsp::sample(int16_t& l, int16_t& r) {
   int32_t L = 0, R = 0;
+  if (dsp_.active) dspRun();
+  std::memset(dsp_.mixs, 0, sizeof dsp_.mixs);
   for (int n = 0; n < 32; n++) {
     const int16_t o = slotStep(n, L, R);
     // pilha de som: a saída de cada canal entra 4 canais depois (para a modulação dos outros)
@@ -289,11 +488,30 @@ void Scsp::sample(int16_t& l, int16_t& r) {
     if (!(slot_[(n + 28) & 31].r[6] & 0x200)) stack_[(g - 4) & 63] = uint16_t(delay_[0]);
     delay_[0] = delay_[1]; delay_[1] = delay_[2]; delay_[2] = delay_[3]; delay_[3] = o;
   }
-  L += exl_;
-  R += exr_;
+  // saída de efeito: EFREG do DSP pelos canais 0-15 (EFSDL/EFPAN de cada um)
+  for (int n = 0; n < 16; n++) {
+    const uint16_t e = slot_[n].r[0xB];
+    if (!(e & 0xE0) || !dsp_.efreg[n]) continue;
+    int32_t vl, vr;
+    panVolume((e >> 5) & 7, e & 31, vl, vr);
+    L += (int16_t(dsp_.efreg[n]) * vl) >> 14;
+    R += (int16_t(dsp_.efreg[n]) * vr) >> 14;
+  }
+  // entrada externa (CD): esquerda pelo envio de efeito do canal 16, direita pelo do 17
+  {
+    int32_t vl, vr;
+    panVolume((slot_[16].r[0xB] >> 5) & 7, slot_[16].r[0xB] & 31, vl, vr);
+    L += (exl_ * vl) >> 14; R += (exl_ * vr) >> 14;
+    panVolume((slot_[17].r[0xB] >> 5) & 7, slot_[17].r[0xB] & 31, vl, vr);
+    L += (exr_ * vl) >> 14; R += (exr_ * vr) >> 14;
+  }
+  // volume geral (MVOL): cada 2 passos dobram; os pares são 3/4 do ímpar seguinte
   const int mvol = common_[0] & 0xF;
-  L = L * mvol / 15;
-  R = R * mvol / 15;
+  int32_t mv = 2 << (mvol >> 1);
+  if (!(mvol & 1)) mv -= mv >> 2;
+  if (!mvol) mv = 0;
+  L = (L * mv) >> 8;
+  R = (R * mv) >> 8;
   l = int16_t(std::clamp(L, -32768, 32767));
   r = int16_t(std::clamp(R, -32768, 32767));
   timersStep();
@@ -337,8 +555,8 @@ void Scsp::sync(StateIO& io) {
   io.sync(cpuOn);
   for (auto& s : slot_) {
     io.raw(s.r, sizeof s.r);
-    io.sync(s.pos); io.sync(s.env); io.sync(s.phase); io.sync(s.on); io.sync(s.back); io.sync(s.envAcc); io.sync(s.out);
-    if (io.reading()) { s.env = std::clamp(s.env, 0, 0x3FF); s.phase &= 3; }
+    io.sync(s.pos); io.sync(s.env); io.sync(s.phase); io.sync(s.on); io.sync(s.inLoop); io.sync(s.rev); io.sync(s.lfoTime); io.sync(s.lfoCount); io.sync(s.out);
+    if (io.reading()) { s.env = std::clamp(s.env, 0, 0x3FF); s.phase &= 3; s.lfoTime = std::clamp(s.lfoTime, 1, 1024); }
   }
   io.raw(common_, sizeof common_);
   io.sync(scieb_); io.sync(scipd_); io.sync(mcieb_); io.sync(mcipd_);
@@ -351,8 +569,26 @@ void Scsp::sync(StateIO& io) {
   io.sync(cycleDebt_);
   io.sync(lfsr_);
   io.raw(delay_, sizeof delay_);
+  {
+    Dsp& d = dsp_;
+    io.raw(d.mprog, sizeof d.mprog); io.raw(d.coef, sizeof d.coef); io.raw(d.madrs, sizeof d.madrs); io.raw(d.efreg, sizeof d.efreg);
+    io.raw(d.temp, sizeof d.temp); io.raw(d.mems, sizeof d.mems); io.raw(d.mixs, sizeof d.mixs);
+    io.sync(d.sft); io.sync(d.y); io.sync(d.inputs); io.sync(d.readValue); io.sync(d.rwAddr);
+    io.sync(d.frc); io.sync(d.adrs); io.sync(d.writeValue); io.sync(d.mdecCt); io.sync(d.readPending); io.sync(d.writePending);
+    if (io.reading()) {
+      d.active = false;
+      for (uint16_t x : d.mprog) if (x) { d.active = true; break; }
+      for (auto& c : d.coef) c &= 0x1FFF;
+      for (auto& t : d.temp) t = sext(uint32_t(t) & 0xFFFFFF, 24);
+      for (auto& t : d.mems) t = sext(uint32_t(t) & 0xFFFFFF, 24);
+      for (auto& m : d.mixs) m &= 0xFFFFF;
+      d.sft &= 0x3FFFFFF; d.y &= 0xFFFFFF; d.rwAddr &= 0x7FFFF; d.adrs &= 0xFFF; d.frc &= 0x1FFF;
+      if (d.readPending > 2) d.readPending = 0;
+    }
+  }
   if (io.reading()) {
     for (auto& t : tctl_) t &= 7;
+    lfsr_ &= 0x1FFFF;
     if (cycleDebt_ > 100000 || cycleDebt_ < -100000) cycleDebt_ = 0;
   }
 }

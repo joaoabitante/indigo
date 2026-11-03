@@ -1,6 +1,11 @@
 // Blitter do Tom: copia e preenche retângulos de pixels entre duas janelas (A1 e A2), ponto a ponto. O modo phrase
 // (64 bits por vez) é feito como uma sequência de pixels, com o mesmo resultado na memória e o mesmo alinhamento
-// do ponteiro no fim de cada linha. O blitter termina na hora (B_CMD lido sempre diz "ocioso").
+// do ponteiro no fim de cada linha. A memória muda na hora, mas o Blitter fica "ocupado" (B_CMD) pelo tempo que
+// o chip levaria, segura o barramento nesse tempo e só no fim interrompe o GPU (interrupção 4).
+// Custo (aproximado): cada ciclo de memória da DRAM ~2 tiques; por pixel (ou por phrase no modo phrase) uma
+// escrita, mais uma leitura para cada SRCEN/DSTEN/SRCENZ/DSTENZ e uma escrita a mais para DSTWRZ; 3 tiques por
+// linha (passo dos ponteiros) e 4 para começar.
+#include <algorithm>
 #include <cstring>
 
 #include "jaguar.h"
@@ -174,13 +179,23 @@ void Jaguar::blit(uint32_t cmd) {
   const uint32_t mask = D.bits == 32 ? 0xFFFFFFFFu : ((1u << D.bits) - 1);
   const uint32_t srcBits = S.bits;
 
+  // ciclos de memória por unidade (pixel, ou phrase do destino no modo phrase)
+  const int64_t perUnit = 2 * (1 + (srcen || srcenx ? 1 : 0) + (dsten ? 1 : 0) + (srcenz ? 1 : 0) + (dstenz ? 1 : 0) +
+                               (dstwrz ? 1 : 0));
+  int64_t cost = 4;
   for (uint32_t ol = 0; ol < outer; ol++) {
     const int32_t a1start = a1.x, a2start = a2.x;
+    int64_t lastUnit = -1;
+    cost += 3;
     uint32_t bitPos = 0;
     if (bcompen && srcenx && inner < srcBits) bitPos = srcBits - inner;
     for (uint32_t il = 0; il < inner; il++) {
       int lane = 0;
       const uint32_t dPhr = D.xi() / 4;
+      {  // tempo: um pixel, ou uma phrase nova do destino
+        const int64_t u = D.phrase ? int64_t(D.xi() / D.ppp) : int64_t(il);
+        if (!D.phrase || u != lastUnit) { cost += perUnit; lastUnit = u; }
+      }
       if (D.phrase && (gourd || srcshade || gourz)) lane = 3 - int(D.xi() & 3);
       uint32_t src = (srcen || srcenx) ? readPix(S) : field(B_SRCD, S);
       uint32_t srcz = srcenz ? readPix(S, S.zoff) : zfield(B_SRCZ1, D);
@@ -270,7 +285,12 @@ void Jaguar::blit(uint32_t cmd) {
   put(A1_PIXEL, (uint32_t(a1.y) & 0xFFFF0000u) | ((uint32_t(a1.x) >> 16) & 0xFFFF));
   put(A1_FPIXEL, (uint32_t(a1.y) << 16) | (uint32_t(a1.x) & 0xFFFF));
   put(A2_PIXEL, (uint32_t(a2.y) & 0xFFFF0000u) | ((uint32_t(a2.x) >> 16) & 0xFFFF));
-  gpu.setIrq(4);  // fim do blit: interrupção 4 do GPU
+  // tempo: começa quando quem escreveu B_CMD escreveu (ou quando o blit anterior acabar)
+  const int64_t start = std::max(accessTime, blitEnd_);
+  lastBlitCost = cost;
+  blitEnd_ = start + cost;
+  busFree_ = std::max(busFree_, blitEnd_);
+  blitIrq_ = true;  // a interrupção 4 do GPU vem no fim (timers)
 }
 
 }  // namespace indigo::jaguar

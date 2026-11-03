@@ -9,7 +9,7 @@ namespace indigo::saturn {
 
 namespace {
 constexpr uint32_t BIOS_SIZE = 0x80000;
-constexpr uint32_t STATE_MAGIC = 0x53415431;  // "SAT1"
+constexpr uint32_t STATE_MAGIC = 0x53415432;  // "SAT2" (2.5: bloco de CD com a unidade e os tempos)
 
 inline uint32_t rdBE(const uint8_t* p, int size) {
   return size == 1 ? p[0] : size == 2 ? uint32_t(p[0] << 8 | p[1]) : (uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3]);
@@ -221,6 +221,11 @@ void System::busWrite(uint32_t a, int size, uint32_t v) {
   }
   if (a >= 0x05800000 && a < 0x05900000) {
     const uint32_t o = a & 0xFFFFF;
+    if (o >= 0x18000 && o < 0x19000) {  // porta de dados (PUT SECTOR DATA)
+      if (size == 4) { cd.writeData(uint16_t(v >> 16)); cd.writeData(uint16_t(v)); return; }
+      cd.writeData(uint16_t(size == 1 ? (v & 0xFF) * 0x101 : v));
+      return;
+    }
     if (o >= 0x90000) {
       if (size == 4) { cd.write(o & 0x3C, uint16_t(v)); return; }
       cd.write(o & 0x3C, uint16_t(size == 1 ? (v & 0xFF) * 0x101 : v));
@@ -269,9 +274,11 @@ void System::runCpus(int64_t until) {
   // os dois SH-2 andam em fatias curtas para a comunicação pela memória e pelo FTI ficar perto do aparelho
   while (master.clock < until) {
     const int64_t to = std::min<int64_t>(until, master.clock + 64);
+    const int64_t from = master.clock;
     master.run(to);
     if (smpc.slaveOn) slave.run(to);
     else slave.clock = to;
+    scu.tick(int(master.clock - from));
   }
 }
 
@@ -280,6 +287,7 @@ void System::runFrame() {
   for (line = 0; line < lines(); line++) {
     if (line == 0) {
       inVblank = false;
+      vdp1.vblankOut();
       scu.vblankOut();
       scu.raise(INT_VBOUT);
       scu.factor(DF_VBOUT);
@@ -307,6 +315,7 @@ void System::runFrame() {
     lineBase_ += CYCLES_PER_LINE;
     scu.dspRun(CYCLES_PER_LINE / 2);
     cd.run(CYCLES_PER_LINE);
+    vdp1.run(CYCLES_PER_LINE);
     // som: o 68000 roda 256 ciclos por amostra (11,2896 MHz / 44,1 kHz)
     audioFrac_ += uint32_t(AUDIO_HZ) * CYCLES_PER_LINE;
     while (audioFrac_ >= uint32_t(CPU_HZ)) {

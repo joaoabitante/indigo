@@ -214,7 +214,7 @@ echo "== Atari 7800: MARIA (DMA por linha, DLI, WSYNC), som TIA/POKEY, 36 exempl
 if "$B/indigo-t7_a7800" "$R/a7800" > "$TMP/a78"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/a78" | head -5; fi
 grep "RESULTADO" "$TMP/a78" | sed 's/^/  /'
 
-echo "== Atari 5200: ANTIC (400 telas contra a referência, DLI, WSYNC, ciclos roubados), GTIA, POKEY, BIOS de teste e do Altirra, save state"
+echo "== Atari 5200: ANTIC ciclo a ciclo (400 telas contra a referência, mapa de ciclos, registradores no meio da linha, DLI, WSYNC), GTIA, POKEY, BIOS de teste e do Altirra, save state"
 if "$B/indigo-t7_a5200" "$R/a5200" > "$TMP/a52"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/a52" | head -5; fi
 grep "RESULTADO" "$TMP/a52" | sed 's/^/  /'
 
@@ -225,6 +225,12 @@ grep "RESULTADO" "$TMP/vec" | sed 's/^/  /'
 echo "== Intellivision: CP1610 (instruções, flags, SDBD, ciclos), STIC (fundo, MOBs, colisões, janela de acesso), AY-3-8914, formatos, save state"
 if "$B/indigo-t7_intv" "$R" > "$TMP/intv"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/intv" | head -5; fi
 grep "RESULTADO" "$TMP/intv" | sed 's/^/  /'
+
+if [ -x "$B/indigo-t_app_uso" ]; then  # só existe com o app (SDL3) no Linux
+  echo "== Uso no app: botão do disco (FDS), teclado numérico na tela (5200, Intellivision), abas da estante, Abrir com do Android"
+  if "$B/indigo-t_app_uso" "$HERE/../android/app/src/main/AndroidManifest.xml" > "$TMP/appuso"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/appuso" | head -5; fi
+  grep "RESULTADO" "$TMP/appuso" | sed 's/^/  /'
+fi
 
 echo "== Atari Lynx: 65SC02 (SingleStepTests), sprites e matemática da Suzy, telas iguais ao Handy, EEPROM, save state"
 if "$B/indigo-t7_lynx" "$R/lynx" > "$TMP/lynx"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/lynx" | head -5; fi
@@ -295,7 +301,7 @@ echo "== PC Engine CD: System Cards de teste (SCSI, CD-DA, ADPCM, Arcade Card) e
 if "$B/indigo-t7_pcecd" "$R/pcecd" > "$TMP/pcecd"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/pcecd" | head -5; fi
 grep "RESULTADO" "$TMP/pcecd" | sed 's/^/  /'
 
-echo "== PC-FX: BIOS de teste própria dá a partida no CD, CPU V810 igual ao PC, CD por DMA/PIO, interrupções, tela calculada ponto a ponto (2 VDCs + KING + HuC6261), PSG/CD-DA/ADPCM, save state"
+echo "== PC-FX: BIOS de teste própria dá a partida no CD, CPU V810 igual ao PC, CD por DMA/PIO, interrupções, tela calculada ponto a ponto (2 VDCs + KING + HuC6261), vídeo comprimido RAINBOW, mouse, PSG/CD-DA/ADPCM, save state"
 if "$B/indigo-t7_pcfx" "$R/pcfx" > "$TMP/pcfx"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/pcfx" | head -5; fi
 grep "RESULTADO" "$TMP/pcfx" | sed 's/^/  /'
 

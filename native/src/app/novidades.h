@@ -11,6 +11,16 @@ struct Versão {
 };
 
 inline constexpr Versão VERSOES[] = {
+    {"2.5", "03/11/2026",
+     {"Consoles experimentais mais",
+      "perto do aparelho: Saturn,",
+      "Jaguar, PC-FX, 3DO, Intellivision,",
+      "Atari 5200 e Game.com",
+      "Toque: troca de lado do disco",
+      "do FDS e teclado numérico do",
+      "5200 e do Intellivision",
+      "Estados salvos da 2.4 desses",
+      "consoles podem não abrir", nullptr}},
     {"2.4", "02/11/2026",
      {"11 consoles novos: Famicom Disk",
       "System, Super Game Boy (molduras",

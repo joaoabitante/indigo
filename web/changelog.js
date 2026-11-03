@@ -2,6 +2,17 @@
 // A entrada mais nova fica em cima.
 export const CHANGELOG = [
   {
+    date: '2026-11-03',
+    title: 'App 2.5: consoles experimentais mais perto do aparelho',
+    items: [
+      'Sega Saturn: leitor de CD com os comandos e os tempos que a BIOS espera, efeitos de cor, sombras e mosaico do vídeo, tempo de desenho do VDP1 e som com envelope, LFO e efeitos (DSP).',
+      'Atari Jaguar (tempos da CPU e do desenho, objetos de vídeo, PAL), PC-FX (vídeos e imagens comprimidas, mouse), 3DO (som DSPP, CD e registradores mais completos), Intellivision (.bin com .cfg, troca de bancos, PAL), Atari 5200 (vídeo ciclo a ciclo e colisões) e Game.com (timers, segundo cartucho, tela de toque).',
+      'Na tela de toque: botão para trocar o lado do disco do Famicom Disk System e teclado numérico do Atari 5200 e do Intellivision.',
+      'Os sete continuam experimentais: ainda não foram testados com BIOS e jogos de verdade. Estados salvos (save states) desses consoles feitos na 2.4 podem não abrir.',
+    ],
+    tests: 'Centenas de verificações novas nos testes desses consoles; revalidação de 1043 comparações iguais e robustez com 0 problemas.',
+  },
+  {
     date: '2026-11-02',
     title: 'App 2.4: 11 consoles novos',
     items: [

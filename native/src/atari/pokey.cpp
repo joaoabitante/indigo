@@ -54,9 +54,22 @@ void Pokey::recalc(uint64_t now) {
     }
   }
   for (int i = 0; i < 4; i++) {
-    if (act[i] && !active[i]) next[i] = now + period[i];
+    if (act[i] && !active[i]) next[i] = firstPulse(i, now);
     active[i] = act[i];
   }
+}
+
+// No 5200 (ext): os relógios de 64 kHz e 15 kHz vêm de divisores que correm sempre (a cada 28 e 114 ciclos);
+// STIMER recarrega os contadores dos canais mas não esses divisores, então o primeiro pulso de um canal lento
+// cai na grade do divisor: AUDF + 1 passos contados a partir do próximo passo (o primeiro período fica até 27
+// ciclos mais curto). Os canais de 1,79 MHz não têm divisor. No 7800 continua o período inteiro (estado e som
+// do 7800 iguais aos de antes).
+uint64_t Pokey::firstPulse(int i, uint64_t now) const {
+  const bool fast = (i == 0 && (audctl & 0x40)) || (i == 2 && (audctl & 0x20)) ||
+                    (i == 1 && (audctl & 0x50) == 0x50) || (i == 3 && (audctl & 0x28) == 0x28);
+  if (!ext || fast) return now + period[i];
+  const uint64_t base = (audctl & 1) ? 114 : 28;
+  return (now / base + 1) * base + period[i] - base;
 }
 
 void Pokey::write(int r, uint8_t v, uint64_t now) {
@@ -65,7 +78,7 @@ void Pokey::write(int r, uint8_t v, uint64_t now) {
     case 0: case 2: case 4: case 6: audf[r >> 1] = v; recalc(now); break;
     case 1: case 3: case 5: case 7: audc[r >> 1] = v; break;
     case 8: audctl = v; recalc(now); break;
-    case 9: for (int i = 0; i < 4; i++) next[i] = now + period[i]; break;  // STIMER
+    case 9: for (int i = 0; i < 4; i++) next[i] = firstPulse(i, now); break;  // STIMER
     case 0xA: if (ext) skstat |= 0xE0; break;                                // SKRES
     case 0xB:                                                               // POTGO
       if (ext) { for (int i = 0; i < 8; i++) potLatch[i] = pot[i]; potStart = now; potRun = true; }
@@ -78,10 +91,10 @@ void Pokey::write(int r, uint8_t v, uint64_t now) {
 
 uint8_t Pokey::read(int r, uint64_t now) {
   r &= 15;
-  if (ext && r < 9) {  // potenciômetros: o contador sobe uma vez por linha (ou por ciclo no modo rápido)
-    uint64_t e = 228;
+  if (ext && r < 9) {  // potenciômetros: o contador sobe a cada passo do relógio de 15 kHz (ou a cada ciclo
+    uint64_t e = 228;  // no modo rápido); o divisor corre sempre, então o primeiro passo vem antes de 114 ciclos
     if (potRun) {
-      e = (now - potStart) / ((skctl & 4) ? 1 : 114);
+      e = (skctl & 4) ? now - potStart : now / 114 - potStart / 114;
       if (e >= 228) { e = 228; potRun = false; }
     }
     if (r == 8) {  // ALLPOT: 1 = ainda contando

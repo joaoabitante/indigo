@@ -2,15 +2,18 @@
 #include "gamecom.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <stdexcept>
 
 namespace indigo::gamecom {
 
 namespace {
-constexpr char STATE_MAGIC[4] = {'G', 'C', 'M', '1'};
-constexpr uint32_t CART_FLAG = 0x80000000u;
-// pré-divisores dos timers 0/1 (o MAME conta metade do valor da tabela em ciclos da CPU)
+// 'GCM2' (2.5): CKC na CPU, sem as janelas pré-calculadas; 'GCM1' (2.4) ainda carrega
+constexpr char STATE_MAGIC[4] = {'G', 'C', 'M', '2'};
+// pré-divisores dos timers 0/1 (o MAME conta metade do valor da tabela em ciclos da CPU). Dúvida em aberto: o
+// MAME anota que o TIM1 parece correr 2x rápido (contagens regressivas de jogos), mas dividir por 2 deixa o som
+// do DAC lento; sem folha de dados nem aparelho fica a tabela do MAME, travada no t7_gamecom.
 constexpr uint32_t TIMER_LIMIT[8] = {2, 1024, 2048, 4096, 8192, 16384, 32768, 65536};
 // tons do LCD (do mais escuro ao mais claro), em 0xAABBGGRR
 constexpr uint32_t SHADE[5] = {0xFF000000u, 0xFF2F4F0Fu, 0xFF4F8F6Fu, 0xFF8FCF8Fu, 0xFF8FFFDFu};
@@ -18,6 +21,17 @@ constexpr uint32_t SHADE[5] = {0xFF000000u, 0xFF2F4F0Fu, 0xFF4F8F6Fu, 0xFF8FCF8F
 bool hasSig(const std::vector<uint8_t>& b, size_t at) {
   static const char SIG[] = "TigerDMGC";
   return b.size() >= at + 5 + 9 && std::memcmp(b.data() + at + 5, SIG, 9) == 0;
+}
+// como no MAME: 1,75 MB entra em $40000; o resto se repete até encher os 2 MB
+std::vector<uint8_t> layoutCart(const std::vector<uint8_t>& c) {
+  std::vector<uint8_t> out(CART_SPACE, 0xFF);
+  if (c.size() == 0x1C0000) {
+    std::memcpy(out.data() + 0x40000, c.data(), c.size());
+    std::memcpy(out.data(), c.data(), 0x40000);
+  } else {
+    for (size_t i = 0; i < CART_SPACE; i++) out[i] = c[i % c.size()];
+  }
+  return out;
 }
 bool endsWith(const std::string& s, const char* suf) {
   const std::string x(suf);
@@ -57,16 +71,19 @@ std::string gamecomFirmwareKind(const std::vector<uint8_t>& b, const std::string
 }
 
 // ------------------------------------------------------------------ montagem
+bool pointerToLcd(float x, float y, float gx, float gy, float gw, float gh, int& px, int& py) {
+  if (!(gw > 0) || !(gh > 0)) return false;
+  const float fx = std::floor((x - gx) * float(SCREEN_W) / gw), fy = std::floor((y - gy) * float(SCREEN_H) / gh);
+  const bool inside = fx >= 0 && fy >= 0 && fx < SCREEN_W && fy < SCREEN_H;  // NaN cai fora
+  px = inside ? int(fx) : 0;
+  py = inside ? int(fy) : 0;
+  return inside;
+}
+
 GameCom::GameCom(const std::vector<uint8_t>& c, const std::vector<uint8_t>& ir, const std::vector<uint8_t>& er)
-    : cart(CART_SPACE, 0xFF), extRom(er), bufL(AUDIO_BUF), bufR(AUDIO_BUF) {
+    : extRom(er), bufL(AUDIO_BUF), bufR(AUDIO_BUF) {
   if (c.empty() || c.size() > CART_SPACE) throw std::runtime_error("Cartucho de Game.com com tamanho inválido.");
-  // como no MAME: 1,75 MB entra em $40000; o resto se repete até encher os 2 MB
-  if (c.size() == 0x1C0000) {
-    std::memcpy(cart.data() + 0x40000, c.data(), c.size());
-    std::memcpy(cart.data(), c.data(), 0x40000);
-  } else {
-    for (size_t i = 0; i < CART_SPACE; i++) cart[i] = c[i % c.size()];
-  }
+  cart = layoutCart(c);
   const size_t h = hasSig(cart, 0x40000) ? 0x40000 : 0;
   for (int i = 0; i < 9; i++) {
     const char ch = char(cart[h + 0x11 + size_t(i)]);
@@ -78,13 +95,26 @@ GameCom::GameCom(const std::vector<uint8_t>& c, const std::vector<uint8_t>& ir, 
   reset();
 }
 
+void GameCom::setCart2(const std::vector<uint8_t>& c) {
+  if (c.size() > CART_SPACE) throw std::runtime_error("Cartucho de Game.com com tamanho inválido.");
+  cart2 = c.empty() ? std::vector<uint8_t>() : layoutCart(c);
+}
+
+const uint8_t* GameCom::activeCart() const {
+  switch (ram[0x17] & 0xC0) {
+    case 0x40: return cart.data();
+    case 0x80: return cart2.empty() ? nullptr : cart2.data();
+    // 11 = nenhum (README do cycle_count_test do Kitrinx). 00 o MAME chama de "os dois", sem dado de
+    // aparelho: SUPOSIÇÃO nossa de que ninguém responde (lê $FF).
+    default: return nullptr;
+  }
+}
+
 std::string GameCom::title() const { return cartTitle.empty() ? "Game.com" : cartTitle; }
 
 void GameCom::reset() {
   std::memset(ram, 0, sizeof ram);
   std::memset(vram, 0, sizeof vram);
-  for (auto& b : bankBase) b = 0;
-  cartSelected = false;
   cycles = 0;
   lineCycle = 0;
   lineNo = 0;
@@ -98,6 +128,7 @@ void GameCom::reset() {
   noiseAcc = 0;
   lfsr = 0x7FFF;
   dacLevel = 0x80;
+  mix = 0;
   cpu.reset();
   // valores iniciais das portas (como no MAME)
   ram[0x14] = 0xFF; ram[0x15] = 0xFF; ram[0x16] = 0xFF; ram[0x17] = 0x00;
@@ -109,14 +140,19 @@ void GameCom::reset() {
 uint8_t GameCom::read(uint16_t a) {
   if (a < 0x400) {
     if (a == 0x32) return uint8_t((ram[a] & 0x7F) | (lineNo >= SCREEN_W ? 0x80 : 0));  // LCV: bit 7 = retraço
+    if (a >= 0x60 && a < 0x80 && (ram[0x40] & (a < 0x70 ? 1 : 2))) return 0;  // onda do canal tocando lê 0
+    if (a == 0x4E) return 0;  // SGDA: só escrita
     return ram[a];
   }
   if (a < 0x1000) return 0;
   if (a < 0x2000) return intRom[a - 0x1000];
   if (a < 0xA000) {
-    const uint32_t b = bankBase[((a - 0x2000) >> 13) + 1];
-    const uint32_t off = (b & ~CART_FLAG) + (a & 0x1FFFu);
-    return (b & CART_FLAG) ? cart[off & (CART_SPACE - 1)] : extRom[off & (EXT_ROM_SIZE - 1)];
+    // número do banco no MMU1-4; < $20 = ROM do sistema, senão o cartucho que P3 liga agora
+    const uint8_t bank = ram[0x25 + ((a - 0x2000) >> 13)];
+    const uint32_t off = (uint32_t(bank) << 13) | (a & 0x1FFFu);
+    if (bank < 0x20) return extRom[off & (EXT_ROM_SIZE - 1)];
+    const uint8_t* c = activeCart();
+    return c ? c[off & (CART_SPACE - 1)] : 0xFF;
   }
   if (a < 0xE000) return 0;  // vídeo: só escrita
   return ext[a - 0xE000];
@@ -129,9 +165,10 @@ void GameCom::write(uint16_t a, uint8_t v) {
       if (a == 0x15) muxLo = v;
       if (a == 0x16) muxHi = v;
       if (a == 0x15 || a == 0x16) inputMux();
-      if (a == 0x17) cartSelected = (v & 0xC0) == 0x40;  // só o cartucho 1
-      return;
+      return;  // P3: a escolha do encaixe é lida na hora (activeCart)
     }
+    // RAM da onda: com o canal tocando a escrita não pega (folha de dados, via cam900)
+    if (a >= 0x60 && a < 0x80 && (ram[0x40] & (a < 0x70 ? 1 : 2))) return;
     if (a >= 0x20 && a < 0x80) { ioWrite(uint8_t(a), v); return; }
     ram[a] = v;
     return;
@@ -153,16 +190,10 @@ void GameCom::importExt(const std::vector<uint8_t>& b) {
   extDirty = false;
 }
 
-void GameCom::setMmu(int n, uint8_t v) {
-  if (v < 0x20) bankBase[n] = uint32_t(v) << 13;
-  else if (cartSelected) bankBase[n] = CART_FLAG | (uint32_t(v) << 13);
-  // sem cartucho selecionado a janela fica como estava (como no MAME)
-}
-
 void GameCom::ioWrite(uint8_t r, uint8_t v) {
   switch (r) {
     case 0x24: break;  // MMU0: a ROM interna nunca sai do lugar no Game.com
-    case 0x25: case 0x26: case 0x27: case 0x28: setMmu(r - 0x24, v); break;
+    case 0x25: case 0x26: case 0x27: case 0x28: break;  // MMU1-4: o banco é resolvido na leitura
     case 0x32: v &= 0x7F; break;  // LCV: o bit 7 é só leitura
     case 0x34:  // DMC
       ram[r] = v;
@@ -189,9 +220,9 @@ void GameCom::ioWrite(uint8_t r, uint8_t v) {
         v &= 0xC0;
       }
       break;
-    case 0x4E:  // SGDA: o DAC só toca com os geradores desligados
-      if ((ram[0x40] & 0x8F) == 0x88) dacLevel = v;
-      break;
+    case 0x42: case 0x44: case 0x4A: v &= 0x1F; break;  // volumes de 5 bits
+    case 0x46: case 0x48: case 0x4C: v &= 0x0F; break;  // parte alta do período (12 bits)
+    case 0x4E: dacLevel = v; break;                     // SGDA: o DAC toca quando SGC tem os bits 7 e 3
     default: break;
   }
   ram[r] = v;
@@ -266,12 +297,14 @@ void GameCom::runDma() {
   uint16_t srcMask = 0x1FFF, dstMask = 0x1FFF;
   const uint8_t* src = vram + ((ram[0x3D] & 1) ? 0x2000 : 0);
   uint8_t* dst = vram + ((ram[0x3D] & 2) ? 0x2000 : 0);
+  bool openBus = false;  // ROM do cartucho sem encaixe ligado: lê $FF
   switch (mode) {
     case 2:  // ROM -> vídeo (bancos de 16 KB)
       srcW = 64;
       srcMask = 0x3FFF;
       if (ram[0x3C] < 16) src = extRom.data() + (size_t(ram[0x3C]) << 14);
-      else if (cartSelected) src = cart.data() + (size_t(ram[0x3C]) << 14);
+      else if (const uint8_t* c = activeCart()) src = c + (size_t(ram[0x3C]) << 14);
+      else openBus = true;
       break;
     case 4:  // RAM estendida -> vídeo
       srcW = 64;
@@ -290,7 +323,7 @@ void GameCom::runDma() {
     for (int x = 0; x <= bw; x++) {
       const uint16_t sa = srcCur & srcMask, da = dstCur & dstMask;
       const int dshift = (dxc ^ 3) << 1, sshift = (sxc ^ 3) << 1;
-      const uint8_t px = (src[sa] >> sshift) & 3;
+      const uint8_t px = ((openBus ? 0xFF : src[sa]) >> sshift) & 3;
       if (overwrite || px) {
         const uint8_t others = uint8_t(dst[da] & ~(3 << dshift));
         dst[da] = uint8_t(others | (((pal >> (px << 1)) & 3) << dshift));
@@ -407,23 +440,25 @@ void GameCom::runFrame() {
 }
 
 // ------------------------------------------------------------------ som
+// geradores a 11,0592 MHz / 4 = 2 ciclos da CPU por contagem; um passo a cada SGnT + 1 contagens
 void GameCom::soundStep(int c) {
   const uint8_t sgc = ram[0x40];
-  for (int ch = 0; ch < 2; ch++) {
-    const uint32_t t = uint32_t(ram[0x46 + 2 * ch] << 8 | ram[0x47 + 2 * ch]);
-    if (!(sgc & 0x80) || !(sgc & (1 << ch)) || !t) continue;
-    Tone& s = sg[ch];
-    s.acc += uint32_t(c);
-    const uint32_t period = 2 * t;  // 2.764.800 passos por segundo / SGnT
-    while (s.acc >= period) { s.acc -= period; s.pos = uint8_t((s.pos + 1) & 31); }
-  }
-  const uint32_t t2 = uint32_t(ram[0x4C] << 8 | ram[0x4D]);
-  if ((sgc & 0x84) == 0x84 && t2) {
-    noiseAcc += uint32_t(c);
-    while (noiseAcc >= 2 * t2) {
-      noiseAcc -= 2 * t2;
-      const uint16_t bit = uint16_t((lfsr ^ (lfsr >> 1)) & 1);
-      lfsr = uint16_t((lfsr >> 1) | (bit << 14));
+  if ((sgc & 0x88) == 0x80) {  // som ligado e sem o DAC direto
+    for (int ch = 0; ch < 2; ch++) {
+      if (!(sgc & (1 << ch))) continue;
+      const uint32_t period = 2 * ((uint32_t(ram[0x46 + 2 * ch] & 0x0F) << 8 | ram[0x47 + 2 * ch]) + 1);
+      Tone& s = sg[ch];
+      s.acc += uint32_t(c);
+      while (s.acc >= period) { s.acc -= period; s.pos = uint8_t((s.pos + 1) & 31); }
+    }
+    if (sgc & 0x04) {
+      const uint32_t period = 2 * ((uint32_t(ram[0x4C] & 0x0F) << 8 | ram[0x4D]) + 1);
+      noiseAcc += uint32_t(c);
+      while (noiseAcc >= period) {
+        noiseAcc -= period;
+        const uint16_t bit = uint16_t((lfsr ^ (lfsr >> 1)) & 1);  // polinômio desconhecido: LFSR de 15 bits
+        lfsr = uint16_t((lfsr >> 1) | (bit << 14));
+      }
     }
   }
   sampleAcc += c;
@@ -433,23 +468,30 @@ void GameCom::soundStep(int c) {
   }
 }
 
+// mistura de 8 bits: onda com sinal (-8..7) vezes o volume (0..31) / 2; ruído +7/-8; o DAC sozinho = SGDA - $80
 void GameCom::emitSample() {
   const uint8_t sgc = ram[0x40];
-  double v = 0;
+  int out = 0;
   if (sgc & 0x80) {
-    for (int ch = 0; ch < 2; ch++) {
-      if (!(sgc & (1 << ch))) continue;
-      const uint8_t* w = ram + 0x60 + 0x10 * ch;
-      const uint8_t pos = sg[ch].pos;
-      const int nib = (w[pos >> 1] >> ((pos & 1) * 4)) & 0xF;
-      v += (nib / 15.0 - 0.5) * (ram[0x42 + 2 * ch] & 0x1F) / 31.0 * 0.5;
+    if (sgc & 0x08) {
+      out = int(dacLevel) - 0x80;
+    } else {
+      for (int ch = 0; ch < 2; ch++) {
+        if (!(sgc & (1 << ch))) continue;
+        const uint8_t pos = sg[ch].pos;
+        int w = (ram[0x60 + 0x10 * ch + (pos >> 1)] >> ((pos & 1) * 4)) & 0xF;
+        if (w & 8) w -= 16;
+        out += (w * (ram[0x42 + 2 * ch] & 0x1F)) >> 1;
+      }
+      if (sgc & 0x04) out += ((lfsr & 1) ? 7 : -8) * (ram[0x4A] & 0x1F) >> 1;
+      out = std::clamp(out, -0x80, 0x7F);
     }
-    if (sgc & 0x04) v += ((lfsr & 1) ? 0.25 : -0.25) * (ram[0x4A] & 0x1F) / 31.0;
-    if (sgc & 0x08) v += (int(dacLevel) - 128) / 128.0 * 0.5;
   }
-  const double out = v - hpCap;  // passa-alta (tira o nível contínuo)
-  hpCap += out * 0.002;
-  const float f = float(std::clamp(out, -1.0, 1.0));
+  mix = out;
+  const double v = out / 256.0;
+  const double hp = v - hpCap;  // passa-alta (tira o nível contínuo)
+  hpCap += hp * 0.002;
+  const float f = float(std::clamp(hp, -1.0, 1.0));
   lastOut = f;
   bufL[wpos] = bufR[wpos] = f;
   wpos = (wpos + 1) % AUDIO_BUF;
@@ -477,14 +519,25 @@ void GameCom::syncState(StateIO& s) {
   s.raw(magic, 4);
   uint32_t crc = crc32(cart.data(), 0x8000);
   s.sync(crc);
-  if (s.reading() && (std::memcmp(magic, STATE_MAGIC, 4) != 0 || crc != crc32(cart.data(), 0x8000)))
+  const bool v1 = std::memcmp(magic, "GCM1", 4) == 0;  // estado da 2.4
+  if (s.reading() && ((!v1 && std::memcmp(magic, STATE_MAGIC, 4) != 0) || crc != crc32(cart.data(), 0x8000)))
     throw std::runtime_error("Estado salvo incompatível com este jogo.");
-  cpu.sync(s);
+  // o segundo cartucho não vai no estado, só a marca dele (0 = encaixe vazio): sem ele, o estado é recusado
+  uint32_t crc2 = cart2.empty() ? 0 : crc32(cart2.data(), 0x8000) | 1;
+  if (!v1) s.sync(crc2);
+  if (s.reading() && !v1 && crc2 != (cart2.empty() ? 0 : (crc32(cart2.data(), 0x8000) | 1)))
+    throw std::runtime_error("Estado salvo com outro segundo cartucho (ou sem ele).");
+  cpu.sync(s, v1 ? 1 : 2);
   s.raw(ram, sizeof ram);
   s.raw(vram, sizeof vram);
   s.raw(ext, sizeof ext);
-  for (auto& b : bankBase) s.sync(b);
-  s.sync(cartSelected); s.sync(muxLo); s.sync(muxHi);
+  if (v1) {  // janelas pré-calculadas e "cartucho 1 ligado" da 2.4: agora saem de MMU1-4 e P3
+    uint32_t oldBank = 0;
+    bool oldSel = false;
+    for (int i = 0; i < 5; i++) s.sync(oldBank);
+    s.sync(oldSel);
+  }
+  s.sync(muxLo); s.sync(muxHi);
   s.sync(cycles); s.sync(frameCount); s.sync(lineCycle); s.sync(lineNo);
   for (auto& t : tm) { s.sync(t.on); s.sync(t.pre); s.sync(t.preMax); s.sync(t.max); }
   s.sync(clkOn); s.sync(clkPeriod); s.sync(clkCount);
@@ -492,9 +545,13 @@ void GameCom::syncState(StateIO& s) {
   s.sync(prevKeys); s.sync(stylusMode); s.sync(curX); s.sync(curY); s.sync(holdFrames);
   for (auto& t : sg) { s.sync(t.acc); s.sync(t.pos); }
   s.sync(noiseAcc); s.sync(lfsr); s.sync(dacLevel);
+  if (!v1) s.sync(mix);
+  else if (s.reading()) mix = 0;  // o GCM1 não tinha a mistura: não herda a da sessão anterior
   s.sync(sampleAcc); s.sync(hpCap);
   if (s.reading()) {
-    // limites contra arquivos danificados
+    // limites contra arquivos danificados (os mesmos que o ioWrite aplica)
+    ram[0x32] &= 0x7F;  // LCV
+    ram[0x3C] &= 0x7F;  // DMBR: com mais, a DMA da ROM sairia dos 2 MB do cartucho
     clampTo(lineCycle, 0, LINE_CYCLES - 1);
     clampTo(lineNo, 0, LINES - 1);
     for (auto& t : tm) {
@@ -503,11 +560,12 @@ void GameCom::syncState(StateIO& s) {
     }
     // acumuladores do som abaixo de um período (senão o laço de passos demora bilhões de voltas)
     for (int ch = 0; ch < 2; ch++) {
-      const uint32_t t = uint32_t(ram[0x46 + 2 * ch] << 8 | ram[0x47 + 2 * ch]);
-      sg[ch].acc = t ? sg[ch].acc % (2 * t) : 0;
+      ram[0x46 + 2 * ch] &= 0x0F;
+      sg[ch].acc %= 2 * ((uint32_t(ram[0x46 + 2 * ch]) << 8 | ram[0x47 + 2 * ch]) + 1);
     }
-    const uint32_t t2 = uint32_t(ram[0x4C] << 8 | ram[0x4D]);
-    noiseAcc = t2 ? noiseAcc % (2 * t2) : 0;
+    ram[0x4C] &= 0x0F;
+    noiseAcc %= 2 * ((uint32_t(ram[0x4C]) << 8 | ram[0x4D]) + 1);
+    mix = std::clamp(mix, -0x80, 0x7F);
     if (clkOn) clampTo<uint32_t>(clkPeriod, 1, uint32_t(CPU_HZ) * 60);
     clampTo(curX, 0, SCREEN_W - 1);
     clampTo(curY, 0, SCREEN_H - 1);
@@ -548,6 +606,11 @@ GameComCore::GameComCore(const std::vector<uint8_t>& rom, const std::vector<uint
         "(256 KB, external.bin). Abra cada arquivo no Índigo uma vez para instalá-las e depois abra o "
         "cartucho de novo.");
   m_ = std::make_unique<GameCom>(rom, ir, er);
+  // segundo encaixe: arquivo dado como "gamecom_cart2" (no indigo-run: INDIGO_FW="gamecom_cart2=jogo.tgc")
+  const std::vector<uint8_t> c2 = indigo::firmware("gamecom_cart2");
+  if (c2.size() > CART_SPACE)
+    throw std::runtime_error("O segundo cartucho do Game.com (gamecom_cart2) passa de 2 MB.");
+  if (!c2.empty()) m_->setCart2(c2);
   if (save) m_->importExt(*save);
 }
 

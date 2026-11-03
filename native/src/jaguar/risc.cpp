@@ -1,5 +1,6 @@
 #include "risc.h"
 
+#include <algorithm>
 #include <cstring>
 
 #include "jaguar.h"
@@ -22,7 +23,9 @@ void Risc::reset() {
   pc = ramBase; flags = 0; fz = fc = fn = 0; ctrl = 0; lat = 0;
   hidata = remain = divctrl = mtxc = endian = modulo = 0;
   mtxa = ramBase;
-  acc = 0; bank_ = 0; clk = 0;
+  acc = 0; bank_ = 0; clk = 0; stalls = 0;
+  std::memset(ready_, 0, sizeof ready_);
+  divFree_ = hiReady_ = 0; extLat_ = 0;
 }
 
 void Risc::updateBank() { bank_ = ((flags & REGPAGE) && !(flags & IMASK)) ? 32 : 0; }
@@ -111,36 +114,74 @@ void Risc::regWrite16(uint32_t off, uint16_t v, bool lo) {
 }
 
 // ------------------------------------------------------------------------------------- memória
+// Custo de acesso fora da RAM local (valores aproximados: a documentação pública descreve o comportamento, não
+// os números exatos). A DRAM tem ciclos de página de ~2 tiques e troca de página de ~5; a ROM do cartucho é mais
+// lenta; os registros do próprio chip respondem logo. O DSP fala com o barramento principal por 16 bits: uma
+// palavra de 32 bits são dois acessos.
+int Risc::extLatency(uint32_t a, bool w32) {
+  a &= 0xFFFFFF;
+  int n;
+  if (a < 0x800000) n = 6;                                      // DRAM
+  else if (a < 0xF00000) n = 10;                                // cartucho / ROM de partida
+  else n = (dsp ? (a >= 0xF10000) : (a < 0xF10000)) ? 1 : 4;    // registros do próprio chip ou do outro
+  if (dsp && w32 && a < 0xF00000) n *= 2;
+  return n;
+}
+// o GPU e o DSP esperam o barramento principal (memória e cartucho) enquanto o Blitter ou o OP o usam;
+// os registros dos chips ficam fora dessa disputa
+void Risc::waitBus(uint32_t a) {
+  if ((a & 0xFFFFFF) >= 0xF00000) return;
+  const int64_t f = j_.busFree();
+  if (clk + extra_ < f) extra_ = f - clk;
+}
 uint16_t Risc::fetch(uint32_t a) {
   if (local(a)) { const uint8_t* p = &ram[(a - ramBase) & ramMask & ~1u]; return uint16_t((p[0] << 8) | p[1]); }
-  extra_ += 2;
+  waitBus(a);
+  extra_ += extLatency(a, false);  // sem fila: a busca de fora para o processador
+  j_.accessTime = clk + extra_;
   return j_.read16(a & 0xFFFFFE);
 }
 uint32_t Risc::load32(uint32_t a) {
   if (local(a)) return ramRead32(a);
-  extra_ += 2;
+  waitBus(a);
+  extLat_ = extLatency(a, true);
+  j_.accessTime = clk + extra_;
   return j_.read32(a & 0xFFFFFC);
 }
 uint32_t Risc::load16(uint32_t a) {
   if (local(a)) return ramRead32(a);
-  extra_ += 2;
+  waitBus(a);
+  extLat_ = extLatency(a, false);
+  j_.accessTime = clk + extra_;
   return j_.read16(a & 0xFFFFFE);
 }
 uint32_t Risc::load8(uint32_t a) {
   if (local(a)) return ramRead32(a);
-  extra_ += 2;
+  waitBus(a);
+  extLat_ = extLatency(a, false);
+  j_.accessTime = clk + extra_;
   return j_.read8(a & 0xFFFFFF);
 }
+// escrita de fora: passa pelo buffer de escrita (1 tique; 2 no DSP para 32 bits)
 void Risc::store32(uint32_t a, uint32_t v) {
   if (local(a)) { ramWrite32(a, v); return; }
+  waitBus(a);
+  extra_ += (dsp && (a & 0xFFFFFF) < 0xF00000) ? 2 : 1;
+  j_.accessTime = clk + extra_;
   j_.write32(a & 0xFFFFFC, v);
 }
 void Risc::store16(uint32_t a, uint32_t v) {
   if (local(a)) { ramWrite32(a, v & 0xFFFF); return; }
+  waitBus(a);
+  extra_ += 1;
+  j_.accessTime = clk + extra_;
   j_.write16(a & 0xFFFFFE, static_cast<uint16_t>(v));
 }
 void Risc::store8(uint32_t a, uint32_t v) {
   if (local(a)) { ramWrite32(a, v & 0xFF); return; }
+  waitBus(a);
+  extra_ += 1;
+  j_.accessTime = clk + extra_;
   j_.write8(a & 0xFFFFFF, static_cast<uint8_t>(v));
 }
 
@@ -154,14 +195,51 @@ bool Risc::cond(int cc) const {
 }
 
 // ------------------------------------------------------------------------------------- execução
+// placar: antes de executar, espera os registros que a instrução lê (ou escreve) e que ainda não chegaram
+void Risc::waitRegs(uint16_t op) {
+  const int o = op >> 10, s = (op >> 5) & 31, d = op & 31;
+  int64_t need = clk;
+  auto use = [&](int idx) { if (ready_[idx] > need) need = ready_[idx]; };
+  // campo s com valor imediato (não é registro)
+  static constexpr uint64_t IMM = (1ull << 2) | (1ull << 3) | (1ull << 6) | (1ull << 7) | (1ull << 13) | (1ull << 14) |
+                                  (1ull << 15) | (1ull << 24) | (1ull << 25) | (1ull << 27) | (1ull << 29) | (1ull << 31) |
+                                  (1ull << 35) | (1ull << 38) | (1ull << 43) | (1ull << 44) | (1ull << 49) | (1ull << 50) |
+                                  (1ull << 51) | (1ull << 53) | (1ull << 57) | (1ull << 63) | (1ull << 8) | (1ull << 12) |
+                                  (1ull << 19) | (1ull << 54);
+  bool imm = (IMM >> o) & 1;
+  if (dsp && o == 32) imm = true;  // SUBQMOD
+  if (!dsp && (o == 32 || o == 33 || o == 62)) imm = true;  // SAT8/SAT16/SAT24 só usam o destino
+  if (o == 37) use((bank_ ^ 32) + s);                       // MOVEFA lê o outro banco
+  else if (!imm) use(bank_ + s);
+  if (o != 52 && o != 53 && o != 57) use(bank_ + d);        // nos desvios, d é a condição
+  if (o == 43 || o == 49 || o == 58 || o == 60) use(bank_ + 14);
+  if (o == 44 || o == 50 || o == 59 || o == 61) use(bank_ + 15);
+  if (o == 21 && divFree_ > need) need = divFree_;          // DIV espera a divisão anterior
+  if (!dsp && o == 48 && hiReady_ > need) need = hiReady_;  // STOREP espera o HIDATA do LOADP
+  if (need > clk) { stalls += uint64_t(need - clk); clk = need; }
+}
+
 void Risc::run(int64_t until) {
   while (clk < until && running()) {
     checkIrq();
+    extra_ = 0;
     const uint16_t op = fetch(pc);
     pc += 2;
-    extra_ = 0;
+    waitRegs(op);
+    extLat_ = 0;
+    j_.accessTime = clk;
+    scoreOp_ = op;
+    scoreBank_ = bank_;
     exec(op);
     clk += 1 + extra_;
+    // a marca no placar vale para a instrução de atraso quando o desvio é tomado
+    const uint16_t sop = scoreOp_;
+    const int o = sop >> 10, bank = scoreBank_;
+    // LOAD de fora: o registro chega depois; o processador segue (placar)
+    if (extLat_ && ((o >= 39 && o <= 41) || o == 43 || o == 44 || o == 58 || o == 59 || (o == 42 && !dsp))) {
+      ready_[bank + (sop & 31)] = clk + extLat_;
+      if (o == 42) hiReady_ = clk + extLat_;  // LOADP: o HIDATA chega junto
+    } else if (o == 21) { ready_[bank + (sop & 31)] = clk + 16; divFree_ = clk + 16; }  // DIV: 16 tiques a mais
   }
   if (clk < until) clk = until;
 }
@@ -204,7 +282,6 @@ void Risc::exec(uint16_t op) {
       const uint64_t a = (divctrl & 1) ? uint64_t(rn) << 16 : uint64_t(rn);
       if (b == 0) { rn = 0xFFFFFFFFu; remain = uint32_t(a); }
       else { const uint64_t q = a / b; remain = uint32_t(a - q * b); rn = uint32_t(q); }
-      extra_ += 16;
       break;
     }
     case 22: {                                                                                         // ABS
@@ -278,10 +355,16 @@ void Risc::exec(uint16_t op) {
       // instrução de atraso: roda antes do desvio
       const uint16_t ds = fetch(pc);
       pc += 2;
+      // a instrução de atraso também passa pelo placar e marca o que carregar
+      waitRegs(ds);
+      extLat_ = 0;
+      scoreOp_ = ds;
+      scoreBank_ = bank_;
+      j_.accessTime = clk + extra_;
       inDelay_ = true;
       exec(ds);
       inDelay_ = false;
-      extra_ += 1;
+      extra_ += 2;  // instrução de atraso + fila esvaziada pelo desvio tomado
       pc = to & 0xFFFFFE;
       break;
     }
@@ -321,6 +404,13 @@ void Risc::exec(uint16_t op) {
   }
 }
 
+void Risc::rebase(int64_t lo, int64_t hi) {
+  const int64_t c = std::clamp(clk, lo, hi), d = c - clk;
+  clk = c;
+  for (int64_t& t : ready_) t += d;
+  divFree_ += d; hiReady_ += d;
+}
+
 void Risc::sync(StateIO& io) {
   io.sync(clk);
   io.raw(r, sizeof r);
@@ -328,6 +418,10 @@ void Risc::sync(StateIO& io) {
   io.sync(hidata); io.sync(remain); io.sync(divctrl); io.sync(mtxc); io.sync(mtxa); io.sync(endian); io.sync(modulo);
   io.sync(acc);
   io.bytes(ram);
+  // placar guardado como distância ao relógio
+  for (int i = 0; i < 64; i++) { int32_t d = int32_t(ready_[i] > clk ? ready_[i] - clk : 0); io.sync(d); ready_[i] = clk + std::clamp(d, 0, 64); }
+  { int32_t d = int32_t(divFree_ > clk ? divFree_ - clk : 0); io.sync(d); divFree_ = clk + std::clamp(d, 0, 64); }
+  { int32_t d = int32_t(hiReady_ > clk ? hiReady_ - clk : 0); io.sync(d); hiReady_ = clk + std::clamp(d, 0, 64); }
   if (io.reading()) {
     fz &= 1; fc &= 1; fn &= 1;
     mtxa = ramBase | (mtxa & 0xFFC);

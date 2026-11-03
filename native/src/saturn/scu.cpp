@@ -72,7 +72,13 @@ uint32_t Scu::read(uint32_t off) {
   switch (off & 0xFC) {
     case 0x00: case 0x20: case 0x40: return dma_[off >> 5].r;
     case 0x04: case 0x24: case 0x44: return dma_[off >> 5].w;
-    case 0x7C: return 0;  // DMA sempre já terminou (é feito na hora)
+    case 0x7C: {  // DSTA: nível em andamento (D0MV/D1MV/D2MV) e níveis esperando outro
+      uint32_t t = 0;
+      for (int l = 0; l < 3; l++) if (dmaLeft_[l] > 0) t |= 0x10u << (l * 4);
+      if (dmaLeft_[0] > 0 && (dmaLeft_[1] > 0 || dmaLeft_[2] > 0)) t |= 1u << 16;
+      if (dmaLeft_[1] > 0 && dmaLeft_[2] > 0) t |= 1u << 17;
+      return t;
+    }
     case 0x80: {
       uint32_t v = dsp.pc;
       v |= uint32_t(dsp.t0) << 23 | uint32_t(dsp.s) << 22 | uint32_t(dsp.z) << 21 | uint32_t(dsp.c) << 20;
@@ -108,7 +114,7 @@ void Scu::write(uint32_t off, uint32_t v, uint32_t m) {
       break;
     }
     case 0x14: case 0x34: case 0x54: upd(dma_[off >> 5].md, 0x01010107); break;
-    case 0x60: break;  // DMA forçado a parar: já terminou
+    case 0x60: if (v & m & 1) for (auto& l : dmaLeft_) l = 0; break;  // DMA forçado a parar (sem interrupção)
     case 0x80: {
       const uint32_t x = v & m;
       if (x & (1u << 15)) { dsp.pc = uint8_t(x); dsp.jumpPending = false; }
@@ -158,6 +164,11 @@ void Scu::dmaTransfer(int level, uint32_t src, uint32_t dst, uint32_t count) {
   const uint32_t radd = (d.add & 0x100) ? 4 : 0;
   const uint32_t wadd = (d.add & 7) ? (1u << (d.add & 7)) : 0;
   const bool bbusW = dst >= 0x05A00000 && dst < 0x05FF0000;
+  // tempo: escrita de 16 bits no VDP 1 ciclo, no SCSP 13; leitura do barramento A (CD, cartucho) mais lenta
+  const bool scspW = dst >= 0x05A00000 && dst < 0x05C00000;
+  const bool abusR = src >= 0x02000000 && src < 0x05A00000;
+  dmaCost_ += bbusW ? int64_t((count + 1) / 2) * (scspW ? 13 : 1) : int64_t((count + 3) / 4) * 2;
+  dmaCost_ += abusR ? int64_t((count + 1) / 2) * 4 : int64_t((count + 3) / 4);
   uint32_t r = src, w = dst;
   for (uint32_t done = 0; done < count;) {
     if (bbusW) {
@@ -184,9 +195,11 @@ void Scu::dmaTransfer(int level, uint32_t src, uint32_t dst, uint32_t count) {
 
 void Scu::startDma(int level) {
   if (dmaBusy_) return;  // um DMA não dispara outro (trava contra recursão)
+  if (dmaLeft_[level] > 0) dmaEnd(level);   // o nível ainda estava ocupado: o anterior termina já
   dmaBusy_ = true;
   struct Fim { bool& b; ~Fim() { b = false; } } fim{dmaBusy_};
   Level& d = dma_[level];
+  dmaCost_ = 8;
   if (d.md & 0x01000000) {
     // indireto: tabela em D?W com (quantidade, destino, origem); bit 31 da origem marca a última
     uint32_t t = d.w & 0x07FFFFFC;
@@ -195,6 +208,7 @@ void Scu::startDma(int level) {
     for (int guard = 0; guard < 4096 && total < 0x1000000; guard++) {
       uint32_t cnt = sys_.busRead(t, 4) & 0xFFFFF, dst = sys_.busRead(t + 4, 4), src = sys_.busRead(t + 8, 4);
       t += 12;
+      dmaCost_ += 12;
       if (!cnt) cnt = 0x100000;
       const uint32_t md = d.md;
       d.md &= ~0x10100u;  // na tabela os endereços não são escritos de volta
@@ -210,7 +224,18 @@ void Scu::startDma(int level) {
     if (!cnt) cnt = level ? 0x1000 : 0x100000;
     dmaTransfer(level, d.r, d.w, cnt);
   }
+  // os dados já foram copiados; o fim (interrupção e DSTA) vem depois do tempo da transferência
+  dmaLeft_[level] = int32_t(std::clamp<int64_t>(dmaCost_, 1, 1 << 28));
+}
+
+void Scu::dmaEnd(int level) {
+  dmaLeft_[level] = 0;
   raise(level == 0 ? INT_DMA0 : level == 1 ? INT_DMA1 : INT_DMA2);
+}
+
+void Scu::tick(int cycles) {
+  for (int l = 0; l < 3; l++)
+    if (dmaLeft_[l] > 0 && (dmaLeft_[l] -= cycles) <= 0) dmaEnd(l);
 }
 
 // ------------------------------------------------------------------------------------------------ DSP
@@ -406,6 +431,7 @@ void Scu::dspExec(uint32_t op) {
 void Scu::sync(StateIO& io) {
   io.sync(ist_); io.sync(ims_); io.sync(level_); io.sync(vec_);
   for (auto& d : dma_) { io.sync(d.r); io.sync(d.w); io.sync(d.c); io.sync(d.add); io.sync(d.en); io.sync(d.md); }
+  io.raw(dmaLeft_, sizeof dmaLeft_);
   io.sync(t0cmp_); io.sync(t0cnt_); io.sync(t1rel_); io.sync(t1md_);
   io.sync(asr0_); io.sync(asr1_); io.sync(aref_); io.sync(rsel_);
   io.raw(dsp.prog, sizeof dsp.prog);
@@ -416,6 +442,7 @@ void Scu::sync(StateIO& io) {
   io.sync(dsp.t0); io.sync(dsp.jumpPending); io.sync(dsp.jumpTo);
   if (io.reading()) {
     for (auto& c : dsp.ct) c &= 63;
+    for (auto& l : dmaLeft_) l = std::clamp(l, 0, 1 << 28);
     dsp.lop &= 0xFFF;
     if (level_ < 0 || level_ > 15) level_ = 0;
   }

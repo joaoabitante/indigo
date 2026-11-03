@@ -9,7 +9,9 @@
 namespace indigo::jaguar {
 
 namespace {
-const char STATE_MAGIC[4] = {'I', 'J', 'G', '1'};
+const char STATE_MAGIC[4] = {'I', 'J', 'G', '2'};
+// limites dos relógios guardados no estado: à frente cabe qualquer fila de blits; atrás, só um pouco
+constexpr int64_t MAX_AHEAD = int64_t(1) << 40, MAX_BEHIND = int64_t(1) << 20;
 constexpr uint32_t CART_MARK = 0x04040404;
 constexpr int LEFT_HC = 188;  // começo da janela visível (em ciclos do vídeo), como no Virtual Jaguar
 constexpr int VIS_HC = 1304;  // largura da janela visível (326 pontos de 4 ciclos)
@@ -102,8 +104,8 @@ bool isJaguarRom(const std::vector<uint8_t>& b, const std::string& n) {
 }
 
 // ---------------------------------------------------------------------------------- criação
-Jaguar::Jaguar(const std::vector<uint8_t>& f, const std::string& nome)
-    : cpu(*this), gpu(*this, false), dsp(*this, true), dram(0x200000, 0), file_(f) {
+Jaguar::Jaguar(const std::vector<uint8_t>& f, const std::string& nome, bool isPal)
+    : pal(isPal), cpu(*this), gpu(*this, false), dsp(*this, true), dram(0x200000, 0), file_(f) {
   if (f.empty()) throw std::runtime_error("Arquivo do Jaguar vazio.");
   for (int i = 0; i < 0x10000; i++) {
     const int c = (i >> 12) & 15, r = (i >> 8) & 15, y = i & 0xFF;
@@ -142,6 +144,7 @@ void Jaguar::reset() {
   joySel_ = 0xFFFF;
   eeState_ = eeBits_ = eeOutCnt_ = 0; eeShift_ = 0; eeAddr_ = eeOp_ = 0; eeWen_ = false;
   audW_ = audR_ = 0; audNext_ = 0;
+  busFree_ = blitEnd_ = 0; blitIrq_ = false; accessTime = 0; frame_ = 0;
   hleBoot();
   cpu.reset();
   updateIpl();
@@ -187,13 +190,17 @@ void Jaguar::hleBoot() {
   // lista de objetos vazia (um objeto de parada) em 0x1000
   put32(&dram[0x1000], 0); put32(&dram[0x1004], 4);
   if (!ramProgram) put32(&dram[0x804], 1);  // a ROM de partida marca o fim do seu trabalho aqui
-  // vídeo NTSC como a ROM de partida deixa
+  // vídeo como a ROM de partida deixa (NTSC: 262 linhas; PAL: 312 linhas, linha de 1702 tiques)
   setReg16(0x00, uint16_t(0x1861 | (cart.empty() ? 0 : (cart[0x400] & 0x1E))));
   setReg16(0x02, 0x35CC);
   const uint16_t v[][2] = {{0x2E, 844}, {0x30, 1713}, {0x32, 125}, {0x34, 1741}, {0x36, 651}, {0x38, 203}, {0x3A, 203},
                            {0x3C, 1665}, {0x3E, 523}, {0x40, 500}, {0x42, 24}, {0x44, 517}, {0x46, 38}, {0x48, 518},
                            {0x4A, 511}, {0x4C, 6}, {0x54, 784}, {0x58, 0}, {0x28, 0x6C1}, {0x4E, 519}};
   for (auto& p : v) setReg16(p[0], p[1]);
+  if (pal) {
+    const uint16_t vp[][2] = {{0x2E, 850}, {0x30, 1711}, {0x32, 158}, {0x3E, 623}, {0x40, 600}, {0x42, 34}, {0x44, 618}};
+    for (auto& p : vp) setReg16(p[0], p[1]);
+  }
   setReg16(0x20, 0x1000); setReg16(0x22, 0);  // OLP (as metades ficam trocadas)
   gpu.endian = dsp.endian = 0x00070007;
   gpu.ramWrite32(0xF03000, 0x03D0DEAD);  // marca deixada pela verificação do cartucho
@@ -255,7 +262,7 @@ uint32_t Jaguar::read32(uint32_t a) {
   if (a >= 0xF03000 && a < 0xF04000) return gpu.ramRead32(a);
   if (a >= 0xF1A100 && a < 0xF1A124) return dsp.regRead(a - 0xF1A100);
   if (a >= 0xF1B000 && a < 0xF1D000) return dsp.ramRead32(a);
-  if (a >= 0xF02200 && a < 0xF022A0) { const uint32_t o = a & 0xFC; return o == 0x38 ? 1 : be32(&blitRegs[o]); }
+  if (a >= 0xF02200 && a < 0xF022A0) { const uint32_t o = a & 0xFC; return o == 0x38 ? (blitBusy() ? 0 : 1) : be32(&blitRegs[o]); }
   return (uint32_t(read16(a)) << 16) | read16(a + 2);
 }
 
@@ -282,16 +289,16 @@ uint16_t Jaguar::tomRead16(uint32_t o) {
   if (o >= 0x3000) return uint16_t(gpu.ramRead32(0xF03000 + o - 0x3000) >> ((o & 2) ? 0 : 16));
   if (o >= 0x2100 && o < 0x2120) { const uint32_t r = gpu.regRead(o & 0x1C); return uint16_t((o & 2) ? r : r >> 16); }
   if (o >= 0x2200 && o < 0x2300) {
-    if ((o & 0xFC) == 0x38) return (o & 2) ? 1 : 0;  // B_CMD lido = estado: sempre ocioso
+    if ((o & 0xFC) == 0x38) return (o & 2) ? (blitBusy() ? 0 : 1) : 0;  // B_CMD lido = estado (bit 0: ocioso)
     return be16(&blitRegs[o & 0xFE]);
   }
   if (o >= 0x600 && o < 0x800) o -= 0x200;  // espelho da CLUT
   switch (o) {
     case 0x04: {  // HC: posição dentro da meia linha
-      const int64_t d = std::max<int64_t>(0, m68k_ - hlStart_);
+      const int64_t d = std::max<int64_t>(0, accessTime - hlStart_);
       return uint16_t((d & 0x3FF) | ((vc_ & 1) ? 0x400 : 0));
     }
-    case 0x06: return uint16_t(vc_);
+    case 0x06: return uint16_t(vc_ | ((interlaced() && (frame_ & 1)) ? 0x800 : 0));  // bit 11: segundo campo
     case 0x10: case 0x12: case 0x14: case 0x16: return uint16_t(ob_ >> (48 - (o - 0x10) * 8));
     case 0xE0: return tomPending();
     default: return be16(&tom[o]);
@@ -364,7 +371,7 @@ uint16_t Jaguar::joyRead(bool buttons) {
     }
     return d;
   }
-  uint16_t d = 0xFF7F;  // bit 4 = NTSC
+  uint16_t d = pal ? 0xFF6F : 0xFF7F;  // bit 4: 1 = NTSC, 0 = PAL
   if (row >= 0) {
     static const uint32_t B[4] = {J_A, J_B, J_C, J_OPTION};
     if (pad & B[row]) d &= 0xFFFD;
@@ -517,6 +524,7 @@ void Jaguar::timers() {
       const uint32_t pre = jPit_[n * 2], div = jPit_[n * 2 + 1];
       jPitNext_[n] = (pre | div) ? jPitNext_[n] + std::max<int64_t>(64, int64_t(pre + 1) * (div + 1)) : 0;
     }
+  if (blitIrq_ && now_ >= blitEnd_) { blitIrq_ = false; gpu.setIrq(4); }  // fim do blit: interrupção 4 do GPU
   if (i2sNext_ && now_ >= i2sNext_) {
     dsp.setIrq(1);
     i2sNext_ += 64 * (int64_t(sclk_) + 1);
@@ -526,9 +534,12 @@ void Jaguar::timers() {
 void Jaguar::runTo(int64_t t) {
   while (now_ < t) {
     int64_t step = std::min(t, now_ + 128);
-    for (int64_t e : {tomPitNext_, jPitNext_[0], jPitNext_[1], i2sNext_})
+    for (int64_t e : {tomPitNext_, jPitNext_[0], jPitNext_[1], i2sNext_, blitIrq_ ? blitEnd_ : 0})
       if (e > now_ && e < step) step = e;
     while (m68k_ < step) {
+      // o 68000 tem a menor prioridade: espera o Blitter e o Object Processor largarem o barramento
+      if (m68k_ < busFree_) { m68k_ = std::min(busFree_, step); continue; }
+      accessTime = m68k_;
       const int c = cpu.step();
       cpu.cycles = 0;
       m68k_ += int64_t(c > 0 ? c : 4) * 2;
@@ -539,14 +550,14 @@ void Jaguar::runTo(int64_t t) {
     timers();
     // som: o valor atual do DAC, amostrado na taxa da saída
     const int64_t pos = now_ * sampleRate_;
-    if (audNext_ == 0 || audNext_ > pos + CLOCK) audNext_ = pos;
+    if (audNext_ == 0 || audNext_ > pos + clock()) audNext_ = pos;
     while (audNext_ <= pos) {
       const size_t cap = aud_.size();
       if (audW_ - audR_ + 2 > cap) audR_ += 2;  // ninguém está lendo: descarta o mais velho
       aud_[audW_ % cap] = int16_t(ltxd_) / 32768.0f;
       aud_[(audW_ + 1) % cap] = int16_t(rtxd_) / 32768.0f;
       audW_ += 2;
-      audNext_ += CLOCK;
+      audNext_ += clock();
     }
   }
 }
@@ -561,33 +572,46 @@ void Jaguar::pullAudio(float* l, float* r, size_t n) {
 
 // ---------------------------------------------------------------------------------- quadro
 void Jaguar::beginFrame() {
-  const int vdb = reg16(0x46), vde = reg16(0x48), vp = reg16(0x3E);
+  const int vdb = reg16(0x46), vde = reg16(0x48), vp = reg16(0x3E) & 0x7FF;
   top_ = (vdb > 0 && vdb < vp) ? vdb : 31;
   const int h = (vde > vdb) ? (vde - vdb) / 2 : 0;
-  rows_ = (h > 0 && h <= 256 && vde <= vp) ? h : 240;
+  rows_ = (h > 0 && h <= FB_H / 2 && vde <= vp + 1) ? h : 240;
   const int pw = ((reg16(0x28) >> 9) & 7) + 1;
-  outW = VIS_HC / pw;
-  outH = rows_;
-  std::fill(fb.begin(), fb.begin() + size_t(outW) * outH, 0xFF000000u);
+  const bool il = interlaced();
+  const int w = VIS_HC / pw, oh = il ? rows_ * 2 : rows_;
+  // entrelaçado: cada campo só redesenha as suas linhas (as do outro campo ficam)
+  // só a área que vai ser mostrada (w x oh pontos, linha a linha com passo w)
+  if (!il || w != outW || oh != outH) std::fill_n(fb.begin(), std::min(fb.size(), size_t(w) * oh), 0xFF000000u);
+  outW = w;
+  outH = oh;
+}
+
+// meias linhas por campo e tiques por meia linha, como os registros VP e HP mandam (com limites de segurança)
+static int halvesOf(int vp) { return (vp >= 400 && vp <= 700) ? vp + 1 : 524; }
+static int hlenOf(int hp) { return (hp >= 600 && hp <= 1000) ? hp + 1 : 845; }
+
+double Jaguar::frameRate() const {
+  return double(clock()) / (double(hlenOf(reg16(0x2E) & 0x3FF)) * halvesOf(reg16(0x3E) & 0x7FF));
 }
 
 void Jaguar::runFrame() {
   beginFrame();
   const int vp = reg16(0x3E) & 0x7FF, hp = reg16(0x2E) & 0x3FF;
-  const int halves = (vp >= 400 && vp <= 700) ? vp + 1 : 524;
-  const int hlen = (hp >= 600 && hp <= 1000) ? hp + 1 : 845;
+  const int halves = halvesOf(vp), hlen = hlenOf(hp);
+  // entrelaçado: o número de meias linhas é ímpar, e o segundo campo começa no meio de uma linha
+  const int field = interlaced() ? int(frame_ & 1) : 0;
   for (int hl = 0; hl < halves; hl++) {
     vc_ = hl;
     hlStart_ = now_;
     if (hl == (reg16(0x4E) & 0x7FF)) tomIrq(0);
-    if (!(hl & 1)) opLine(hl);
+    if ((hl & 1) == field) opLine(hl, field);
     runTo(now_ + hlen);
   }
   frame_++;
 }
 
 // ---------------------------------------------------------------------------------- Object Processor
-void Jaguar::opLine(int hl) {
+void Jaguar::opLine(int hl, int field) {
   const int vdb = reg16(0x46), vde = reg16(0x48), vp = reg16(0x3E);
   int start = vdb, end = vde;
   if (vde > vp) { start = 0; end = 511; }  // VDE além do quadro: o OP roda em todas as linhas
@@ -598,8 +622,11 @@ void Jaguar::opLine(int hl) {
     for (int i = 0; i < 720; i++) put16(&tom[0x1800 + i * 2], bg);
   }
   uint32_t p = ((uint32_t(reg16(0x22)) << 16) | reg16(0x20)) & 0xFFFFF8;
+  accessTime = now_;
+  opPhrases_ = 0;
   for (int guard = 0; guard < 4096; guard++) {
     const uint64_t p0 = phrase(p);
+    opPhrases_++;
     const uint32_t link = uint32_t(p0 >> 21) & 0x3FFFF8;
     switch (p0 & 7) {
       case 0: case 1: {  // bitmap (1 = com escala)
@@ -608,6 +635,7 @@ void Jaguar::opLine(int hl) {
         uint32_t height = (p0 >> 14) & 0x3FF;
         if (uint32_t(hl) >= ypos && height > 0) {
           const uint64_t p1 = phrase(p + 8);
+          opPhrases_ += scaled ? 2 : 1;
           uint64_t pp0 = p0;
           const uint32_t dwidth = uint32_t((p1 >> 18) & 0x3FF) * 8;
           uint32_t data = uint32_t(p0 >> 40) & 0xFFFFF8;
@@ -639,6 +667,7 @@ void Jaguar::opLine(int hl) {
       case 2: {  // objeto do GPU: interrompe o GPU e espera o OBF
         ob_ = p0;
         obf_ = false;
+        if (gpu.clk < now_) gpu.clk = now_;  // o GPU atende já, no começo da linha
         gpu.setIrq(3);
         for (int n = 0; n < 200 && !obf_ && gpu.running() && (gpu.regRead(0) & (1u << 7)); n++) gpu.run(gpu.clk + 32);
         if (!obf_) { guard = 1 << 30; break; }  // o GPU não liberou: a lista para nesta linha
@@ -666,8 +695,10 @@ void Jaguar::opLine(int hl) {
       default: p += 8; break;
     }
   }
-  const int row = (hl - top_) >> 1;
-  if (hl >= top_ && row < rows_) renderRow(row);
+  // o OP segura o barramento enquanto lê a lista e os dados (~2 tiques por phrase, no máximo meia linha)
+  busFree_ = std::max(busFree_, now_ + std::min<int64_t>(int64_t(opPhrases_) * 2, 400));
+  const int row = (hl - field - top_) >> 1;
+  if (hl - field >= top_ && row < rows_) renderRow(interlaced() ? row * 2 + field : row);
 }
 
 // desenha uma linha de um bitmap no buffer de linha; hscale em 3.5 (0x20 = 1,0)
@@ -696,7 +727,7 @@ void Jaguar::drawBitmap(uint64_t p0, uint64_t p1, uint32_t hscale) {
   int phIdx = -1;
   for (int s = skip; s < total;) {
     const int k = s / ppp;
-    if (k != phIdx) { ph = phrase(data + uint32_t(k) * pitch); phIdx = k; }
+    if (k != phIdx) { ph = phrase(data + uint32_t(k) * pitch); phIdx = k; opPhrases_++; }
     const int i = s % ppp;
     const uint32_t pix = uint32_t(ph >> (64 - bits * (i + 1))) & (bits == 32 ? 0xFFFFFFFFu : ((1u << bits) - 1));
     if (x >= 0 && x < lbMax && !(trans && pix == 0)) {
@@ -770,7 +801,19 @@ void Jaguar::sync(StateIO& io) {
   io.sync(i2sNext_); io.sync(sclk_); io.sync(smode_); io.sync(ltxd_); io.sync(rtxd_); io.sync(joySel_);
   io.sync(eeState_); io.sync(eeBits_); io.sync(eeOutCnt_); io.sync(eeShift_); io.sync(eeAddr_); io.sync(eeOp_);
   io.sync(eeWen_); io.sync(pad);
+  // barramento e Blitter, guardados como distância ao relógio (64 bits: blits na fila podem passar de 2^24 tiques)
+  int64_t bf = std::clamp<int64_t>(busFree_ - now_, 0, MAX_AHEAD), be = std::clamp<int64_t>(blitEnd_ - now_, 0, MAX_AHEAD);
+  io.sync(bf); io.sync(be); io.sync(blitIrq_);
   if (io.reading()) {
+    // relógios de um estado adulterado: tudo perto de now_ (atrás demais, o processador levaria horas para alcançar)
+    now_ = std::clamp<int64_t>(now_, 0, int64_t(1) << 50);
+    busFree_ = now_ + std::clamp<int64_t>(bf, 0, MAX_AHEAD); blitEnd_ = now_ + std::clamp<int64_t>(be, 0, MAX_AHEAD);
+    auto perto = [&](int64_t& t) { t = std::clamp<int64_t>(t, now_ - MAX_BEHIND, now_ + MAX_AHEAD); };
+    perto(m68k_);
+    gpu.rebase(now_ - MAX_BEHIND, now_ + MAX_AHEAD);
+    dsp.rebase(now_ - MAX_BEHIND, now_ + MAX_AHEAD);
+    for (int64_t* t : {&tomPitNext_, &jPitNext_[0], &jPitNext_[1], &i2sNext_}) if (*t) { perto(*t); if (!*t) *t = 1; }
+    hlStart_ = std::clamp<int64_t>(hlStart_, now_ - MAX_BEHIND, now_);
     clampTo(eeState_, 0, 5); clampTo(eeBits_, 0, 16); clampTo(eeOutCnt_, 0, 16);
     eeAddr_ &= 0x3F; sclk_ &= 0xFF; vc_ &= 0x7FF;
     audNext_ = 0;
@@ -798,8 +841,19 @@ void Jaguar::loadState(const std::vector<uint8_t>& s) {
 }
 
 // ---------------------------------------------------------------------------------- núcleo
+// PAL pelo nome do arquivo (o cartucho do Jaguar não diz a região)
+static bool palName(const std::string& nome) {
+  std::string n = nome;
+  for (char& c : n) c = char(std::tolower(static_cast<unsigned char>(c)));
+  for (const char* t : {"(europe", "(e)", "(pal", "[pal", "(germany", "(france", "(uk)", "(spain", "(italy", "(australia",
+                        "(netherlands", "(sweden", "(scandinavia", "(nordic", "(denmark", "(finland", "(norway", "(portugal",
+                        "(austria", "(switzerland", "(belgium", "(ger)", "(fr)", "(eu)", "(a)", "(g)", "(f)", "(s)", "(i)"})
+    if (n.find(t) != std::string::npos) return true;
+  return false;
+}
+
 JaguarCore::JaguarCore(const std::vector<uint8_t>& rom, const std::string& nome, const std::vector<uint8_t>* save)
-    : m_(std::make_unique<Jaguar>(rom, nome)) {
+    : m_(std::make_unique<Jaguar>(rom, nome, palName(nome))) {
   if (!firmware("jaguar").empty()) m_->bios = firmware("jaguar");
   if (save) importSave(*save);
 }
@@ -833,7 +887,7 @@ void JaguarCore::importSave(const std::vector<uint8_t>& b) {
 }
 
 std::string JaguarCore::note() const {
-  return "Atari Jaguar (experimental): partida sem a ROM do console; teclas C = X/Y, Option = Select, Pause = Start, "
+  return std::string("Atari Jaguar (experimental") + (m_->pal ? ", PAL 50 Hz" : "") + "): partida sem a ROM do console; teclas C = X/Y, Option = Select, Pause = Start, "
          "* e # = L e R.";
 }
 

@@ -49,13 +49,19 @@ struct Metrics {
 };
 
 // ------------------------------------------------------------ controles na tela
-enum class TouchAction { None, Menu, Control };
-// botões de toque que não existem em core.h (L2 e R2 do PlayStation): o app os entrega ao núcleo do PS1
+enum class TouchAction { None, Menu, Control, Disk };
+// botões de toque que não existem em core.h (L2 e R2 do PlayStation): o app os entrega ao núcleo do PS1.
+// Usam os mesmos bits das teclas 8 e 9 do teclado numérico (KEY_KP0 + 8/9), que o PS1 não tem.
 constexpr uint32_t TOUCH_L2 = 1u << 24, TOUCH_R2 = 1u << 25;
 
 class TouchControls {
 public:
   Metrics m;
+  // extras de alguns consoles (valem no próximo layout()):
+  bool disk = false;  // botão "Disco" (Famicom Disk System): fingerDown devolve TouchAction::Disk
+  int keypad = 0;     // teclado numérico do controle: 0 = não tem, 1 = Atari 5200 (* e #), 2 = Intellivision
+                      // (Clear e Enter). O botão "123" abre e fecha o teclado (3 × 4) por cima do jogo; as
+                      // teclas viram os bits KEY_KP0 + n, KEY_KPSTAR (* e Clear) e KEY_KPHASH (# e Enter)
   // unidade de tamanho dos controles: a altura (deitado) ou a largura (em pé) de um celular comum, em pixels.
   // Num tablet ou tela grande ela para de crescer: os botões ficam do tamanho do dedo, não da tela.
   static float unit(int ow, int oh, bool portrait, const Metrics& m);
@@ -74,13 +80,16 @@ public:
   void fingerMove(SDL_FingerID id, float x, float y);
   void fingerUp(SDL_FingerID id);
   void clear() { fingers_.clear(); }
+  bool keypadOpen() const { return kpOpen_; }
+  // centro do controle com esse rótulo (para os testes); false se não está na tela
+  bool find(const std::string& label, float& x, float& y) const;
   uint32_t keys() const;
   bool turbo() const;
   void draw(SDL_Renderer* r) const;
 
 private:
   enum Kind { DPAD, ROUND, PILL };
-  enum Special { NONE, MENU, FAST };
+  enum Special { NONE, MENU, FAST, DISK, KEYPAD };
   struct Ctl {
     Kind kind;
     float cx, cy, w, h;  // centro; ROUND/DPAD: w = raio; PILL: largura × altura
@@ -99,7 +108,10 @@ private:
   static constexpr const char* PS_SQUARE = "\x04";
   bool drawPsSymbol(SDL_Renderer* r, const char* label, float cx, float cy, float s, float w) const;
   std::vector<Ctl> ctls_;
+  void layoutExtras(bool portrait, float L, float R, float T, float B, float u, float xl);
   std::map<SDL_FingerID, Finger> fingers_;
+  bool kpOpen_ = false;
+  size_t kpBase_ = 0;  // as teclas do teclado aberto ficam no fim de ctls_, a partir daqui
   float minHit_ = 24;  // meia altura mínima da área de toque das pílulas (24 dp: alvo de 48 dp)
 };
 

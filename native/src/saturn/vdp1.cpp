@@ -41,6 +41,8 @@ void Vdp1::reset() {
   localX_ = localY_ = 0;
   drawPending_ = false;
   commandsRun = 0;
+  drawing_ = false;
+  cost_ = drawClock_ = 0;
 }
 
 uint16_t Vdp1::readReg(uint32_t off) {
@@ -68,7 +70,7 @@ void Vdp1::writeReg(uint32_t off, uint16_t v) {
     case 0x06: ewdr_ = v; break;
     case 0x08: ewlr_ = v; break;
     case 0x0A: ewrr_ = v; break;
-    case 0x0C: break;  // ENDR: o desenho já terminou
+    case 0x0C: drawing_ = false; break;  // ENDR: interrompe o desenho (sem a interrupção de fim)
     default: break;
   }
 }
@@ -89,18 +91,44 @@ void Vdp1::eraseFb(int buf) {
     for (int x = xs; x < xe && x < 512; x++) fb[buf][y * stride + x] = ewdr_;
 }
 
+// no V-blank o quadro que acabou de ser mostrado é apagado; no fim dele os quadros trocam e o desenho começa
+// (como no aparelho: o programa pode mexer na lista de comandos durante o V-blank)
 void Vdp1::vblankIn() {
   const bool autoMode = !(fbcr_ & 2);
-  if (autoMode || manualSwap_) {
-    drawBuf ^= 1;
-    edsr_ = uint16_t((edsr_ & 2) >> 1);  // BEF <- CEF
-    if (autoMode || manualErase_) eraseFb(drawBuf);
-    manualSwap_ = manualErase_ = false;
-    if (ptmr_ == 2) draw();
-  } else if (manualErase_) {
-    eraseFb(drawBuf ^ 1);
-    manualErase_ = false;
-  }
+  if (autoMode || manualErase_) eraseFb(drawBuf ^ 1);
+  manualErase_ = false;
+}
+
+void Vdp1::vblankOut() {
+  const bool autoMode = !(fbcr_ & 2);
+  if (!(autoMode || manualSwap_)) return;
+  drawing_ = false;                    // um desenho que não terminou é abandonado
+  drawBuf ^= 1;
+  edsr_ = uint16_t((edsr_ & 2) >> 1);  // BEF <- CEF (o LOPR fica com o último comando do desenho)
+  manualSwap_ = false;
+  if (ptmr_ == 2) draw();
+}
+
+// custo de uma linha desenhada: preparação e um ciclo por ponto (6 quando lê o quadro: sombra, meia
+// transparência, MSB); mais a sobra medida no aparelho (~19% em 16 bits, ~9% em 8 bits)
+void Vdp1::lineCost(const Cmd& c, int pixels) {
+  const bool readFb = (c.pmod & 0x8000) || (c.pmod & 3) == 1 || (c.pmod & 3) == 3;
+  const int64_t base = ((c.pmod & 0x800) ? 8 : 12) + int64_t(pixels) * (readFb ? 6 : 1);
+  cost_ += base + ((base * (eightBit() ? 24 : 48)) >> 8);
+}
+
+void Vdp1::run(int cycles) {
+  if (!drawing_) return;
+  drawClock_ -= cycles;
+  if (drawClock_ <= 0) finish();
+}
+
+void Vdp1::finish() {
+  drawing_ = false;
+  drawClock_ = 0;
+  edsr_ |= 2;  // CEF: a lista terminou
+  sys_.scu.raise(INT_VDP1);
+  sys_.scu.factor(DF_SPRITE);
 }
 
 bool Vdp1::texel(const Cmd& c, int u, int v, uint16_t& out, bool& endCode) const {
@@ -175,6 +203,7 @@ void Vdp1::line(const Cmd& c, int x0, int y0, int x1, int y1, int v, bool textur
   bool ended = false;
   if (budget_ <= 0) return;
   budget_ -= m + 1;
+  lineCost(c, m + 1);
   for (int j = 0; j <= m; j++) {
     const int x = m ? x0 + (dx * j + (dx >= 0 ? m / 2 : -m / 2)) / m : x0;
     const int y = m ? y0 + (dy * j + (dy >= 0 ? m / 2 : -m / 2)) / m : y0;
@@ -234,6 +263,7 @@ void Vdp1::sprite(const Cmd& c) {
   bool gour = (c.pmod & 4) != 0;
   if (budget_ <= 0) return;
   budget_ -= c.w * c.h;
+  for (int v = 0; v < c.h; v++) lineCost(c, c.w);
   for (int v = 0; v < c.h; v++) {
     for (int u = 0; u < c.w; u++) {
       uint16_t col;
@@ -259,6 +289,8 @@ void Vdp1::sprite(const Cmd& c) {
 void Vdp1::draw() {
   uint32_t addr = 0, ret = 0;
   commandsRun = 0;
+  edsr_ &= ~2;  // CEF apaga no começo do desenho
+  cost_ = 0;
   budget_ = 8 * 1024 * 1024;  // pontos por desenho: uma lista absurda não trava o app
   for (int guard = 0; guard < 16384; guard++) {
     const uint16_t ctrl = vr16(addr);
@@ -279,9 +311,11 @@ void Vdp1::draw() {
     c.hflip = ctrl & 0x10;
     c.vflip = ctrl & 0x20;
     const int jp = (ctrl >> 12) & 7;
+    cost_ += 16;   // leitura do comando
     if (!(jp & 4)) {
       commandsRun++;
       const int cmd = ctrl & 0xF;
+      if (cmd <= 7) cost_ += ((c.pmod >> 3) & 7) == 1 && cmd <= 3 ? 20 : 4;   // preparação (+ tabela de cores)
       switch (cmd) {
         case 0x0:
           c.x[0] += localX_; c.y[0] += localY_;
@@ -339,9 +373,8 @@ void Vdp1::draw() {
     }
     addr &= 0x7FFFF;
   }
-  edsr_ |= 2;  // CEF: a lista terminou
-  sys_.scu.raise(INT_VDP1);
-  sys_.scu.factor(DF_SPRITE);
+  drawing_ = true;
+  drawClock_ = cost_;
 }
 
 void Vdp1::sync(StateIO& io) {
@@ -353,7 +386,12 @@ void Vdp1::sync(StateIO& io) {
   io.sync(manualSwap_); io.sync(manualErase_);
   io.sync(sysClipX_); io.sync(sysClipY_); io.sync(userX0_); io.sync(userY0_); io.sync(userX1_); io.sync(userY1_);
   io.sync(localX_); io.sync(localY_);
-  if (io.reading()) drawBuf &= 1;
+  io.sync(drawing_); io.sync(cost_); io.sync(drawClock_);
+  if (io.reading()) {
+    drawBuf &= 1;
+    cost_ = std::clamp<int64_t>(cost_, 0, int64_t(1) << 40);
+    drawClock_ = std::clamp<int64_t>(drawClock_, 0, cost_);
+  }
 }
 
 }  // namespace indigo::saturn

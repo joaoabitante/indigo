@@ -2,18 +2,21 @@
    Liga as interrupções (VDC A, KING, temporizador e controle) com prioridades, monta uma tela com os dois VDCs
    (fundo de blocos, sprite, VDC B por cima) e dois fundos do KING (bitmap de 256 cores e blocos de 16 cores com
    rolagem infinita), lê um arquivo do CD por DMA e por PIO, grava na memória de save e toca, em fases, o PSG,
-   o CD-DA (faixa 2) e o ADPCM. Resultados em 0x100000 (RES) para o indigo-t7_pcfx conferir. */
+   o CD-DA (faixa 2) e o ADPCM; depois, a pedido do teste, a tela de 7,16 MHz com rotação e o vídeo comprimido do
+   RAINBOW com o mouse na porta 2. Resultados em 0x100000 (RES) para o indigo-t7_pcfx conferir. */
 #include "t7_pcfx_scsi.h"
 
 #define RES ((volatile uint32_t*)0x00100000)
 enum { R_DONE, R_FRAMES, R_VBL, R_TIMER, R_RASTER, R_PAD, R_SUM, R_DSTAT, R_CPU, R_BRAM, R_KING, R_PHASE, R_PADIRQ,
-       R_PIOSUM, R_TOC, R_CDCMD, R_SPRX, R_ADPCM, R_SUBQ, R_GO2, R_DONE2 };
+       R_PIOSUM, R_TOC, R_CDCMD, R_SPRX, R_ADPCM, R_SUBQ, R_GO2, R_DONE2, R_GO3, R_DONE3, R_RBLEN, R_MOUSE, R_MOUSEX,
+       R_MOUSEY, R_MOUSEB, R_MOUSEN, R_CKY, R_CKU, R_CKV };
 
 uint32_t cputest(void);
 extern void irq_stub(void);
 
 volatile uint32_t frame;
 static volatile uint32_t padv;
+static volatile int mouse_on;  /* terceira tela: lê também a porta 2 (mouse) */
 
 /* cor da paleta i (o teste no PC usa a mesma fórmula) */
 static uint16_t palc(int i) {
@@ -101,10 +104,21 @@ void irq_dispatch(uint32_t level) {
       vram_put(0, sx);
       RES[R_SPRX] = sx;
       out16(0x00, 0); out16(0x00, 1);  /* pede o controle */
+      if (mouse_on) { out16(0x80, 0); out16(0x80, 1); }
     }
   }
   if (act & 0x40) { RES[R_TIMER]++; out16(0xF00, 0x3); }
-  if (act & 0x10) { (void)in16(0x00); padv = (uint32_t)in16(0x40) | (uint32_t)in16(0x42) << 16; RES[R_PADIRQ]++; }
+  if (act & 0x10) {
+    (void)in16(0x00); padv = (uint32_t)in16(0x40) | (uint32_t)in16(0x42) << 16; RES[R_PADIRQ]++;
+    if (in16(0x80) & 8) {  /* porta 2 pronta: mouse (0xD), botões nos bits 16-17, X e Y com sinal */
+      const uint32_t m = (uint32_t)in16(0xC0) | (uint32_t)in16(0xC2) << 16;
+      RES[R_MOUSE] = m;
+      RES[R_MOUSEX] += (uint32_t)(int32_t)(int8_t)(m >> 8);
+      RES[R_MOUSEY] += (uint32_t)(int32_t)(int8_t)m;
+      RES[R_MOUSEB] |= (m >> 16) & 3;
+      RES[R_MOUSEN]++;
+    }
+  }
   (void)level;
 }
 
@@ -290,6 +304,30 @@ int main(void) {
   dw(0, 0x05, 0x0088);  /* sprites desligados (o VDC continua com o tempo de 5,37 MHz) */
   __asm__ volatile("cli");
   RES[R_DONE2] = 0x32454E4F;
+  /* terceira tela: vídeo comprimido do RAINBOW. O teste põe o fluxo (15 faixas de 256x16) em 0x180000; o programa
+     copia para a KRAM, arma a transferência do KING e liga só a camada do RAINBOW. Também lê o mouse da porta 2. */
+  while (RES[R_GO3] != 1) __asm__ volatile("halt");
+  __asm__ volatile("sei");
+  kw(0x40, 0x2);                                     /* transferência parada enquanto arma */
+  kram_write(0x30000, (const uint16_t*)0x180000, RES[R_RBLEN], 0);
+  kw32(0x41, 0x30000);                               /* endereço do fluxo na KRAM (palavras) */
+  kw(0x42, 6);                                       /* linha 6: a primeira faixa aparece 16 linhas depois */
+  kw(0x43, 15);                                      /* 15 blocos = 240 linhas */
+  out16(0x200, 0); out16(0x202, 0);                  /* sem rolagem */
+  out16(0x208, 0x10); out16(0x20C, 0xFFF0); out16(0x210, 0x20);  /* cor das colunas vazias: Y 0x90, U 0x70, V 0xA0 */
+  out16(0x204, 1);                                   /* RAINBOW ligado */
+  vw(7, 0x0040);                                     /* paleta do RAINBOW a partir da cor 0x80 */
+  vw(0x0A, 0); vw(0x0B, 0); vw(0x0C, 0);             /* sem chroma key */
+  vw(8, 0x0241);                                     /* RAINBOW na prioridade 2 */
+  vw(0, 0x4000);                                     /* 5,37 MHz; só a camada do RAINBOW */
+  kw(0x40, 0x3);                                     /* transferência ligada (e a interrupção de linha) */
+  mouse_on = 1;
+  __asm__ volatile("cli");
+  RES[R_DONE3] = 0x33454E4F;
+  /* chroma key, quando o teste pedir */
+  while (RES[R_GO3] != 2) __asm__ volatile("halt");
+  vw(0x0A, (uint16_t)RES[R_CKY]); vw(0x0B, (uint16_t)RES[R_CKU]); vw(0x0C, (uint16_t)RES[R_CKV]);
+  RES[R_DONE3] = 0x34454E4F;
   for (;;) __asm__ volatile("halt");
   return 0;
 }

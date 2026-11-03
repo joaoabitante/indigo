@@ -6,9 +6,10 @@
 // cartão FX-BMP).
 //
 // Tela: 256 pontos (5,37 MHz) ou 341 (7,16 MHz) por 240 linhas (linhas 22 a 261 do HuC6261).
-// Teclas: A = I, B = II, X = III, Y = IV, L = V, R = VI, SELECT = Select, START = Run.
-// Ainda não emulado: o decodificador de vídeo comprimido HuC6271 (RAINBOW, o plano dele fica vazio), o HuC6273
-// (3D do PC-FXGA), o mouse e o multitap.
+// Teclas: A = I, B = II, X = III, Y = IV, L = V, R = VI, SELECT = Select, START = Run. O mouse do PC vira o mouse
+// do PC-FX na porta 2 a partir do primeiro movimento ou clique sobre a imagem.
+// Vídeo comprimido: o RAINBOW (HuC6271, rainbow.h) descomprime as faixas que o KING lhe passa.
+// Ainda não emulado: o HuC6273 (3D do PC-FXGA) e o multitap.
 #pragma once
 #include <cstdint>
 #include <memory>
@@ -42,6 +43,9 @@ public:
   void reset();
   void runFrame();
   void setPad(int port, uint16_t bits) { pad_[port & 1] = bits; }
+  // mouse: movimento relativo (pontos) e botões (bit 0 = esquerdo, 1 = direito); a porta passa a ter um mouse
+  void setMouse(int port, int dx, int dy, uint8_t buttons);
+  bool mouseOn(int port) const { return mouseOn_[port & 1]; }
 
   // ---- barramento da CPU (veja src/v810/v810.h)
   int64_t ts = 0, runUntil = 0;
@@ -106,6 +110,9 @@ private:
   bool padLatched_[2] = {};
   int64_t padLatchAt_[2] = {INT64_MAX, INT64_MAX};
   uint32_t padData_[2] = {};
+  bool mouseOn_[2] = {};
+  int32_t mouseX_[2] = {}, mouseY_[2] = {};
+  uint8_t mouseBtn_[2] = {};
   // diversos
   uint16_t backupCtrl_ = 0, lastVdcAr_[2] = {};
   uint8_t exBusReset_ = 0;
@@ -118,6 +125,8 @@ private:
   bool frameReady_ = false;
   // linha em montagem
   uint32_t bgLine_[272] = {};
+  uint32_t rbLine_[256] = {};  // linha do RAINBOW
+  int8_t rbType_ = -1;
   struct LineCache {
     uint16_t pictureMode, priority[2], palOffset[4], ble, spbl, ccr, coef[6];
     uint8_t layerPrio[8];
@@ -148,6 +157,7 @@ private:
   int64_t nextEvent() const;
   void activeStart();
   void mixLine(int raster);
+  void chromaKey();
   void buildFrame();
   void ramTiming(uint32_t a) {
     if ((a & ~0x7FFu) != ramPage_) { ts += 3; ramPage_ = a & ~0x7FFu; }
@@ -165,6 +175,7 @@ public:
   void runFrame() override { sys_->runFrame(); }
   void reset() override { sys_->reset(); }
   void setKeys(uint32_t mask) override;
+  void setMouse(int dx, int dy, uint32_t buttons) override;
   const uint32_t* framebuffer() const override { return sys_->fb; }
   int width() const override { return sys_->fbWidth; }
   int height() const override { return Pcfx::H; }
