@@ -7,6 +7,7 @@
 #include "../a5200/a5200.h"
 #include "../a7800/a7800.h"
 #include "../cps/cps.h"
+#include "../dc/dc.h"
 #include "../fds/fds.h"
 #include "../gamecom/gamecom.h"
 #include "../gb/gb.h"
@@ -15,12 +16,14 @@
 #include "../md/md.h"
 #include "../md32x/mars.h"
 #include "../msx/msx.h"
+#include "../n64/n64.h"
 #include "../gba/gba.h"
 #include "../intv/intv.h"
 #include "../jaguar/jaguar.h"
 #include "../nes/nes.h"
 #include "../neogeo/neogeo.h"
 #include "../ngp/ngp.h"
+#include "../nds/nds.h"
 #include "../pce/pce.h"
 #include "../pm/pm.h"
 #include "../ps1/ps1.h"
@@ -57,6 +60,9 @@ bool hasGbLogo(const std::vector<uint8_t>& b) {
 std::unique_ptr<Core> createCore(const std::vector<uint8_t>& rom, const std::string& fileName,
                                  const std::vector<uint8_t>* save, const std::vector<uint8_t>* gbaBios) {
   const std::string n = lower(fileName);
+  // BIOS (dc_boot.bin, 2 MB, pelo nome) e flash (128 KB com "KATANA_FLASH") do Dreamcast: não são jogos; o app as
+  // guarda com setFirmware("dc_boot"/"dc_flash"). Os jogos de Dreamcast vêm em disco (.gdi, .chd, .cue/.iso).
+  if (dc::isDcBoot(rom, n) || dc::isDcFlash(rom, n)) return nullptr;
   // arcade: o .zip inteiro vai ao núcleo (Capcom CPS1/CPS2)
   if (zip::isZip(rom) && cps::isCpsSet(rom, n)) return std::make_unique<cps::CpsCore>(rom, n, save);
   // Neo Geo: .zip do MAME (inteiro) ou .neo; o neogeo.zip da BIOS não é jogo
@@ -68,6 +74,8 @@ std::unique_ptr<Core> createCore(const std::vector<uint8_t>& rom, const std::str
   // "TigerDMGC" do cabeçalho (em 0 ou $40000) ou .tgc
   if (!gamecom::gamecomFirmwareKind(rom, n).empty()) return nullptr;
   if (gamecom::isGamecomRom(rom, n)) return std::make_unique<gamecom::GameComCore>(rom, save);
+  // Nintendo 64: .z64/.v64/.n64 pelos 4 primeiros bytes do cabeçalho (80 37 12 40 em qualquer ordem de bytes)
+  if (n64::isN64Rom(rom, n)) return std::make_unique<n64::N64Core>(rom, fileName, save);
   if (nes::isNesRom(rom)) return std::make_unique<nes::NESCore>(rom, save);  // mapeador sem suporte: lança erro com o número
   // Famicom Disk System: a BIOS (disksys.rom, do usuário) não é jogo; o app a guarda com setFirmware("fds").
   // Discos .fds/.qd: cabeçalho fwNES ou o bloco 1 ("*NINTENDO-HVC*") logo no começo; sem a BIOS, lança o erro
@@ -111,8 +119,10 @@ std::unique_ptr<Core> createCore(const std::vector<uint8_t>& rom, const std::str
   if (intv::isIntvRom(rom, n)) return std::make_unique<intv::IntvCore>(rom, n);
   // MSX: .mx1/.mx2, ou .rom com o cabeçalho "AB" dos cartuchos
   if (msx::isMsxRom(rom, n)) return std::make_unique<msx::MSXCore>(rom, save, msx::msxMachineFor(rom, n));
-  // Nintendo DS: a versão web reconhece, mas aqui ainda não existe núcleo
-  if ((rom.size() >= 0x200 && rom[0x15C] == 0x56 && rom[0x15D] == 0xCF) || endsWith(n, ".nds")) return nullptr;
+  // Nintendo DS: CRC do logotipo (0xCF56 em 0x15C) ou .nds com cabeçalho coerente. As BIOS do DS (opcionais,
+  // reconhecidas pelo CRC32) não são jogo: o app as guarda com setFirmware("nds_bios9"/"nds_bios7")
+  if (!nds::ndsBiosKind(rom).empty()) return nullptr;
+  if (nds::isNdsRom(rom, n)) return std::make_unique<nds::NDSCore>(rom, save);
   // Atari 5200: .a52, .car de 5200, ou .bin pequeno (até 40 KB) com o vetor de partida de 5200 no fim (antes do
   // teste fraco de .bin do GBA; os .bin de Game Boy, Master System e GBA têm assinatura e ficam de fora).
   // ATENÇÃO ao juntar consoles novos que usam .bin (Intellivision, Supervision...): o teste do 5200 é

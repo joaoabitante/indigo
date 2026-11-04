@@ -12,7 +12,7 @@ log() { echo "== $*"; }
 
 # 1. pacotes do sistema
 need=()
-for p in x86_64-w64-mingw32-g++:mingw-w64 wine:wine64 Xvfb:xvfb xdotool:xdotool convert:imagemagick cmake:cmake ninja:ninja-build sdcc:sdcc makensis:nsis nasm:nasm flex:flex; do
+for p in x86_64-w64-mingw32-g++:mingw-w64 wine:wine64 Xvfb:xvfb xdotool:xdotool convert:imagemagick cmake:cmake ninja:ninja-build sdcc:sdcc makensis:nsis nasm:nasm flex:flex mipsel-linux-gnu-as:binutils-mipsel-linux-gnu sh4-linux-gnu-gcc:gcc-sh4-linux-gnu; do
   command -v "${p%%:*}" >/dev/null 2>&1 || need+=("${p##*:}")
 done
 if [ ${#need[@]} -gt 0 ]; then
@@ -106,9 +106,15 @@ fi
 [ -f roms/gnw/vetores.txt ] || bash "$REPO/native/tools/t7_gnw.sh" "$PWD/roms/gnw"
 # Atari Jaguar: cartuchos de teste próprios (68000 + GPU/DSP), montados com o binutils do m68k
 [ -f roms/jaguar/teste2.j64 ] || bash "$REPO/native/tools/t7_jaguar.sh" "$PWD/roms/jaguar"
+# Nintendo 64: cartuchos de teste próprios (CPU, RSP, RDP, controle, saves), montados com o binutils do MIPS
+[ -f roms/n64/flash.z64 ] || bash "$REPO/native/tools/t7_n64.sh" "$PWD/roms/n64"
 # Saturn: BIOS de teste e CD homebrew próprios (precisa do sh-elf-gcc do 32X, montado acima); v2 = a BIOS
 # autentica o disco (2.5)
 [ -f roms/saturn/v2 ] || sh "$REPO/native/tools/t7_saturn.sh" "$PWD/roms/saturn"
+# Dreamcast: BIOS de teste, jogo de teste e disco próprios (sh4-linux-gnu-gcc, arm-none-eabi-as; .chd pelo chdman)
+[ -f roms/dc/v1 ] || sh "$REPO/native/tools/t7_dc.sh" "$PWD/roms/dc"
+# Nintendo DS: homebrew de teste próprio e SingleStepTests ARM7TDMI (MIT, baixados, fora do repositório)
+[ -f roms/nds/teste.nds ] || sh "$REPO/native/tools/t7_nds.sh" "$PWD/roms/nds"
 cp -rn "$REPO/native/tests/roms/smsroms" "$REPO/native/tests/roms/ngproms" roms/ 2>/dev/null || true
 cp -n "$REPO/native/tests/roms/zexall.com" "$REPO/native/tests/roms/zexdoc.com" roms/ 2>/dev/null || true
 

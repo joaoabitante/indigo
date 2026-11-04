@@ -78,6 +78,8 @@
                 <data android:mimeType="application/x-sg1000-rom" />
                 <data android:mimeType="application/x-msx-rom" />
                 <data android:mimeType="application/x-pokemon-mini-rom" />
+                <data android:mimeType="application/x-n64-rom" />
+                <data android:mimeType="application/x-nintendo-ds-rom" />
                 <!-- tipos do freedesktop (shared-mime-info) que alguns gerenciadores de arquivo usam: 32X, Sega CD e
                      Saturn (.iso), CHD e disquete cru (.qd do Famicom Disk System) -->
                 <data android:mimeType="application/x-genesis-32x-rom" />

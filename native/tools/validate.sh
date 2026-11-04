@@ -326,6 +326,9 @@ grep -E "RESULTADO|velocidade|^  total:" "$TMP/3do" | sed 's/^/  /'
 echo "== Saturn: SCU (interrupções, DMA, DSP), SMPC, VDP1, VDP2, SCSP e 68000, bloco de CD sintético, save state, BIOS de teste e homebrew próprio"
 if "$B/indigo-t7_saturn" "$R/saturn" > "$TMP/saturn"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/saturn" | head -5; fi
 grep -E "RESULTADO|homebrew:" "$TMP/saturn" | sed 's/^/  /'
+echo "== Dreamcast: CPU SH-4 igual ao PC, BIOS de teste pelo GD-ROM (.gdi/.iso/.chd), TA/PVR pixel a pixel, Maple e VMU, AICA (ARM7 e som), save state"
+if "$B/indigo-t7_dc" "$R/dc" > "$TMP/dc"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/dc" | head -5; fi
+grep -E "RESULTADO|velocidade|instruções/s" "$TMP/dc" | sed 's/^/  /'
 
 echo "== Game & Watch: CPUs SM510/SM5A/SM511 (programas próprios), tela pelo .svg, teclas, piezo e melodia, pacotes da lista do MAME, save state"
 mkdir -p "$R/gnw"
@@ -336,9 +339,17 @@ echo "== Game.com: SM8500 instrução a instrução (resultados calculados à m�
 if "$B/indigo-t7_gamecom" "$R/gamecom" > "$TMP/gamecom"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/gamecom" | head -5; fi
 grep "RESULTADO" "$TMP/gamecom" | sed 's/^/  /'
 
+echo "== Nintendo DS: CPU ARM7 x SingleStepTests ARM7TDMI (ARM e Thumb), ARMv5TE do ARM9, homebrew próprio sem BIOS (SWI em alto nível, IPC, IRQ, DMA, cartucho, save por SPI, toque, RTC, som, 2D e 3D), save state, velocidade"
+if "$B/indigo-t7_nds" "$R/nds" > "$TMP/nds"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/nds" | head -5; fi
+grep -E "RESULTADO|velocidade|casos iguais" "$TMP/nds" | sed 's/^/  /'
+
 echo "== Atari Jaguar: Object Processor, Blitter, GPU e DSP (cartuchos de teste próprios), interrupções, som I2S, controle, EEPROM, programas para a RAM, save state"
 if "$B/indigo-t7_jaguar" "$R/jaguar" > "$TMP/jag"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/jag" | head -5; fi
 grep -E "RESULTADO|conferidos" "$TMP/jag" | sed 's/^/  /'
+
+echo "== Nintendo 64: CPU VR4300 (inteiros, TLB, exceções, FPU), RSP (vetorial, DMA), RDP (triângulos, z, textura, cópia, XBUS), VI, PIF (controle, EEPROM, Controller Pak), PI (SRAM, FlashRAM), AI, save state (cartuchos de teste próprios, partida HLE)"
+if "$B/indigo-t7_n64" "$R/n64" > "$TMP/n64"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/n64" | head -5; fi
+grep -E "RESULTADO|velocidade" "$TMP/n64" | sed 's/^/  /'
 
 echo "== CPU Z80: ZEXDOC e ZEXALL"
 for z in zexdoc zexall; do

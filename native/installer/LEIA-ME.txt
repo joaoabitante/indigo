@@ -16,6 +16,13 @@ Licença
 - O Índigo é software livre (GNU GPL versão 3). Ele não traz jogos nem BIOS: use cópias dos seus.
   Créditos de terceiros: veja TERCEIROS.md no código-fonte (github.com/joaoabitante, em breve público).
 
+Novo na 2.6
+- Três consoles novos, todos experimentais: Nintendo 64 (.z64, .n64, .v64), Nintendo DS (.nds, com a tela de
+  baixo como tela de toque) e Dreamcast (.gdi, .chd ou .cue; no celular, use .chd).
+- O Nintendo 64 e o DS não precisam de BIOS. O Dreamcast precisa da BIOS do seu console: abra uma vez no Índigo
+  o dc_boot.bin e o dc_flash.bin. O Índigo não traz nenhuma BIOS.
+- Funcionam com os testes do Índigo, mas ainda não foram testados com jogos de verdade.
+
 Novo na 2.5.1
 - 3DO: com a BIOS real do console, o Índigo ficava com a tela escura ao abrir qualquer jogo. Agora a BIOS
   mostra o logo do 3DO e a tela inicial (e o Storage Manager, segurando o X). O 3DO continua experimental.

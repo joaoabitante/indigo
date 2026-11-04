@@ -18,7 +18,8 @@ ver=$(head -1 "$tmp/native/VERSION")
 
 # o que nunca vai para o público
 rm -rf "$tmp/native/relatorios" "$tmp/native/android/indigo-dev.keystore" \
-       "$tmp/native/EM-ANDAMENTO.md" "$tmp/native/NOTURNO.md" "$tmp/native/PASSAGEM-PC.md"
+       "$tmp/native/EM-ANDAMENTO.md" "$tmp/native/NOTURNO.md" "$tmp/native/PASSAGEM-PC.md" \
+       "$tmp/native/CONTEXTO.md"
 for r in asteroids blueprint pengu tutankham; do rm -f "$tmp/native/tests/roms/ngproms/$r.ngp"; done
 # Android: sem a chave do Índigo; quem compilar assina com a própria (ou a de depuração do Android)
 python3 - "$tmp/native/android/app/build.gradle" <<'PY'
@@ -52,14 +53,14 @@ Game Boy, Game Boy Color, Super Game Boy, Game Boy Advance, NES, Famicom Disk Sy
 DSP-1, S-DD1 e SPC7110), Master System, Game Gear, SG-1000, Mega Drive, 32X, Sega CD, PC Engine, SuperGrafx e PC
 Engine CD, Neo Geo (MVS/AES) e Neo Geo CD, Capcom CPS1/CPS2, Atari 2600/7800, Lynx, WonderSwan/Color, Virtual Boy,
 Neo Geo Pocket/Color, Pokémon Mini, MSX, ColecoVision, Vectrex, Mega Duck, Watara Supervision, Game & Watch e
-PlayStation. Experimentais: Panasonic 3DO, Atari 5200, Intellivision, Tiger Game.com, PC-FX, Atari Jaguar e Sega
-Saturn.
+PlayStation. Experimentais: Panasonic 3DO, Atari 5200, Intellivision, Tiger Game.com, PC-FX, Atari Jaguar, Sega
+Saturn, Nintendo 64, Nintendo DS e Dreamcast.
 
 ## Jogos e BIOS
 
 O Índigo **não traz jogos nem BIOS** de nenhum fabricante. Use cópias dos seus próprios cartuchos e discos. Os
 consoles que precisam de BIOS (PlayStation, Sega CD, Neo Geo, Neo Geo CD, PC Engine CD, ColecoVision, 3DO, Famicom
-Disk System, Atari 5200, Intellivision, Game.com, PC-FX e Saturn) pedem o arquivo do seu console na primeira vez. O
+Disk System, Atari 5200, Intellivision, Game.com, PC-FX, Saturn e Dreamcast) pedem o arquivo do seu console na primeira vez. O
 Game & Watch usa o .zip do MAME do próprio usuário, que traz o desenho da tela.
 
 ## Compilar

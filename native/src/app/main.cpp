@@ -53,8 +53,10 @@
 #include "tdo/tdo.h"
 #include "fds/fds.h"
 #include "gamecom/gamecom.h"
+#include "nds/nds.h"
 #include "pcfx/pcfx.h"
 #include "saturn/saturn.h"
+#include "dc/dc.h"
 #include "cdrom/cdrom.h"
 #include "segacd/segacd.h"
 #ifdef INDIGO_WINDOW_ICON
@@ -334,8 +336,13 @@ public:
     // ROMs do Game.com (interna de 4 KB e do sistema de 256 KB, do console da pessoa)
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "gamecom_int.bin", fw) && fw.size() == indigo::gamecom::INT_ROM_SIZE) indigo::setFirmware("gamecom_int", std::move(fw));
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "gamecom_ext.bin", fw) && fw.size() == indigo::gamecom::EXT_ROM_SIZE) indigo::setFirmware("gamecom_ext", std::move(fw));
+    // BIOS do DS (opcional: sem ela o núcleo usa as funções próprias)
+    for (const char* k : {"nds_bios9", "nds_bios7"})
+      if (std::vector<uint8_t> fw; readFile(dataDir_ + k + ".bin", fw) && indigo::nds::ndsBiosKind(fw) == k) indigo::setFirmware(k, std::move(fw));
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "pcfx.rom", fw) && indigo::pcfx::isPcfxBios(fw, "pcfx.rom")) indigo::setFirmware("pcfx", std::move(fw));
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "saturn_bios.bin", fw) && indigo::saturn::isSaturnBios(fw)) indigo::setFirmware("saturn", std::move(fw));
+    if (std::vector<uint8_t> fw; readFile(dataDir_ + "dc_boot.bin", fw) && indigo::dc::isDcBoot(fw, "dc_boot.bin")) indigo::setFirmware("dc_boot", std::move(fw));
+    if (std::vector<uint8_t> fw; readFile(dataDir_ + "dc_flash.bin", fw) && indigo::dc::isDcFlash(fw, "dc_flash.bin")) indigo::setFirmware("dc_flash", std::move(fw));
     if (std::vector<uint8_t> fw; readFile(dataDir_ + "syscard.pce", fw) && indigo::pcecd::isPceCdBios(fw)) indigo::setFirmware("pcecd", std::move(fw));
     for (const char* r : {"segacd_us", "segacd_eu", "segacd_jp"})
       if (std::vector<uint8_t> fw; readFile(dataDir_ + r + ".bin", fw) && indigo::segacd::isSegaCdBios(fw)) indigo::setFirmware(r, std::move(fw));
@@ -432,11 +439,11 @@ public:
 
   bool hasLR() const {
     const std::string s = core_->system();
-    return s == "gba" || s == "snes" || s == "pm" || s == "ws" || s == "wsc" || s == "md" || s == "32x" || s == "segacd" || s == "ps1" || s == "3do" || s == "gnw" || s == "gamecom" || s == "a5200" || s == "pcfx" || s == "saturn";
+    return s == "gba" || s == "snes" || s == "pm" || s == "ws" || s == "wsc" || s == "md" || s == "32x" || s == "segacd" || s == "ps1" || s == "3do" || s == "gnw" || s == "gamecom" || s == "a5200" || s == "pcfx" || s == "saturn" || s == "nds" || s == "dc";
   }
   bool hasXY() const {
     const std::string s = core_->system();
-    return s == "snes" || s == "ws" || s == "wsc" || s == "md" || s == "32x" || s == "segacd" || s == "ps1" || s == "3do" || s == "gnw" || s == "gamecom" || s == "a5200" || s == "pcfx" || s == "saturn" || s == "intv";
+    return s == "snes" || s == "ws" || s == "wsc" || s == "md" || s == "32x" || s == "segacd" || s == "ps1" || s == "3do" || s == "gnw" || s == "gamecom" || s == "a5200" || s == "pcfx" || s == "saturn" || s == "intv" || s == "nds" || s == "dc";
   }
   // controles de toque: medidas da tela e a imagem do jogo (deitado, eles ficam na faixa livre ao lado dela)
   bool ps1AnalogHeld_ = false;
@@ -525,6 +532,18 @@ public:
       }
       return;
     }
+    if (const std::string nk = indigo::nds::ndsBiosKind(rom); !nk.empty()) {
+      // BIOS do DS (do console da pessoa, opcional): as funções da BIOS passam a usar o código dela
+      if (writeFile(dataDir_ + nk + ".bin", rom)) {
+        indigo::setFirmware(nk, rom);
+        const bool both = !indigo::firmware("nds_bios9").empty() && !indigo::firmware("nds_bios7").empty();
+        status(std::string("BIOS do DS (") + (nk == "nds_bios9" ? "ARM9" : "ARM7") + ") instalada" +
+               (both ? ": os jogos de DS passam a usá-la" : ": falta a outra (ARM9 e ARM7); até lá o DS usa as funções próprias"));
+      } else {
+        error("Não foi possível copiar a BIOS do DS para:\n" + dataDir_);
+      }
+      return;
+    }
     if (indigo::ps1::isPs1Bios(rom)) {
       // BIOS do PlayStation (512 KB do usuário, por exemplo SCPH1001.BIN): fica guardada para os CDs e os .exe
       if (writeFile(dataDir_ + "ps1_bios.bin", rom)) {
@@ -552,6 +571,22 @@ public:
         status("BIOS do PC-FX instalada: os CDs de PC-FX já abrem");
       } else {
         error("Não foi possível copiar a BIOS do PC-FX para:\n" + dataDir_);
+      }
+      return;
+    }
+    if (indigo::dc::isDcBoot(rom, name) || indigo::dc::isDcFlash(rom, name)) {
+      // BIOS (dc_boot.bin, 2 MB) ou flash (dc_flash.bin, 128 KB) do Dreamcast do usuário: ficam guardadas
+      const bool boot = indigo::dc::isDcBoot(rom, name);
+      const char* file = boot ? "dc_boot.bin" : "dc_flash.bin";
+      if (writeFile(dataDir_ + file, rom)) {
+        indigo::setFirmware(boot ? "dc_boot" : "dc_flash", rom);
+        // a flash é opcional (sem ela o núcleo usa uma em branco); só a BIOS é exigida
+        const bool hasBoot = !indigo::firmware("dc_boot").empty();
+        status(boot ? "BIOS do Dreamcast instalada: os discos de Dreamcast já abrem"
+                    : hasBoot ? "Flash do Dreamcast instalada"
+                              : "Flash do Dreamcast instalada; abra também a BIOS (dc_boot.bin)");
+      } else {
+        error(std::string("Não foi possível copiar o arquivo do Dreamcast para:\n") + dataDir_);
       }
       return;
     }
@@ -718,8 +753,8 @@ public:
       return;
     }
     if (!core) {
-      error("Este arquivo não é um jogo de SNES, NES, Game Boy, Game Boy Color, Game Boy Advance, Master System, "
-            "Game Gear, SG-1000, Neo Geo Pocket, Pokémon Mini, Atari 2600, Atari 5200, MSX, ColecoVision, WonderSwan, Atari 7800, Vectrex, Atari Lynx, Virtual Boy, Mega Duck, Watara Supervision, PC Engine, Mega Drive, 32X, Famicom Disk System, Intellivision, Neo Geo ou arcade Capcom (CPS1/CPS2). CDs: Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, PC-FX e Saturn em .cue, .chd ou .iso.");
+      error("Este arquivo não é um jogo de SNES, NES, Game Boy, Game Boy Color, Game Boy Advance, Nintendo DS, Nintendo 64, Master System, "
+            "Game Gear, SG-1000, Neo Geo Pocket, Pokémon Mini, Atari 2600, Atari 5200, MSX, ColecoVision, WonderSwan, Atari 7800, Vectrex, Atari Lynx, Virtual Boy, Mega Duck, Watara Supervision, PC Engine, Mega Drive, 32X, Famicom Disk System, Intellivision, Neo Geo ou arcade Capcom (CPS1/CPS2). CDs: Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, PC-FX e Saturn em .cue, .chd ou .iso; Dreamcast em .gdi, .chd ou .cue.");
       return;
     }
     // celular: guarda uma cópia (já descompactada) na biblioteca do app, para o jogo aparecer na tela inicial.
@@ -741,6 +776,11 @@ public:
               ".cue. No computador, converta com: chdman createcd -i jogo.cue -o jogo.chd");
         return;
       }
+      if (ext == ".gdi") {
+        error("No celular, abra o disco de Dreamcast em .chd (um arquivo só): o Android não deixa o Índigo ler as "
+              "faixas ao lado do .gdi. No computador, converta com: chdman createcd -i jogo.gdi -o jogo.chd");
+        return;
+      }
       // copia primeiro para um nome provisório; só vira o arquivo da biblioteca se for um CD reconhecido
       const std::string lib = dataDir_ + "roms/" + name, tmp = dataDir_ + "cd-copiando" + ext;  // fora de roms/ (não aparece na estante)
       status("Copiando o CD para o Índigo...");
@@ -751,7 +791,7 @@ public:
       if (auto disc = indigo::cdrom::open(tmp, &err)) sys = indigo::cdrom::detectSystem(*disc);
       if (sys.empty()) {
         SDL_RemovePath(tmp.c_str());
-        error(err.empty() ? "Este CD não é de Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, PC-FX nem Saturn." : "Não foi possível abrir o CD: " + err);
+        error(err.empty() ? "Este CD não é de Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, PC-FX, Saturn nem Dreamcast." : "Não foi possível abrir o CD: " + err);
         return;
       }
       SDL_RemovePath(lib.c_str());
@@ -763,7 +803,7 @@ public:
     if (!disc) { error("Não foi possível abrir o CD: " + err); return; }
     const std::string sys = indigo::cdrom::detectSystem(*disc);
     if (sys.empty()) {
-      error("Este CD não é de Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, PC-FX nem Saturn.");
+      error("Este CD não é de Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, PC-FX, Saturn nem Dreamcast.");
       return;
     }
     flushSave();
@@ -779,6 +819,11 @@ public:
       if (sys == "pcfx") {
         // PC-FX: o save é a memória de save interna + a do cartão FX-BMP (64 KB)
         core = std::make_unique<indigo::pcfx::PcfxCore>(std::move(disc), haveSave ? &save : nullptr);
+      } else if (sys == "dc") {
+        // Dreamcast: o save é o VMU (128 KB) com a flash do console junto
+        if (indigo::firmware("dc_boot").empty()) throw std::runtime_error(
+            "o Dreamcast precisa da BIOS do console. Abra o arquivo da BIOS (por exemplo dc_boot.bin) uma vez no Índigo.");
+        core = std::make_unique<indigo::dc::DcCore>(std::move(disc), haveSave ? &save : nullptr);
       } else if (sys == "saturn") {
         // Saturn: o save é a RAM de backup do console (32 KB)
         if (indigo::firmware("saturn").empty()) throw std::runtime_error(
@@ -870,7 +915,7 @@ public:
       if (core_ && !paused_ && !menuOpen_) {
         core_->setKeys(adaptKeys(keyboard_ | touch_.keys(), false) | adaptKeys(padKeys, true));
         if (auto* p = dynamic_cast<indigo::ps1::Ps1Core*>(core_.get())) ps1Input(*p, touch_.keys());
-        if (core_->system() == "gamecom") penInput();
+        if (core_->system() == "gamecom" || core_->system() == "nds") penInput();
         if (core_->system() == "pcfx") mouseInput();
         const bool turbo = turboKey_ || padTurbo_ || touch_.turbo() || fastOn_;
         const int frames = turbo ? 4 : 1;
@@ -1384,7 +1429,7 @@ private:
 
   void showOpenDialog() {
     static const SDL_DialogFileFilter filters[] = {
-      {"Jogos (SNES, NES, Famicom Disk System, Game Boy, Game Boy Color, Game Boy Advance, Master System, Game Gear, Neo Geo Pocket, Pokémon Mini, Atari 2600, Atari 5200, MSX, ColecoVision, SG-1000, WonderSwan, Atari 7800, Vectrex, Intellivision, Atari Lynx, Virtual Boy, Mega Duck, Watara Supervision, PC Engine, Mega Drive, 32X, Neo Geo, arcade Capcom, Game & Watch, Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, Game.com, Jaguar, PC-FX, Saturn)",
+      {"Jogos (SNES, NES, Famicom Disk System, Game Boy, Game Boy Color, Game Boy Advance, Nintendo DS, Master System, Game Gear, Neo Geo Pocket, Pokémon Mini, Atari 2600, Atari 5200, MSX, ColecoVision, SG-1000, WonderSwan, Atari 7800, Vectrex, Intellivision, Atari Lynx, Virtual Boy, Mega Duck, Watara Supervision, PC Engine, Mega Drive, 32X, Neo Geo, arcade Capcom, Game & Watch, Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, Game.com, Jaguar, Nintendo 64, PC-FX, Saturn, Dreamcast)",
        indigo::app::dialogPattern().c_str()},
       {"Todos os arquivos", "*"},
     };
@@ -2283,9 +2328,10 @@ private:
     if (auto it = playedSys_.find(key); it != playedSys_.end()) return it->second;
     const std::string e = indigo::app::extOf(key);
     if (e == ".zip") return indigo::app::lowerAscii(key).rfind("gnw_", 0) == 0 ? "G&W" : "ARCADE";  // Game & Watch: pacotes gnw_* do MAME
+    if (e == ".gdi") return "DC";
     if (e == ".cue" || e == ".chd" || e == ".iso") {
       const std::string d = discConsole(path);
-      return d == "ps1" ? "PS1" : d == "3do" ? "3DO" : d == "pcfx" ? "PCFX" : d == "saturn" ? "SATURN" : "CD";
+      return d == "ps1" ? "PS1" : d == "3do" ? "3DO" : d == "pcfx" ? "PCFX" : d == "saturn" ? "SATURN" : d == "dc" ? "DC" : "CD";
     }
     if (e == ".rom") return romConsole(path);
     const std::string t = indigo::app::tabOfExt(e);
@@ -2584,8 +2630,8 @@ private:
       if (!core_) return;
       layoutTouch(ow, oh, true);
       const auto a = touch_.fingerDown(f.fingerID, x, y);
-      if (a == indigo::ui::TouchAction::None && core_->system() == "gamecom" && !penActive_) {
-        // tela de toque do Game.com: o dedo na imagem do jogo é a caneta
+      if (a == indigo::ui::TouchAction::None && (core_->system() == "gamecom" || core_->system() == "nds") && !penActive_) {
+        // tela de toque (Game.com, tela de baixo do DS): o dedo na imagem do jogo é a caneta
         const SDL_FRect g = gameRect(ow, oh, true);
         if (x >= g.x && y >= g.y && x < g.x + g.w && y < g.y + g.h) { penActive_ = true; penFinger_ = f.fingerID; penX_ = x; penY_ = y; }
       }
@@ -2635,7 +2681,16 @@ private:
     }
     const SDL_FRect g = gameRect(ow, oh, touchUiInUse());
     int px = 0, py = 0;  // arredonda para baixo: meio pixel fora da borda não toca na tela
-    down = indigo::gamecom::pointerToLcd(x, y, g.x, g.y, g.w, g.h, px, py) && down;
+    if (core_->system() == "nds") {
+      // DS: as duas telas empilhadas na imagem; o núcleo só aceita o toque na de baixo
+      const float fx = std::floor((x - g.x) * float(core_->width()) / g.w), fy = std::floor((y - g.y) * float(core_->height()) / g.h);
+      const bool inside = g.w > 0 && g.h > 0 && fx >= 0 && fy >= 0 && fx < core_->width() && fy < core_->height();
+      px = inside ? int(fx) : 0;
+      py = inside ? int(fy) : 0;
+      down = inside && down;
+    } else {
+      down = indigo::gamecom::pointerToLcd(x, y, g.x, g.y, g.w, g.h, px, py) && down;
+    }
     core_->setPointer(px, py, down);
   }
 

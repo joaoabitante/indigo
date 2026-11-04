@@ -222,6 +222,7 @@ std::unique_ptr<Disc> openCue(const std::string& path, std::string* err) {
       std::string mode;
       ls >> n >> mode;
       mode = lower(mode);
+      if (n < 1 || n > 99) { if (err) *err = "número de faixa inválido no .cue"; return nullptr; }
       Pending p;
       p.t.number = n;
       p.ft.file = fileIdx;
@@ -282,16 +283,65 @@ std::unique_ptr<Disc> openSingle(const std::string& path, int sectorSize, std::s
   return d;
 }
 
+// .gdi (Dreamcast): primeira linha = número de faixas; depois "faixa lba tipo tamanho_do_setor arquivo deslocamento"
+// (tipo 4 = dados, 0 = áudio; o arquivo pode vir entre aspas). Cada faixa começa no LBA dado (a área de alta
+// densidade do GD começa no 45000) e tem o tamanho do arquivo.
+std::unique_ptr<Disc> openGdi(const std::string& path, std::string* err) {
+  std::ifstream in(path);
+  if (!in) { if (err) *err = "não abriu o .gdi"; return nullptr; }
+  auto d = std::make_unique<FileDisc>();
+  std::string line;
+  int count = -1;
+  uint32_t total = 0;
+  while (std::getline(in, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    std::istringstream ls(line);
+    if (count < 0) { if (!(ls >> count) || count < 1 || count > 99) { if (err) *err = ".gdi inválido"; return nullptr; } continue; }
+    int num = 0, type = 0, ss = 0;
+    long long lba = 0;
+    if (!(ls >> num >> lba >> type >> ss)) continue;
+    std::string name;
+    ls >> std::ws;
+    if (ls.peek() == '"') { ls.get(); std::getline(ls, name, '"'); } else ls >> name;
+    if (num < 1 || num > 99 || lba < 0 || lba > 10000000 || (ss != 2352 && ss != 2048 && ss != 2336) || !cueNameSafe(name)) {
+      if (err) *err = "faixa inválida no .gdi";
+      return nullptr;
+    }
+    uint64_t bytes = 0;
+    if (!d->addFile(dirOf(path) + name, bytes)) { if (err) *err = "não abriu " + name; return nullptr; }
+    Track t;
+    t.number = num;
+    t.type = type == 4 ? TrackType::Mode1 : TrackType::Audio;
+    t.start = uint32_t(lba);
+    t.length = uint32_t(bytes / uint64_t(ss));
+    FileTrack ft;
+    ft.file = int(d->tr().size());
+    ft.sectorSize = ss;
+    d->add(t, ft);
+    total = std::max(total, t.start + t.length);
+  }
+  if (d->tr().empty()) { if (err) *err = ".gdi sem faixas"; return nullptr; }
+  // faixa de dados guardada em 2352 pode ser Mode 2: o cabeçalho do setor diz
+  for (auto& t : d->tr()) {
+    if (t.type == TrackType::Audio) continue;
+    uint8_t raw[RAW_SECTOR];
+    if (d->readRaw(t.start, raw) && raw[15] == 2) t.type = TrackType::Mode2;
+  }
+  d->finish(total, stemOf(path));
+  return d;
+}
+
 }  // namespace
 
 bool isDiscPath(const std::string& path) {
   const std::string e = extOf(path);
-  return e == ".cue" || e == ".chd" || e == ".iso";
+  return e == ".cue" || e == ".chd" || e == ".iso" || e == ".gdi";
 }
 
 std::unique_ptr<Disc> open(const std::string& path, std::string* err) {
   const std::string e = extOf(path);
   if (e == ".cue") return openCue(path, err);
+  if (e == ".gdi") return openGdi(path, err);
   if (e == ".chd") return openChd(path, err);
   if (e == ".iso") return openSingle(path, DATA_SECTOR, err);
   if (e == ".bin" || e == ".img") return openSingle(path, RAW_SECTOR, err);
@@ -304,6 +354,12 @@ std::string detectSystem(Disc& d) {
   for (size_t i = 0; i < d.tracks().size(); i++)
     if (d.tracks()[i].type != TrackType::Audio) { first = int(i); break; }
   if (first < 0) return "";
+  // Dreamcast: IP.BIN ("SEGA SEGAKATANA ") no começo de alguma faixa de dados (num GD, a do LBA 45000)
+  {
+    uint8_t ip[DATA_SECTOR];
+    for (const Track& t : d.tracks())
+      if (t.type != TrackType::Audio && d.readData(t.start, ip) && std::memcmp(ip, "SEGA SEGAKATANA ", 16) == 0) return "dc";
+  }
   const uint32_t s0 = d.tracks()[size_t(first)].start;
   uint8_t buf[DATA_SECTOR], raw[RAW_SECTOR];
   if (d.readData(s0, buf)) {

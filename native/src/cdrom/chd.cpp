@@ -228,6 +228,7 @@ bool ChdDisc::readMap(std::string* err) {
 bool ChdDisc::readTracks(uint64_t metaOff, std::string* err) {
   struct T { int num; std::string type, pgtype; uint32_t frames, pregap, postgap; };
   std::vector<T> list;
+  bool gdrom = false;
   uint64_t off = metaOff;
   for (int guard = 0; off != 0; guard++) {
     if (guard > 4096) return fail(err, "metadados do .chd em ciclo");
@@ -235,9 +236,9 @@ bool ChdDisc::readTracks(uint64_t metaOff, std::string* err) {
     if (!readFile(off, e, 16)) return fail(err, "metadados do .chd cortados");
     const uint32_t t = be32(e), len = be24(e + 5);
     const uint64_t next = be64(e + 8);
-    if (t == tag("CHGD")) return fail(err, "GD-ROM em .chd não suportado");
+    if (t == tag("CHGD")) gdrom = true;  // GD-ROM do Dreamcast: mesmo texto das faixas, área alta no LBA 45000
     if (t == tag("CHCD")) return fail(err, "metadados de CD antigos (CHCD) não suportados; converta com chdman");
-    if (t == tag("CHT2") || t == tag("CHTR")) {
+    if (t == tag("CHT2") || t == tag("CHTR") || t == tag("CHGD")) {
       if (len > 1024) return fail(err, "metadados do .chd inválidos");
       std::string s(len, '\0');
       if (len && !readFile(off + 16, &s[0], len)) return fail(err, "metadados do .chd cortados");
@@ -289,6 +290,8 @@ bool ChdDisc::readTracks(uint64_t metaOff, std::string* err) {
     const bool pgInData = !l.pgtype.empty() && l.pgtype[0] == 'V';
     if (pgInData && l.pregap > l.frames) return fail(err, "pregap maior que a faixa no .chd");
     if (!pgInData) lba += l.pregap;
+    // GD-ROM: a faixa 3 (início da área de alta densidade) fica no LBA 45000
+    if (gdrom && l.num == 3 && lba < 45000) lba = 45000 - (pgInData ? l.pregap : 0);
     c.dataLba = uint32_t(lba);
     c.frames = l.frames;
     c.chdFrame = uint32_t(chdFrame);

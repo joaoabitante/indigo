@@ -89,8 +89,13 @@ file(GLOB INDIGO_ETAPA7_SRC CONFIGURE_DEPENDS
   src/a2600/*.cpp src/a7800/*.cpp src/atari/*.cpp src/a5200/*.cpp src/lynx/*.cpp src/ws/*.cpp src/vb/*.cpp src/pm/*.cpp src/tms/*.cpp src/msx/*.cpp src/vectrex/*.cpp
   src/md/*.cpp src/pce/*.cpp src/neogeo/*.cpp src/cps/*.cpp src/cdrom/*.cpp
   src/neogeocd/*.cpp src/segacd/*.cpp src/pcecd/*.cpp src/md32x/*.cpp
-  src/ps1/*.cpp src/tdo/*.cpp src/fds/*.cpp src/svision/*.cpp src/gnw/*.cpp src/gamecom/*.cpp src/intv/*.cpp src/pcfx/*.cpp src/jaguar/*.cpp src/saturn/*.cpp)
+  src/ps1/*.cpp src/tdo/*.cpp src/fds/*.cpp src/svision/*.cpp src/gnw/*.cpp src/gamecom/*.cpp src/intv/*.cpp src/pcfx/*.cpp src/jaguar/*.cpp src/saturn/*.cpp
+  src/n64/*.cpp src/nds/*.cpp src/dc/*.cpp)
 target_sources(indigo_core PRIVATE ${INDIGO_ETAPA7_SRC})
+# FPU do N64: o arredondamento e as flags vêm do processador (fesetround/fetestexcept)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  set_source_files_properties(src/n64/vr4300.cpp PROPERTIES COMPILE_OPTIONS "-frounding-math;-ftrapping-math")
+endif()
 
 # ferramentas de teste sem interface (desligadas no build do Android)
 option(INDIGO_TOOLS "Compilar as ferramentas de teste" ON)

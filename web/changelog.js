@@ -3,6 +3,17 @@
 export const CHANGELOG = [
   {
     date: '2026-11-04',
+    title: 'App 2.6: Nintendo 64, Nintendo DS e Dreamcast',
+    items: [
+      'Nintendo 64 (.z64, .n64 e .v64): não precisa de BIOS. Saves em EEPROM, SRAM, FlashRAM e Controller Pak.',
+      'Nintendo DS (.nds): não precisa de BIOS. A tela de baixo é tela de toque (mouse no PC, dedo no celular).',
+      'Dreamcast (.gdi, .chd ou .cue; no celular, use .chd): pede a BIOS do seu console (dc_boot.bin e dc_flash.bin). O Índigo não traz nenhuma BIOS.',
+      'Os três são experimentais: funcionam com os testes do Índigo, mas ainda não foram testados com jogos de verdade.',
+    ],
+    tests: 'Testes novos do N64, do DS e do Dreamcast com 0 falhas; revalidação de 1046 comparações iguais e robustez (agora com os três consoles) com 0 problemas.',
+  },
+  {
+    date: '2026-11-04',
     title: 'App 2.5.1: 3DO liga com a BIOS do console',
     items: [
       '3DO: com a BIOS real do console, a tela ficava escura ao abrir qualquer jogo. Agora a BIOS mostra o logo do 3DO e a tela inicial (e o Storage Manager, segurando o X).',

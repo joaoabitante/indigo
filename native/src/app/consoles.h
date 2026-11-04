@@ -24,15 +24,16 @@ inline constexpr ExtTab EXT_TABS[] = {
   {".int", "INTV"}, {".itv", "INTV"}, {".vb", "VB"},
   {".duck", "DUCK"}, {".md0", "DUCK"}, {".md1", "DUCK"}, {".md2", "DUCK"}, {".sv", "SV"},
   {".pce", "PCE"}, {".sgx", "PCE"}, {".md", "MD"}, {".gen", "MD"}, {".smd", "MD"}, {".32x", "32X"},
-  {".tgc", "GAMECOM"}, {".j64", "JAGUAR"}, {".jag", "JAGUAR"}, {".abs", "JAGUAR"},
-  {".neo", "ARCADE"}, {".zip", "ARCADE"}, {".cue", "CD"}, {".chd", "CD"}, {".iso", "CD"},
+  {".tgc", "GAMECOM"}, {".nds", "NDS"}, {".j64", "JAGUAR"}, {".jag", "JAGUAR"}, {".abs", "JAGUAR"},
+  {".z64", "N64"}, {".n64", "N64"}, {".v64", "N64"},
+  {".neo", "ARCADE"}, {".zip", "ARCADE"}, {".cue", "CD"}, {".chd", "CD"}, {".iso", "CD"}, {".gdi", "DC"},
 };
 
 // ordem das abas da biblioteca (e da estante); "outros" no fim
 inline constexpr const char* TAB_ORDER[] = {
-  "SNES", "MD", "32X", "NES", "FDS", "GB", "GBC", "GBA", "SMS", "GG", "NGP", "PCE", "PM", "2600", "5200", "7800",
-  "LYNX", "MSX", "COLECO", "SG", "WS", "VECTREX", "INTV", "VB", "DUCK", "SV", "G&W", "GAMECOM", "JAGUAR", "ARCADE",
-  "PS1", "3DO", "PCFX", "SATURN", "CD", "outros"};
+  "SNES", "MD", "32X", "NES", "FDS", "GB", "GBC", "GBA", "NDS", "SMS", "GG", "NGP", "PCE", "PM", "2600", "5200", "7800",
+  "LYNX", "MSX", "COLECO", "SG", "WS", "VECTREX", "INTV", "VB", "DUCK", "SV", "G&W", "GAMECOM", "JAGUAR", "N64", "ARCADE",
+  "PS1", "3DO", "PCFX", "SATURN", "DC", "CD", "outros"};
 
 inline std::string lowerAscii(std::string s) {
   for (char& c : s) if (c >= 'A' && c <= 'Z') c = static_cast<char>(c + 32);
@@ -69,8 +70,8 @@ inline std::string tabOfSystem(const std::string& s) {
     {"a2600", "2600"}, {"a5200", "5200"}, {"a7800", "7800"}, {"lynx", "LYNX"}, {"msx", "MSX"},
     {"coleco", "COLECO"}, {"ws", "WS"}, {"wsc", "WS"}, {"vectrex", "VECTREX"}, {"intv", "INTV"}, {"vb", "VB"},
     {"duck", "DUCK"}, {"svision", "SV"}, {"pce", "PCE"}, {"sgx", "PCE"}, {"md", "MD"}, {"32x", "32X"},
-    {"gnw", "G&W"}, {"gamecom", "GAMECOM"}, {"jaguar", "JAGUAR"}, {"neogeo", "ARCADE"}, {"cps1", "ARCADE"},
-    {"cps2", "ARCADE"}, {"ps1", "PS1"}, {"3do", "3DO"}, {"pcfx", "PCFX"}, {"saturn", "SATURN"},
+    {"gnw", "G&W"}, {"gamecom", "GAMECOM"}, {"nds", "NDS"}, {"jaguar", "JAGUAR"}, {"n64", "N64"}, {"neogeo", "ARCADE"}, {"cps1", "ARCADE"},
+    {"cps2", "ARCADE"}, {"ps1", "PS1"}, {"3do", "3DO"}, {"pcfx", "PCFX"}, {"saturn", "SATURN"}, {"dc", "DC"},
     {"segacd", "CD"}, {"pcecd", "CD"}, {"neogeocd", "CD"},
   };
   for (const auto& e : SYS) if (s == e.ext) return e.tab;

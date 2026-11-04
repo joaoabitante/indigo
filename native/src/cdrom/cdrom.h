@@ -47,10 +47,10 @@ protected:
   std::string name_;
 };
 
-// abre .cue, .iso, .bin sozinho (vira uma faixa Mode 1 / 2352) ou .chd; nullptr com a mensagem em err.
+// abre .cue, .iso, .gdi (Dreamcast), .bin sozinho (vira uma faixa Mode 1 / 2352) ou .chd; nullptr com a mensagem em err.
 std::unique_ptr<Disc> open(const std::string& path, std::string* err = nullptr);
 
-// diz se o caminho parece uma imagem de CD pela extensão (.cue, .chd, .iso)
+// diz se o caminho parece uma imagem de CD pela extensão (.cue, .chd, .iso, .gdi)
 bool isDiscPath(const std::string& path);
 
 // LBA <-> minutos/segundos/quadros (com os 150 setores iniciais), em binário (não BCD)
@@ -69,6 +69,7 @@ inline uint32_t msfToLba(int m, int s, int f) { return uint32_t((m * 60 + s) * 7
 //                setor 4 (PlayStation)
 //   "3do"     -> rótulo de volume do sistema de arquivos Opera no setor 0 (tipo 1, 5x 0x5A, versão 1, "CD-ROM")
 //   "saturn"  -> "SEGA SEGASATURN " no início do LBA 0 (Sega Saturn)
+//   "dc"      -> "SEGA SEGAKATANA " no início de uma faixa de dados (Dreamcast; .gdi, .cue ou .chd)
 //   ""        -> não reconhecido
 std::string detectSystem(Disc& d);
 

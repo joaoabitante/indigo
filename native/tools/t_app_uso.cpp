@@ -123,8 +123,9 @@ void testarConsoles() {
   // extensões dos consoles novos da 2.4 e as abas
   struct { const char* arq; const char* aba; } casos[] = {
       {"Jogo.fds", "FDS"}, {"jogo.QD", "FDS"}, {"x.a52", "5200"}, {"x.int", "INTV"}, {"x.itv", "INTV"},
-      {"x.tgc", "GAMECOM"}, {"x.j64", "JAGUAR"}, {"x.jag", "JAGUAR"}, {"x.abs", "JAGUAR"}, {"x.duck", "DUCK"},
-      {"x.md1", "DUCK"}, {"x.sv", "SV"}, {"x.sgb", "GB"}, {"x.32x", "32X"}, {"x.rom", "MSX"}};
+      {"x.tgc", "GAMECOM"}, {"x.nds", "NDS"}, {"x.j64", "JAGUAR"}, {"x.jag", "JAGUAR"}, {"x.abs", "JAGUAR"}, {"x.duck", "DUCK"},
+      {"x.md1", "DUCK"}, {"x.sv", "SV"}, {"x.sgb", "GB"}, {"x.32x", "32X"}, {"x.rom", "MSX"},
+      {"x.z64", "N64"}, {"x.N64", "N64"}, {"x.v64", "N64"}, {"jogo.GDI", "DC"}};
   bool ok = true;
   std::string ruim;
   for (const auto& c : casos)
@@ -137,8 +138,8 @@ void testarConsoles() {
   // núcleos → aba
   struct { const char* sys; const char* aba; } nucleos[] = {
       {"fds", "FDS"}, {"a5200", "5200"}, {"intv", "INTV"}, {"gamecom", "GAMECOM"}, {"jaguar", "JAGUAR"},
-      {"gnw", "G&W"}, {"svision", "SV"}, {"duck", "DUCK"}, {"pcfx", "PCFX"}, {"saturn", "SATURN"}, {"gb", "GB"},
-      {"cps2", "ARCADE"}, {"sgx", "PCE"}, {"ngpc", "NGP"}, {"wsc", "WS"}, {"segacd", "CD"}};
+      {"gnw", "G&W"}, {"svision", "SV"}, {"duck", "DUCK"}, {"pcfx", "PCFX"}, {"saturn", "SATURN"}, {"dc", "DC"}, {"gb", "GB"},
+      {"cps2", "ARCADE"}, {"sgx", "PCE"}, {"ngpc", "NGP"}, {"wsc", "WS"}, {"segacd", "CD"}, {"n64", "N64"}};
   ok = true;
   ruim.clear();
   for (const auto& n : nucleos) if (app::tabOfSystem(n.sys) != n.aba) { ok = false; ruim += std::string(n.sys) + " "; }
@@ -170,7 +171,7 @@ void testarConsoles() {
   const std::string p = ";" + app::dialogPattern() + ";";
   ok = true;
   ruim.clear();
-  for (const char* e : {"fds", "qd", "a52", "int", "itv", "tgc", "j64", "jag", "abs", "duck", "sv", "sgb", "zip", "cue", "chd",
+  for (const char* e : {"fds", "qd", "a52", "int", "itv", "tgc", "nds", "j64", "jag", "abs", "z64", "n64", "v64", "duck", "sv", "sgb", "zip", "cue", "chd", "gdi",
                         "iso", "bin", "exe", "indigo"})
     if (p.find(std::string(";") + e + ";") == std::string::npos) { ok = false; ruim += std::string(e) + " "; }
   check(ok, "diálogo de abrir aceita as extensões dos consoles novos (o Jaguar tinha ficado de fora)" + (ruim.empty() ? "" : ": falta " + ruim));

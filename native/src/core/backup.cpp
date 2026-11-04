@@ -22,6 +22,7 @@
 #include "../a5200/a5200.h"
 #include "../a7800/a7800.h"
 #include "../jaguar/jaguar.h"
+#include "../n64/n64.h"
 #include "../cps/cps.h"
 #include "../neogeo/neogeo.h"
 #include "../gnw/gnw.h"
@@ -277,6 +278,7 @@ std::string detectSystem(const std::vector<uint8_t>& b, const std::string& name)
   if (zip::isZip(b) && gnw::isGnwSet(b)) return "gnw";  // Game & Watch: .zip com o desenho .svg da tela
   if (gamecom::isGamecomRom(b, n)) return "gamecom";
   if (jaguar::isJaguarRom(b, n)) return "jaguar";
+  if (n64::isN64Rom(b, n)) return "n64";
   if (nes::isNesRom(b)) return "nes";
   if (!fds::isFdsBios(b, n) && fds::isFdsDisk(b, n)) return "fds";
   if (snes::isSnesRom(b, n)) return "snes";
@@ -344,14 +346,15 @@ std::string extensionFor(const std::string& sys) {
   if (sys == "msx") return ".rom";
   if (sys == "a2600") return ".a26";
   if (sys == "gamecom") return ".tgc";
+  if (sys == "nds") return ".nds";
   if (sys == "jaguar") return ".j64";
+  if (sys == "n64") return ".z64";
   return ".bin";
 }
 
 RomIdentity identify(const std::vector<uint8_t>& b, const std::string& fileName) {
   RomIdentity r;
   r.sys = detectSystem(b, fileName);
-  if (r.sys == "nds") r.sys.clear();
   if (r.sys == "gg" || r.sys == "sms") {
     r.gameCode = sms::smsCode(sms::smsNormalize(b));
   } else if (r.sys == "ngp" || r.sys == "ngpc") {
@@ -407,6 +410,12 @@ RomIdentity identify(const std::vector<uint8_t>& b, const std::string& fileName)
     r.gameCode = "SG1000";
   } else if (r.sys == "msx") {
     r.gameCode = "MSX";  // o cartucho não tem título
+  } else if (r.sys == "nds") {
+    // título (12 letras em 0) e código do jogo (4 letras em 0x0C) do cabeçalho do cartucho
+    for (size_t k = 0; k < 12; k++) { const int c = at(b, k); if (c >= 0x20 && c < 0x7F) r.title += static_cast<char>(c); else if (c == 0) break; }
+    while (!r.title.empty() && r.title.back() == ' ') r.title.pop_back();
+    for (size_t k = 12; k < 16; k++) { const int c = at(b, k); if (c >= 0x20 && c < 0x7F) r.gameCode += static_cast<char>(c); }
+    if (r.gameCode.size() != 4) r.gameCode = "NDS";
   } else if (r.sys == "a2600") {
     r.gameCode = "A2600";  // o cartucho não tem título nem código
   } else if (r.sys == "neogeo") {

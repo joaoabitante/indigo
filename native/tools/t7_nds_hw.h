@@ -1,0 +1,87 @@
+// Registradores do Nintendo DS usados pelos programas de teste do Índigo (endereços do GBATEK).
+#pragma once
+typedef unsigned char u8;
+typedef unsigned short u16;
+typedef unsigned int u32;
+typedef signed short s16;
+typedef signed int s32;
+typedef unsigned long long u64;
+typedef long long s64;
+
+#define R8(a) (*(volatile u8*)(a))
+#define R16(a) (*(volatile u16*)(a))
+#define R32(a) (*(volatile u32*)(a))
+
+#define DISPCNT_A R32(0x04000000)
+#define DISPSTAT R16(0x04000004)
+#define VCOUNT R16(0x04000006)
+#define BG0CNT_A R16(0x04000008)
+#define BG1CNT_A R16(0x0400000A)
+#define BLDCNT_A R16(0x04000050)
+#define DISP3DCNT R16(0x04000060)
+#define DISPCAPCNT R32(0x04000064)
+#define MASTER_BRIGHT_A R16(0x0400006C)
+#define DISPCNT_B R32(0x04001000)
+#define BG3CNT_B R16(0x0400100E)
+#define BG3PA_B R16(0x04001030)
+#define BG3PB_B R16(0x04001032)
+#define BG3PC_B R16(0x04001034)
+#define BG3PD_B R16(0x04001036)
+#define BG3X_B R32(0x04001038)
+#define BG3Y_B R32(0x0400103C)
+
+#define DMA_SAD(n) R32(0x040000B0 + (n) * 12)
+#define DMA_DAD(n) R32(0x040000B4 + (n) * 12)
+#define DMA_CNT(n) R32(0x040000B8 + (n) * 12)
+#define DMA_FILL(n) R32(0x040000E0 + (n) * 4)
+#define TM_VAL(n) R16(0x04000100 + (n) * 4)
+#define TM_CNT(n) R16(0x04000102 + (n) * 4)
+#define KEYINPUT R16(0x04000130)
+#define EXTKEYIN R16(0x04000136)
+#define RTCCNT R16(0x04000138)
+#define IPCSYNC R16(0x04000180)
+#define IPCFIFOCNT R16(0x04000184)
+#define IPCFIFOSEND R32(0x04000188)
+#define IPCFIFORECV R32(0x04100000)
+#define AUXSPICNT R16(0x040001A0)
+#define AUXSPIDATA R8(0x040001A2)
+#define ROMCTRL R32(0x040001A4)
+#define CARDCMD(n) R8(0x040001A8 + (n))
+#define CARDDATA R32(0x04100010)
+#define SPICNT R16(0x040001C0)
+#define SPIDATA R16(0x040001C2)
+#define EXMEMCNT R16(0x04000204)
+#define IME R32(0x04000208)
+#define IE R32(0x04000210)
+#define IF R32(0x04000214)
+#define VRAMCNT(n) R8(0x04000240 + ((n) < 7 ? (n) : (n) + 1))
+#define WRAMCNT R8(0x04000247)
+#define DIVCNT R16(0x04000280)
+#define DIV_NUMER R64(0x04000290)
+#define DIV_DENOM R64(0x04000298)
+#define DIV_RESULT R64(0x040002A0)
+#define DIVREM_RESULT R64(0x040002A8)
+#define SQRTCNT R16(0x040002B0)
+#define SQRT_RESULT R32(0x040002B4)
+#define SQRT_PARAM R64(0x040002B8)
+#define POWCNT1 R16(0x04000304)
+#define HALTCNT R8(0x04000301)
+#define R64(a) (*(volatile u64*)(a))
+
+// 3D
+#define CLEAR_COLOR R32(0x04000350)
+#define CLEAR_DEPTH R16(0x04000354)
+#define GXSTAT R32(0x04000600)
+#define GFX(cmd) R32(0x04000400 + (cmd) * 4)
+
+// som (ARM7)
+#define SCHAN_CNT(n) R32(0x04000400 + (n) * 16)
+#define SCHAN_SAD(n) R32(0x04000404 + (n) * 16)
+#define SCHAN_TMR(n) R16(0x04000408 + (n) * 16)
+#define SCHAN_PNT(n) R16(0x0400040A + (n) * 16)
+#define SCHAN_LEN(n) R32(0x0400040C + (n) * 16)
+#define SOUNDCNT R16(0x04000500)
+
+// resultados do ARM9 (lidos pelo indigo-t7_nds)
+#define RES ((volatile u32*)0x02300000)
+#define RES7 ((volatile u32*)0x02300400)

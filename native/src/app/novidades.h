@@ -11,6 +11,15 @@ struct Versão {
 };
 
 inline constexpr Versão VERSOES[] = {
+    {"2.6", "04/11/2026",
+     {"3 consoles novos, experimentais:",
+      "Nintendo 64, Nintendo DS e",
+      "Dreamcast",
+      "DS: toque na tela de baixo",
+      "Dreamcast pede a BIOS do seu",
+      "console (dc_boot e dc_flash)",
+      "Ainda não testados com jogos",
+      "de verdade", nullptr}},
     {"2.5.1", "04/11/2026",
      {"3DO: a BIOS do console agora",
       "liga (logo e tela inicial);",

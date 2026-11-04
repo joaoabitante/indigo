@@ -121,3 +121,20 @@ de 12 bits no relógio / 4, amostras de onda com sinal, volume com meio passo, D
 onda presa com o canal tocando e mistura de 8 bits com corte. O código do Índigo foi escrito à parte; nenhum trecho
 foi copiado. A escolha do encaixe de cartucho pelo P3 no momento da leitura segue a observação em aparelho
 publicada no GameCom-Assembler (Kitrinx, GPL-3.0, README do `cycle_count_test`); nenhum código foi usado.
+
+Nintendo DS (`native/src/nds`): escrito para o Índigo a partir do GBATEK (Martin Korth, documentação pública de
+engenharia reversa do GBA/DS). A CPU parte do interpretador ARM7TDMI do próprio núcleo do GBA do Índigo, com as
+instruções do ARMv5TE acrescentadas. Nenhum código de emulador de DS foi lido ou copiado. Não há BIOS nem firmware
+da Nintendo: a partida é direta e as funções SWI da BIOS são implementadas em alto nível; os vetores e o despachante
+de IRQ são um trecho próprio de 18 instruções; os dados de usuário do firmware (nome, calibração do toque) são
+gerados pelo núcleo. As tabelas de passo do IMA-ADPCM (89 valores e os ajustes de índice) são as do padrão IMA/DVI,
+de domínio público. A BIOS do usuário, se aberta no app, é reconhecida só pelo CRC32 (nenhum dado dela no código).
+O teste (`native/tools/t7_nds*.{cpp,c,s,py,sh}`) usa um homebrew escrito do zero, compilado com o clang, e a
+SingleStepTests/ARM7TDMI (MIT, baixada fora do repositório).
+
+O núcleo do Dreamcast (`native/src/dc/`) foi escrito para o Índigo a partir da documentação pública do hardware
+(manuais do SH-4/SH7750 e documentos de engenharia reversa do Holly, da PowerVR2, do AICA, do GD-ROM e do Maple);
+nenhum código de outro emulador foi lido ou copiado. A CPU do AICA reaproveita a ARM60 do próprio Índigo
+(`native/src/tdo/arm60.cpp`). A BIOS de teste, o jogo de teste, o teste da CPU e o disco de teste
+(`native/tools/t7_dc*`) também são do Índigo; o `libgcc` do `sh4-linux-gnu-gcc` (GPL-3.0 com a exceção de runtime do
+GCC) entra só nos binários de teste gerados na máquina, que não fazem parte do repositório.

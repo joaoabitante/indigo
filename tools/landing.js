@@ -35,11 +35,11 @@ export const CONSOLE_GROUPS = [
   { title: 'A era dos 8 bits', era: 'Anos 70 e 80', icon: 'joy', items: [
     { name: 'Atari 2600' }, { name: 'Atari 7800' }, { name: 'ColecoVision', bios: 1 }, { name: 'Vectrex', bios: 1, note: 'tela vetorial' },
     { name: 'SG-1000' }, { name: 'MSX' }, { name: 'NES' }, { name: 'Master System', web: 1 },
-    { name: 'Famicom Disk System', fresh: 1, bios: 1, note: 'disquetes .fds e .qd, troca de lado com F4' },
-    { name: 'Atari 5200', fresh: 1, bios: 1, note: 'experimental, novo na 2.4' }, { name: 'Intellivision', fresh: 1, bios: 1, note: 'experimental, novo na 2.4' },
+    { name: 'Famicom Disk System', bios: 1, note: 'disquetes .fds e .qd, troca de lado com F4' },
+    { name: 'Atari 5200', bios: 1, note: 'experimental, desde a 2.4' }, { name: 'Intellivision', bios: 1, note: 'experimental, desde a 2.4' },
   ] },
   { title: '16 bits e CD', era: 'Anos 80 e 90', icon: 'cart', items: [
-    { name: 'SNES', note: 'com os chips SuperFX, SA-1, DSP, S-DD1 e SPC7110' }, { name: 'Super Game Boy', fresh: 1, note: 'molduras e cores dos jogos de Game Boy' },
+    { name: 'SNES', note: 'com os chips SuperFX, SA-1, DSP, S-DD1 e SPC7110' }, { name: 'Super Game Boy', note: 'molduras e cores dos jogos de Game Boy' },
     { name: 'Mega Drive' }, { name: '32X' },
     { name: 'Sega CD', bios: 1 }, { name: 'PC Engine' }, { name: 'SuperGrafx' }, { name: 'PC Engine CD', bios: 1 }, { name: 'Neo Geo CD', bios: 1 },
   ] },
@@ -50,14 +50,17 @@ export const CONSOLE_GROUPS = [
     { name: 'Game Boy', web: 1 }, { name: 'Game Boy Color', web: 1 }, { name: 'Game Boy Advance', web: 1 },
     { name: 'Game Gear', web: 1 }, { name: 'Lynx' }, { name: 'WonderSwan e WonderSwan Color', n: 2 },
     { name: 'Neo Geo Pocket e Pocket Color', n: 2, web: 1 }, { name: 'Virtual Boy' }, { name: 'Pokémon Mini' },
-    { name: 'Game & Watch', fresh: 1, note: 'o .zip do MAME, com o desenho da tela' }, { name: 'Mega Duck', fresh: 1 },
-    { name: 'Watara Supervision', fresh: 1 }, { name: 'Game.com', fresh: 1, bios: 1, note: 'experimental, novo na 2.4' },
+    { name: 'Game & Watch', note: 'o .zip do MAME, com o desenho da tela' }, { name: 'Mega Duck' },
+    { name: 'Watara Supervision' }, { name: 'Game.com', bios: 1, note: 'experimental, desde a 2.4' },
+    { name: 'Nintendo DS', fresh: 1, note: 'experimental, novo na 2.6: duas telas, a de baixo com toque' },
   ] },
   { title: 'O salto para o 3D', era: 'Desde a 2.0', icon: 'disc', fresh: 1, items: [
     { name: 'PlayStation', bios: 1, note: '3D, CDs em .cue/.bin, .chd e .iso, memory card e DualShock com vibração' },
     { name: '3DO', bios: 1, note: 'experimental, desde a 2.2: ainda não testado com jogos de verdade' },
-    { name: 'Sega Saturn', fresh: 1, bios: 1, note: 'experimental, novo na 2.4' }, { name: 'Atari Jaguar', fresh: 1, note: 'experimental, novo na 2.4' },
-    { name: 'PC-FX', fresh: 1, bios: 1, note: 'experimental, novo na 2.4' },
+    { name: 'Sega Saturn', bios: 1, note: 'experimental, desde a 2.4' }, { name: 'Atari Jaguar', note: 'experimental, desde a 2.4' },
+    { name: 'PC-FX', bios: 1, note: 'experimental, desde a 2.4' },
+    { name: 'Nintendo 64', fresh: 1, note: 'experimental, novo na 2.6' },
+    { name: 'Dreamcast', fresh: 1, bios: 1, note: 'experimental, novo na 2.6: discos .gdi, .chd e .cue' },
   ] },
 ];
 // consoles que pedem a BIOS do aparelho da pessoa (da tabela acima; a linha do tempo usa os mesmos nomes)
@@ -66,7 +69,7 @@ const BIOS_SET = new Set([...BIOS_LIST, 'Neo Geo MVS/AES']);
 const BIOS_TEXT = BIOS_LIST.slice(0, -1).join(', ') + ' e ' + BIOS_LIST[BIOS_LIST.length - 1];
 export const SYSTEM_COUNT = CONSOLE_GROUPS.reduce((s, g) => s + g.items.reduce((t, i) => t + (i.n || 1), 0), 0);
 // comparações automáticas feitas a cada versão (suítes de teste públicas e emuladores de referência)
-const COMPARISONS = '1043';
+const COMPARISONS = '1046';
 
 // ---------------------------------------------------------------- "nexus": consoles ligados ao Índigo (atrás do desenho do topo)
 const inner = (k) => ICON[k].replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
@@ -143,16 +146,16 @@ const DECADES = {
 };
 export const TIMELINE = [
   { y: 1977, name: 'Atari 2600', kind: 'Console de mesa', fact: 'Lançado como Atari VCS, popularizou os jogos em cartucho.' },
-  { y: 1979, name: 'Intellivision', alt: 'Mattel', kind: 'Console de mesa', fact: 'Rival do Atari 2600, com um disco de direção e teclado numérico no controle.', exp: 'Experimental · desde a 2.4', fresh: 1 },
-  { y: 1980, name: 'Game & Watch', alt: 'Nintendo', kind: 'Portátil', fact: 'Cada aparelho trazia um jogo só, numa tela de LCD.', fresh: 1 },
+  { y: 1979, name: 'Intellivision', alt: 'Mattel', kind: 'Console de mesa', fact: 'Rival do Atari 2600, com um disco de direção e teclado numérico no controle.', exp: 'Experimental · desde a 2.4' },
+  { y: 1980, name: 'Game & Watch', alt: 'Nintendo', kind: 'Portátil', fact: 'Cada aparelho trazia um jogo só, numa tela de LCD.' },
   { y: 1982, name: 'ColecoVision', kind: 'Console de mesa', fact: 'Vinha com Donkey Kong na caixa.' },
   { y: 1982, name: 'Vectrex', kind: 'Console de mesa', fact: 'Tinha tela própria e desenhava com linhas (vetores) em vez de pixels.' },
-  { y: 1982, name: 'Atari 5200', kind: 'Console de mesa', fact: 'Sucessor do 2600, com controle analógico e teclado numérico.', exp: 'Experimental · desde a 2.4', fresh: 1 },
+  { y: 1982, name: 'Atari 5200', kind: 'Console de mesa', fact: 'Sucessor do 2600, com controle analógico e teclado numérico.', exp: 'Experimental · desde a 2.4' },
   { y: 1983, name: 'SG-1000', kind: 'Console de mesa', fact: 'O primeiro console de mesa da Sega.' },
   { y: 1983, name: 'MSX', kind: 'Computador', fact: 'Não era um console, e sim um padrão de computador feito por várias marcas.' },
   { y: 1983, name: 'Famicom / NES', kind: 'Console de mesa', fact: 'Saiu no Japão como Famicom e chegou aos EUA em 1985 como NES.' },
   { y: 1985, name: 'Master System', alt: 'Mark III no Japão', kind: 'Console de mesa', fact: 'No Brasil fez sucesso por muitos anos, com a Tectoy.' },
-  { y: 1986, name: 'Famicom Disk System', alt: 'Nintendo', kind: 'Acessório do Famicom', fact: 'Leitor de disquetes do Famicom. The Legend of Zelda saiu primeiro nele.', fresh: 1 },
+  { y: 1986, name: 'Famicom Disk System', alt: 'Nintendo', kind: 'Acessório do Famicom', fact: 'Leitor de disquetes do Famicom. The Legend of Zelda saiu primeiro nele.' },
   { y: 1986, name: 'Atari 7800', alt: 'testado em 1984', kind: 'Console de mesa', fact: 'Roda quase todos os jogos do Atari 2600.' },
   { y: 1987, name: 'PC Engine', kind: 'Console de mesa', fact: 'Nos EUA virou TurboGrafx-16. Os jogos vinham em cartões finos, os HuCards.' },
   { y: 1988, name: 'Mega Drive', kind: 'Console de mesa', fact: 'Nos EUA se chamou Genesis. No Brasil, foi lançado pela Tectoy.' },
@@ -165,27 +168,27 @@ export const TIMELINE = [
   { y: 1990, name: 'Neo Geo MVS/AES', kind: 'Fliperama e console', fact: 'O AES levava para casa o mesmo hardware dos fliperamas (MVS).' },
   { y: 1990, name: 'Game Gear', kind: 'Portátil', fact: 'O portátil colorido da Sega, com peças parecidas com as do Master System.' },
   { y: 1991, name: 'Sega CD', alt: 'Mega-CD no Japão', kind: 'Acessório do Mega Drive', fact: 'Leitor de CD que se encaixa no Mega Drive.' },
-  { y: 1992, name: 'Watara Supervision', kind: 'Portátil', fact: 'Portátil barato, com tela em tons de cinza.', fresh: 1 },
+  { y: 1992, name: 'Watara Supervision', kind: 'Portátil', fact: 'Portátil barato, com tela em tons de cinza.' },
   { y: 1993, name: 'Capcom CPS2', kind: 'Fliperama', fact: 'Sucessora da CPS1, com os jogos protegidos por criptografia.' },
   { y: 1993, name: '3DO', alt: 'Panasonic', kind: 'Console de mesa', fact: 'Era um padrão: várias fabricantes fizeram o aparelho.', exp: 'Experimental · desde a 2.2' },
-  { y: 1993, name: 'Atari Jaguar', kind: 'Console de mesa', fact: 'A Atari anunciava como o primeiro console de 64 bits.', exp: 'Experimental · desde a 2.4', fresh: 1 },
-  { y: 1993, name: 'Mega Duck', kind: 'Portátil', fact: 'Portátil de cartuchos baratos, parecido com o Game Boy.', fresh: 1 },
+  { y: 1993, name: 'Atari Jaguar', kind: 'Console de mesa', fact: 'A Atari anunciava como o primeiro console de 64 bits.', exp: 'Experimental · desde a 2.4' },
+  { y: 1993, name: 'Mega Duck', kind: 'Portátil', fact: 'Portátil de cartuchos baratos, parecido com o Game Boy.' },
   { y: 1994, name: 'PlayStation', kind: 'Console de mesa', fact: 'Lançado no Japão em dezembro de 1994, com os jogos em CD.' },
   { y: 1994, name: 'Neo Geo CD', kind: 'Console de mesa', fact: 'Os jogos do Neo Geo em CD, bem mais baratos que os cartuchos.' },
   { y: 1994, name: '32X', kind: 'Acessório do Mega Drive', fact: 'Encaixava no Mega Drive como um cartucho e somava dois processadores.' },
-  { y: 1994, name: 'Sega Saturn', kind: 'Console de mesa', fact: 'Tinha dois processadores principais trabalhando juntos.', exp: 'Experimental · desde a 2.4', fresh: 1 },
-  { y: 1994, name: 'Super Game Boy', kind: 'Acessório do Super Nintendo', fact: 'Roda os jogos de Game Boy na TV, com molduras e cores.', fresh: 1 },
-  { y: 1994, name: 'PC-FX', alt: 'NEC', kind: 'Console de mesa', fact: 'O sucessor do PC Engine, lançado só no Japão.', exp: 'Experimental · desde a 2.4', fresh: 1 },
+  { y: 1994, name: 'Sega Saturn', kind: 'Console de mesa', fact: 'Tinha dois processadores principais trabalhando juntos.', exp: 'Experimental · desde a 2.4' },
+  { y: 1994, name: 'Super Game Boy', kind: 'Acessório do Super Nintendo', fact: 'Roda os jogos de Game Boy na TV, com molduras e cores.' },
+  { y: 1994, name: 'PC-FX', alt: 'NEC', kind: 'Console de mesa', fact: 'O sucessor do PC Engine, lançado só no Japão.', exp: 'Experimental · desde a 2.4' },
   { y: 1995, name: 'Virtual Boy', kind: 'Portátil de mesa', fact: 'Mostrava imagens em 3D, só em vermelho e preto.' },
-  { y: 1996, name: 'Nintendo 64', kind: 'Console de mesa', fact: 'Primeiro console da Nintendo com direcional analógico no controle.', soon: 'Em desenvolvimento' },
-  { y: 1997, name: 'Game.com', alt: 'Tiger', kind: 'Portátil', fact: 'Tinha tela sensível ao toque e modem para acessar a internet.', exp: 'Experimental · desde a 2.4', fresh: 1 },
+  { y: 1996, name: 'Nintendo 64', kind: 'Console de mesa', fact: 'Primeiro console da Nintendo com direcional analógico no controle.', exp: 'Experimental · novo na 2.6', fresh: 1 },
+  { y: 1997, name: 'Game.com', alt: 'Tiger', kind: 'Portátil', fact: 'Tinha tela sensível ao toque e modem para acessar a internet.', exp: 'Experimental · desde a 2.4' },
   { y: 1998, name: 'Game Boy Color', kind: 'Portátil', fact: 'Também roda os jogos do Game Boy original.' },
   { y: 1998, name: 'Neo Geo Pocket', kind: 'Portátil', fact: 'A versão colorida, Neo Geo Pocket Color, saiu em 1999.' },
-  { y: 1998, name: 'Dreamcast', alt: 'Sega', kind: 'Console de mesa', fact: 'O último console de mesa da Sega.', soon: 'Em desenvolvimento' },
+  { y: 1998, name: 'Dreamcast', alt: 'Sega', kind: 'Console de mesa', fact: 'O último console de mesa da Sega.', exp: 'Experimental · novo na 2.6', fresh: 1 },
   { y: 1999, name: 'WonderSwan', kind: 'Portátil', fact: 'Dava para jogar na horizontal ou na vertical. A versão colorida saiu em 2000.' },
   { y: 2001, name: 'Game Boy Advance', kind: 'Portátil', fact: 'Também roda os jogos de Game Boy e Game Boy Color.' },
   { y: 2001, name: 'Pokémon Mini', kind: 'Portátil', fact: 'Um console minúsculo, só com jogos de Pokémon.' },
-  { y: 2004, name: 'Nintendo DS', kind: 'Portátil', fact: 'Tinha duas telas, e a de baixo era sensível ao toque.', soon: 'Em desenvolvimento' },
+  { y: 2004, name: 'Nintendo DS', kind: 'Portátil', fact: 'Tinha duas telas, e a de baixo era sensível ao toque.', exp: 'Experimental · novo na 2.6', fresh: 1 },
 ];
 function timelineHtml() {
   const byDec = new Map();
@@ -341,7 +344,7 @@ export function landingTop({ app, zip, apk, tgz }) {
     <div class="l-head">
       <p class="l-kicker">Consoles</p>
       <h2 id="consTitle">${SYSTEM_COUNT} sistemas, um app só</h2>
-      <p>De 1977 a 2001, dos fliperamas aos portáteis. O mesmo Índigo no PC e no celular.</p>
+      <p>De 1977 a 2004, dos fliperamas aos portáteis. O mesmo Índigo no PC e no celular.</p>
       <p class="bios-line">${ICON.lock}<span>Os marcados com <span class="t-bios">precisa de BIOS</span> só funcionam com a BIOS do seu próprio console, que o Índigo não traz. <a href="#bios">Como usar a BIOS</a></span></p>
     </div>
     <div class="tabs" role="tablist" aria-label="Ver os consoles" hidden>
@@ -467,8 +470,8 @@ export function landingMid({ press = [] } = {}) {
   const phases = [
     ['Fase 1', 'No navegador', 'O Índigo nasce como emulador web: Game Boy, Game Boy Color e Game Boy Advance, depois Master System, Game Gear e Neo Geo Pocket.', 'done'],
     ['Fase 2', 'App para PC e celular', 'Um app nativo para Windows e Android (e agora Linux), console por console, dos 8 bits até o PlayStation na versão 2.0.', 'done'],
-    ['Fase 3', 'Os últimos consoles', 'Nintendo 64, Dreamcast e Nintendo DS, em desenvolvimento para a versão 2.6. São os últimos consoles novos do Índigo.', 'now'],
-    ['Fase 4', 'Só melhorias', 'Depois deles, nenhum console novo: o tempo vai todo para precisão, compatibilidade e velocidade dos que já estão lá.', 'next'],
+    ['Fase 3', 'Os últimos consoles', 'Nintendo 64, Dreamcast e Nintendo DS chegaram na versão 2.6, ainda experimentais. São os últimos consoles novos do Índigo.', 'done'],
+    ['Fase 4', 'Só melhorias', 'Agora, nenhum console novo: o tempo vai todo para precisão, compatibilidade e velocidade dos que já estão lá, começando pelos experimentais.', 'now'],
   ];
   const open = `<section class="l-sec" id="codigo" aria-labelledby="codeTitle">
   <div class="l-wrap code-grid">
@@ -476,7 +479,7 @@ export function landingMid({ press = [] } = {}) {
       <p class="l-kicker">Código aberto</p>
       <h2 id="codeTitle">Aberto, e com um ponto final de propósito</h2>
       <p>O código do Índigo é aberto, sob a licença <b>GPL-3.0</b>: qualquer pessoa pode ler, estudar e melhorar, e ele continua livre para sempre.</p>
-      <p>A lista vai até o Dreamcast e o Nintendo DS, que estão a caminho na versão 2.6. Depois deles, o Índigo para de adicionar consoles de propósito: em vez de correr atrás do próximo, investe em qualidade. <a href="#por-que">Entenda por quê</a>.</p>
+      <p>A lista vai até o Dreamcast e o Nintendo DS, que chegaram na versão 2.6. Depois deles, o Índigo para de adicionar consoles de propósito: em vez de correr atrás do próximo, investe em qualidade. <a href="#por-que">Entenda por quê</a>.</p>
       <div class="code-badges">
         <span class="badge">${ICON.code}GPL-3.0</span>
         <a class="badge" href="https://github.com/joaoabitante/indigo" target="_blank" rel="noopener">${ICON.code}Código no GitHub</a>
@@ -533,7 +536,7 @@ export function landingMid({ press = [] } = {}) {
     ['Que dados a nuvem guarda?', 'Só os seus saves, com o nome do jogo e do aparelho, ligados ao seu PIN. O Índigo não pede nome, e-mail nem documento, e os jogos nunca saem do seu aparelho. Quem não liga a nuvem não manda nada para a internet.'],
     ['O Windows avisou que o arquivo pode ser perigoso. E agora?', 'O Índigo ainda não tem assinatura digital, por isso o Windows desconfia de todo programa novo. Antes de extrair, clique com o botão direito no .zip, abra Propriedades e marque Desbloquear. Se aparecer “O Windows protegeu o computador”, clique em Mais informações e em Executar assim mesmo.'],
     ['Tem para iPhone ou Mac?', 'O app é para Windows, Linux (PC e Steam Deck) e Android. Em qualquer outro aparelho, use o emulador do navegador aqui do site, que roda Game Boy, Game Boy Color, GBA, Master System, Game Gear e Neo Geo Pocket.'],
-    ['Até que console o Índigo vai?', 'Até o Dreamcast e o Nintendo DS, que estão a caminho junto com o Nintendo 64 na versão 2.6. Do PlayStation 2 em diante, cada console exige um recompilador e a tradução do vídeo para a placa do aparelho, e não rodaria bem num celular comum. Depois desses três, o tempo vai só para melhorar os que já estão lá. Os motivos estão na seção “Por que o Índigo é do jeito que é”.'],
+    ['Até que console o Índigo vai?', 'Até o Dreamcast e o Nintendo DS, que chegaram junto com o Nintendo 64 na versão 2.6, ainda experimentais. Do PlayStation 2 em diante, cada console exige um recompilador e a tradução do vídeo para a placa do aparelho, e não rodaria bem num celular comum. Depois desses três, o tempo vai só para melhorar os que já estão lá. Os motivos estão na seção “Por que o Índigo é do jeito que é”.'],
     ['Por que o Índigo não traz BIOS?', 'Porque a BIOS é um programa do fabricante, protegido por direito autoral, e distribuir cópias sem autorização é ilegal. O Índigo é escrito do zero, sem nada do fabricante. Quem tem o console pode copiar a BIOS do próprio aparelho. Sempre que dá, o Índigo liga o console sem BIOS nenhuma.'],
     ['Por que não usar emuladores prontos?', 'Porque vários dos melhores têm licenças que proíbem uso comercial ou versões modificadas, que não combinam com a GPL-3.0, e porque com um código só todos os consoles têm o mesmo menu, os mesmos saves na nuvem e passam pelos mesmos testes e pela mesma revisão de segurança. Onde a licença permite, o Índigo reaproveita e dá o crédito.'],
   ];

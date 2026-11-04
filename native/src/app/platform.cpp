@@ -271,7 +271,7 @@ HttpResult http(const std::string& method, const std::string& url, const std::st
 #ifdef _WIN32
 namespace {
 const wchar_t* const PROGID = L"Indigo.Jogo";
-const wchar_t* const EXTS[] = {L".sfc", L".smc", L".nes", L".gb", L".gbc", L".sgb", L".gba", L".gg", L".sms", L".ngp", L".ngc", L".min", L".a26", L".a52", L".mx1", L".mx2", L".col", L".sg", L".ws", L".wsc", L".a78", L".vec", L".int", L".itv", L".lnx", L".vb", L".duck", L".md0", L".md1", L".md2", L".sv", L".pce", L".sgx", L".md", L".gen", L".smd", L".32x", L".fds", L".qd", L".tgc", L".j64", L".jag", L".abs", L".cue", L".chd"};
+const wchar_t* const EXTS[] = {L".sfc", L".smc", L".nes", L".gb", L".gbc", L".sgb", L".gba", L".gg", L".sms", L".ngp", L".ngc", L".min", L".a26", L".a52", L".mx1", L".mx2", L".col", L".sg", L".ws", L".wsc", L".a78", L".vec", L".int", L".itv", L".lnx", L".vb", L".duck", L".md0", L".md1", L".md2", L".sv", L".pce", L".sgx", L".md", L".gen", L".smd", L".32x", L".fds", L".qd", L".tgc", L".nds", L".j64", L".jag", L".abs", L".z64", L".n64", L".v64", L".cue", L".chd", L".gdi"};
 
 std::wstring exePath() {
   wchar_t buf[MAX_PATH * 2];

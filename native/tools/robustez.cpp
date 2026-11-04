@@ -24,6 +24,7 @@
 #include "../src/ps1/ps1.h"
 #include "../src/saturn/saturn.h"
 #include "../src/tdo/tdo.h"
+#include "../src/dc/dc.h"
 
 using namespace indigo;
 
@@ -44,6 +45,23 @@ std::vector<uint8_t> makeRom(int kind, size_t size) {
     case 0: {  // Game Boy: logo da Nintendo nos 4 primeiros bytes que o detector olha
       const uint8_t logo[4] = {0xCE, 0xED, 0x66, 0x66};
       std::memcpy(&r[0x104], logo, 4);
+      break;
+    }
+    case 29: {  // Nintendo 64: cabeçalho .z64 (partida HLE em 0x80000400, tipo de save aleatório) e código aleatório
+      const uint8_t h[16] = {0x80, 0x37, 0x12, 0x40, 0, 0, 0, 0x0F, 0x80, 0, 0x04, 0, 0, 0, 0x14, 0x4C};
+      std::memcpy(&r[0], h, 16);
+      std::memcpy(&r[0x3B], "NEDE", 4);
+      static const uint8_t SAVES[] = {0, 1, 2, 3, 5};
+      r[0x3F] = static_cast<uint8_t>(SAVES[rnd() % 5] << 4);
+      break;
+    }
+    case 30: {  // Nintendo DS: programas do ARM9 e do ARM7 em lugares e tamanhos aleatórios (às vezes fora do arquivo)
+      auto w32 = [&](size_t o, uint32_t v) { for (int i = 0; i < 4; i++) r[o + i] = static_cast<uint8_t>(v >> (8 * i)); };
+      const uint32_t n = static_cast<uint32_t>(size);
+      w32(0x20, 0x200 + (rnd() % 8 ? 0 : rnd() % n)); w32(0x24, 0x02000000 + (rnd() & 0xFFFC)); w32(0x28, 0x02000000);
+      w32(0x2C, rnd() % 8 ? n / 2 : 1 + rnd() % 0x3BFE00);
+      w32(0x30, n / 2 + (rnd() % 8 ? 0 : rnd() % n)); w32(0x34, 0x037F8000); w32(0x38, 0x037F8000);
+      w32(0x3C, rnd() % 8 ? std::min<uint32_t>(n / 4, 0x10000) : rnd() % 0x3BFE00);
       break;
     }
     case 27:  // Atari Jaguar: marca do cartucho em 0x400 e partida em 0x802000
@@ -324,14 +342,15 @@ std::unique_ptr<Core> makeNeoGeoCd(const std::vector<uint8_t>* save) {
   return std::make_unique<neogeocd::NeoGeoCdCore>(std::move(disc), save);
 }
 
-constexpr int KINDS = 29;
-const char* NAMES[KINDS] = {"Game Boy", "Master System", "Game Gear", "Neo Geo Pocket", "Game Boy Advance", "NES", "SNES", "Pokémon Mini", "Atari 2600", "MSX", "ColecoVision", "SG-1000", "WonderSwan", "Atari 7800", "Vectrex", "Atari Lynx", "Virtual Boy", "PC Engine", "Mega Drive", "Neo Geo CD", "PC Engine CD", "32X", "PlayStation", "3DO", "Famicom Disk System", "Mega Duck", "Watara Supervision", "Atari Jaguar", "Saturn"};
-const char* EXTS[KINDS] = {"x.gb", "x.sms", "x.gg", "x.ngc", "x.gba", "x.nes", "x.sfc", "x.min", "x.a26", "x.rom", "x.col", "x.sg", "x.ws", "x.a78", "x.vec", "x.lyx", "x.vb", "x.pce", "x.md", "x.cue", "x.cue", "x.32x", "x.exe", "x.cue", "x.fds", "x.md2", "x.sv", "x.j64", "x.cue"};
+constexpr int KINDS = 32;
+const char* NAMES[KINDS] = {"Game Boy", "Master System", "Game Gear", "Neo Geo Pocket", "Game Boy Advance", "NES", "SNES", "Pokémon Mini", "Atari 2600", "MSX", "ColecoVision", "SG-1000", "WonderSwan", "Atari 7800", "Vectrex", "Atari Lynx", "Virtual Boy", "PC Engine", "Mega Drive", "Neo Geo CD", "PC Engine CD", "32X", "PlayStation", "3DO", "Famicom Disk System", "Mega Duck", "Watara Supervision", "Atari Jaguar", "Saturn", "Nintendo 64", "Nintendo DS", "Dreamcast"};
+const char* EXTS[KINDS] = {"x.gb", "x.sms", "x.gg", "x.ngc", "x.gba", "x.nes", "x.sfc", "x.min", "x.a26", "x.rom", "x.col", "x.sg", "x.ws", "x.a78", "x.vec", "x.lyx", "x.vb", "x.pce", "x.md", "x.cue", "x.cue", "x.32x", "x.exe", "x.cue", "x.fds", "x.md2", "x.sv", "x.j64", "x.cue", "x.z64", "x.nds", "x.gdi"};
 
 std::unique_ptr<Core> makePceCd(const std::vector<uint8_t>* save);
 std::unique_ptr<Core> makePs1(const std::vector<uint8_t>* save);
 std::unique_ptr<Core> makeTdo(const std::vector<uint8_t>* save);
 std::unique_ptr<Core> makeSaturn(const std::vector<uint8_t>* save);
+std::unique_ptr<Core> makeDc(const std::vector<uint8_t>* save);
 
 // Famicom Disk System: lados com o bloco 1 certo e o resto em blocos de tamanho aleatório (ou lixo puro); BIOS de
 // lixo com os vetores em $E000–$FFFF ou a BIOS de teste do t7_fds.sh
@@ -379,6 +398,7 @@ std::unique_ptr<Core> createKind(int kind, size_t size, const std::vector<uint8_
   if (kind == 23) return makeTdo(save);
   if (kind == 24) return makeFds(save);
   if (kind == 28) return makeSaturn(save);
+  if (kind == 31) return makeDc(save);
   return createCore(makeRom(kind, size), EXTS[kind], save);
 }
 
@@ -690,6 +710,59 @@ std::unique_ptr<Core> makeSaturn(const std::vector<uint8_t>* save) {
   return std::make_unique<saturn::SaturnCore>(std::make_unique<SaturnMemDisc>(rnd()), save, &bios);
 }
 
+// Dreamcast: disco sintético ("SEGA SEGAKATANA ", às vezes uma faixa na área GD em LBA 45000 e uma de áudio), uma
+// BIOS de código SH-4 aleatório e a flash aleatória; às vezes a BIOS e a flash de teste do t7_dc.sh
+// (INDIGO_DC_BIOS ou /root/indigo-env/roms/dc/bios). Os registradores da CPU recebem endereços do hardware.
+class DcMemDisc : public cdrom::Disc {
+public:
+  explicit DcMemDisc(uint32_t seed) : seed_(seed) {
+    const uint32_t a = 20 + seed % 200;
+    tracks_.push_back({1, cdrom::TrackType::Mode1, 0, 0, a});
+    total_ = a;
+    if ((seed >> 9) & 1) { tracks_.push_back({2, cdrom::TrackType::Audio, a + 150, 150, 75 + (seed >> 12) % 100}); total_ = tracks_.back().start + tracks_.back().length; }
+    if ((seed >> 10) & 1) { tracks_.push_back({uint8_t(tracks_.size() + 1), cdrom::TrackType::Mode1, 45000, 0, 64}); total_ = 45064; gd_ = true; }
+    name_ = "lixodc";
+  }
+  bool readRaw(uint32_t lba, uint8_t* out) override {
+    std::memset(out, 0, cdrom::RAW_SECTOR);
+    if (lba >= total_) return false;
+    uint32_t h = seed_ ^ (lba * 2654435761u);
+    for (int i = 0; i < cdrom::RAW_SECTOR; i++) { h ^= h << 13; h ^= h >> 17; h ^= h << 5; out[i] = static_cast<uint8_t>(h); }
+    bool data = false;
+    for (const auto& t : tracks_) data |= t.type == cdrom::TrackType::Mode1 && lba >= t.start && lba < t.start + t.length;
+    if (data) {
+      std::memset(out, 0, 16);
+      std::memset(out + 1, 0xFF, 10);
+      out[15] = 1;
+      if (lba == 0 || (gd_ && lba == 45000)) std::memcpy(out + 16, "SEGA SEGAKATANA ", 16);
+    }
+    return true;
+  }
+private:
+  uint32_t seed_;
+  bool gd_ = false;
+};
+
+std::unique_ptr<Core> makeDc(const std::vector<uint8_t>* save) {
+  std::vector<uint8_t> boot = randomBytes(dc::BOOT_SIZE), flash = randomBytes(dc::FLASH_SIZE);
+  if (rnd() & 1) {
+    const char* env = std::getenv("INDIGO_DC_BIOS");
+    const std::string dir = env ? env : "/root/indigo-env/roms/dc/bios";
+    for (auto [name, buf] : {std::pair{"/teste_boot.bin", &boot}, std::pair{"/teste_flash.bin", &flash}})
+      if (FILE* f = std::fopen((dir + name).c_str(), "rb")) {
+        std::vector<uint8_t> b(buf->size());
+        if (std::fread(b.data(), 1, b.size(), f) == b.size()) buf->swap(b);
+        std::fclose(f);
+      }
+  }
+  auto c = std::make_unique<dc::DcCore>(std::make_unique<DcMemDisc>(rnd()), save, &boot, &flash);
+  static const uint32_t BASES[] = {0xA05F6800, 0xA05F8000, 0xA05F7000, 0xA0700000, 0xA0800000, 0xA4000000,
+                                   0xA5000000, 0x10000000, 0xE0000000, 0xFFD80000, 0xFFA00000, 0xA05F9000,
+                                   0xA05F7400, 0xA05F6C00, 0xFF000000, 0x8C000000};
+  for (int i = 0; i < 16; i++) c->sys().cpu.r[i] = BASES[rnd() % 16] + (rnd() & 0xFC);
+  return c;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -700,7 +773,7 @@ int main(int argc, char** argv) {
 
   // arquivos minúsculos e vazios: não podem derrubar o detector nem os núcleos
   for (size_t n : {0, 1, 0x40, 0x14F, 0x150, 0x200, 0x3FFF}) {
-    for (const char* ext : {"a.gb", "a.gbc", "a.sms", "a.gg", "a.ngp", "a.bin", "a.gba", "a.agb", "a.nes", "a.sfc", "a.min", "a.a26", "a.a52", "a.int", "a.itv", "a.sgb", "a.fds", "a.qd", "a.rom", "a.mx1", "a.mx2", "a.col", "a.sg", "a.ws", "a.a78", "a.vec", "a.lnx", "a.lyx", "a.vb", "a.duck", "a.md0", "a.sv", "a.pce", "a.sgx", "a.md", "a.smd", "a.gen", "a.32x", "a.tgc", "a.j64", "a.jag", "a.abs"}) {
+    for (const char* ext : {"a.gb", "a.gbc", "a.sms", "a.gg", "a.ngp", "a.bin", "a.gba", "a.agb", "a.nes", "a.sfc", "a.min", "a.a26", "a.a52", "a.int", "a.itv", "a.sgb", "a.fds", "a.qd", "a.rom", "a.mx1", "a.mx2", "a.col", "a.sg", "a.ws", "a.a78", "a.vec", "a.lnx", "a.lyx", "a.vb", "a.duck", "a.md0", "a.sv", "a.pce", "a.sgx", "a.md", "a.smd", "a.gen", "a.32x", "a.tgc", "a.j64", "a.jag", "a.abs", "a.z64", "a.n64", "a.v64", "a.nds"}) {
       auto data = randomBytes(n);
       if (n >= 16 && std::strcmp(ext, "a.nes") == 0) { data[0] = 'N'; data[1] = 'E'; data[2] = 'S'; data[3] = 0x1A; }
       std::unique_ptr<Core> core;
@@ -718,7 +791,8 @@ int main(int argc, char** argv) {
         core = createKind(kind, size, (rnd() & 1) ? &save : nullptr);
       } catch (const std::exception&) {
         // bytes aleatórios podem parecer um esquema de bancos do 2600 sem suporte (recusa com mensagem, certo)
-        if (kind == 8 || kind == 15) continue;
+        // DS: programas fora do arquivo são recusados com mensagem (também certo)
+        if (kind == 8 || kind == 15 || kind == 30) continue;
         throw;
       }
       if (!core) { std::printf("ROM de %s não reconhecida\n", NAMES[kind]); problems++; continue; }
@@ -762,7 +836,8 @@ int main(int argc, char** argv) {
         }
         bad.push_back(edges);
       }
-      const int ok = ((kind + 1) % KINDS == 8 || (kind + 1) % KINDS == 15) ? 0 : (kind + 1) % KINDS;  // 2600 aleatório pode ser recusado
+      const int nx = (kind + 1) % KINDS;
+      const int ok = (nx == 8 || nx == 15 || nx == 30) ? 0 : nx;  // 2600 e DS aleatórios podem ser recusados
       auto other = createKind(ok, 0x8000, nullptr);
       other->runFrame();
       bad.push_back(other->saveState());
