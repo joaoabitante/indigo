@@ -385,10 +385,10 @@ void System::clioWrite(uint32_t off, uint32_t v) {
     case 0x020C: timerCtl_[1] &= ~v; return;
     case 0x0220: slack_ = v & 0x7FF; return;
     case 0x0300: dsp.hostFifoInit(v); return;
-    case 0x0304: dmaEnable_ |= v; dsp.hostEnable(v, 0); return;
-    case 0x0308: dmaEnable_ &= ~v; dsp.hostEnable(0, v); return;
-    case 0x0400: expctl_ |= v & 0xCA80; return;
-    case 0x0404: expctl_ &= ~(v & 0xCA80); return;
+    case 0x0304: dmaEnable_ |= v; dsp.hostEnable(v, 0); expBus(); return;
+    case 0x0308: dmaEnable_ &= ~v; dsp.hostEnable(0, v); expBus(); return;
+    case 0x0400: expctl_ |= v & 0xCA80; expBus(); return;
+    case 0x0404: expctl_ &= ~(v & 0xCA80); expBus(); return;
     case 0x0408: type04_ = v; return;
     case 0x040C: xfrcnt_ = v; return;
     case 0x17D0: dsp.hostSemaphore(uint16_t(v)); return;
@@ -428,6 +428,13 @@ void System::timersTick(int cycles) {
     }
   }
   updateFiq();
+}
+
+// sem DMA do XBUS pedido (bit 20 do DMA e bit 11 do EXPCTL) o barramento volta para a CPU: o bit 7 do EXPCTL
+// é o estado "a CPU tem o barramento" e a BIOS real o apaga e espera ele voltar
+void System::expBus() {
+  if ((dmaEnable_ & DMA_XBUS) && (expctl_ & 0x800)) return;
+  expctl_ = (expctl_ | 0x80) & ~0x400u;
 }
 
 // DMA do XBUS (canal 20 do MADAM, 0x540): contagem em bytes menos 4, termina quando fica negativa

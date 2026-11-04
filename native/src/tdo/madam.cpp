@@ -435,7 +435,7 @@ void Madam::renderFrame(uint32_t* out) {
   uint32_t vdlAddr = regs[0x580 / 4];
   uint32_t fbBase = 0, srcY = 0, modulo = 320;
   bool video = false;
-  int y = 0;
+  int y = 0, hidden = HIDDEN_LINES;
   for (int entries = 0; y < 240 && entries < 512; entries++) {
     vdlAddr = (vdlAddr % MEM_SIZE) & ~3u;
     const uint32_t ctrl = m32(vdlAddr), cur = m32(vdlAddr + 4), nxt = m32(vdlAddr + 12);
@@ -459,8 +459,9 @@ void Madam::renderFrame(uint32_t* out) {
         fixedClut = w & (1u << 25);  // controle do vídeo: o bit 15 do pixel escolhe a CLUT fixa (rampa)
       }
     }
-    for (int l = 0; l < nlines && y < 240; l++, y++, srcY++) {
-      uint32_t* o = out + y * 320;
+    for (int l = 0; l < nlines && y < 240; l++, srcY++) {
+      if (hidden > 0) { hidden--; continue; }  // linhas da VDL antes da área visível
+      uint32_t* o = out + y++ * 320;
       if (!video) { std::fill(o, o + 320, bg); continue; }
       const uint32_t rowAddr = fbBase + (srcY >> 1) * modulo * 4 + (srcY & 1) * 2;
       for (int x = 0; x < 320; x++) {

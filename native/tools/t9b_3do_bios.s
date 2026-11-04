@@ -64,11 +64,15 @@ video_init:
         ldr     r1, =0x00200000
         str     r1, [r0, #4]
         str     r1, [r0, #8]
-        str     r0, [r0, #12]           @ próxima = ela mesma
+        add     r3, r0, #0x40           @ pré-exibição: 16 linhas sem vídeo antes da área visível
+        str     r3, [r0, #12]           @ próxima = a pré-exibição, que volta para esta
         ldr     r1, =0xE0101040         @ fundo azul-escuro
         str     r1, [r0, #16]
+        mov     r1, #16
+        str     r1, [r3]
+        str     r0, [r3, #12]
         ldr     r2, =MADAM
-        str     r0, [r2, #0x580]
+        str     r3, [r2, #0x580]
         mov     r1, #0x6000             @ MCTL: VDL e DAC de vídeo ligados
         str     r1, [r2, #8]
         ldr     r1, =0x1414             @ REGCTL0: quadros de 320 pixels (256 + 64)

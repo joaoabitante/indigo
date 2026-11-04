@@ -33,7 +33,7 @@ export const ICON = {
 // web: também roda no emulador do navegador · bios: o app pede o arquivo do console da pessoa · n: quantos sistemas a linha conta
 export const CONSOLE_GROUPS = [
   { title: 'A era dos 8 bits', era: 'Anos 70 e 80', icon: 'joy', items: [
-    { name: 'Atari 2600' }, { name: 'Atari 7800' }, { name: 'ColecoVision' }, { name: 'Vectrex', note: 'tela vetorial' },
+    { name: 'Atari 2600' }, { name: 'Atari 7800' }, { name: 'ColecoVision', bios: 1 }, { name: 'Vectrex', bios: 1, note: 'tela vetorial' },
     { name: 'SG-1000' }, { name: 'MSX' }, { name: 'NES' }, { name: 'Master System', web: 1 },
     { name: 'Famicom Disk System', fresh: 1, bios: 1, note: 'disquetes .fds e .qd, troca de lado com F4' },
     { name: 'Atari 5200', fresh: 1, bios: 1, note: 'experimental, novo na 2.4' }, { name: 'Intellivision', fresh: 1, bios: 1, note: 'experimental, novo na 2.4' },
@@ -60,6 +60,10 @@ export const CONSOLE_GROUPS = [
     { name: 'PC-FX', fresh: 1, bios: 1, note: 'experimental, novo na 2.4' },
   ] },
 ];
+// consoles que pedem a BIOS do aparelho da pessoa (da tabela acima; a linha do tempo usa os mesmos nomes)
+const BIOS_LIST = CONSOLE_GROUPS.flatMap((g) => g.items.filter((i) => i.bios).map((i) => i.name));
+const BIOS_SET = new Set([...BIOS_LIST, 'Neo Geo MVS/AES']);
+const BIOS_TEXT = BIOS_LIST.slice(0, -1).join(', ') + ' e ' + BIOS_LIST[BIOS_LIST.length - 1];
 export const SYSTEM_COUNT = CONSOLE_GROUPS.reduce((s, g) => s + g.items.reduce((t, i) => t + (i.n || 1), 0), 0);
 // comparações automáticas feitas a cada versão (suítes de teste públicas e emuladores de referência)
 const COMPARISONS = '1043';
@@ -173,12 +177,15 @@ export const TIMELINE = [
   { y: 1994, name: 'Super Game Boy', kind: 'Acessório do Super Nintendo', fact: 'Roda os jogos de Game Boy na TV, com molduras e cores.', fresh: 1 },
   { y: 1994, name: 'PC-FX', alt: 'NEC', kind: 'Console de mesa', fact: 'O sucessor do PC Engine, lançado só no Japão.', exp: 'Experimental · desde a 2.4', fresh: 1 },
   { y: 1995, name: 'Virtual Boy', kind: 'Portátil de mesa', fact: 'Mostrava imagens em 3D, só em vermelho e preto.' },
+  { y: 1996, name: 'Nintendo 64', kind: 'Console de mesa', fact: 'Primeiro console da Nintendo com direcional analógico no controle.', soon: 'Em desenvolvimento' },
   { y: 1997, name: 'Game.com', alt: 'Tiger', kind: 'Portátil', fact: 'Tinha tela sensível ao toque e modem para acessar a internet.', exp: 'Experimental · desde a 2.4', fresh: 1 },
   { y: 1998, name: 'Game Boy Color', kind: 'Portátil', fact: 'Também roda os jogos do Game Boy original.' },
   { y: 1998, name: 'Neo Geo Pocket', kind: 'Portátil', fact: 'A versão colorida, Neo Geo Pocket Color, saiu em 1999.' },
+  { y: 1998, name: 'Dreamcast', alt: 'Sega', kind: 'Console de mesa', fact: 'O último console de mesa da Sega.', soon: 'Em desenvolvimento' },
   { y: 1999, name: 'WonderSwan', kind: 'Portátil', fact: 'Dava para jogar na horizontal ou na vertical. A versão colorida saiu em 2000.' },
   { y: 2001, name: 'Game Boy Advance', kind: 'Portátil', fact: 'Também roda os jogos de Game Boy e Game Boy Color.' },
   { y: 2001, name: 'Pokémon Mini', kind: 'Portátil', fact: 'Um console minúsculo, só com jogos de Pokémon.' },
+  { y: 2004, name: 'Nintendo DS', kind: 'Portátil', fact: 'Tinha duas telas, e a de baixo era sensível ao toque.', soon: 'Em desenvolvimento' },
 ];
 function timelineHtml() {
   const byDec = new Map();
@@ -187,7 +194,7 @@ function timelineHtml() {
           <span class="tl-dot" aria-hidden="true"></span>
           <div class="tl-card">
             <p class="tl-meta"><time datetime="${t.y}">${t.y}</time><span>${esc(t.kind)}</span></p>
-            <h4>${esc(t.name)}${t.fresh ? ' <span class="tag-new">Novo</span>' : ''}${t.soon ? ` <span class="tag-soon">${esc(t.soon)}</span>` : ''}${t.exp ? ` <span class="tag-soon">${esc(t.exp)}</span>` : ''}</h4>
+            <h4>${esc(t.name)}${t.fresh ? ' <span class="tag-new">Novo</span>' : ''}${t.soon ? ` <span class="tag-soon">${esc(t.soon)}</span>` : ''}${t.exp ? ` <span class="tag-soon">${esc(t.exp)}</span>` : ''}${BIOS_SET.has(t.name) ? ' <span class="t-bios" title="Precisa da BIOS do seu próprio console">precisa de BIOS</span>' : ''}</h4>
             ${t.alt ? `<p class="tl-alt">${esc(t.alt)}</p>` : ''}${t.fact ? `<p class="tl-fact">${esc(t.fact)}</p>` : ''}
           </div>
         </li>`;
@@ -327,7 +334,7 @@ export function landingTop({ app, zip, apk, tgz }) {
 
   const groups = CONSOLE_GROUPS.map((g) => `<article class="cg${g.fresh ? ' cg-new' : ''}">
       <header class="cg-head"><span class="cg-ico">${ICON[g.icon]}</span><div><h3>${esc(g.title)}</h3><p>${esc(g.era)}</p></div></header>
-      <ul class="cg-list">${g.items.map((i) => `<li><span class="cg-name">${esc(i.name)}${i.fresh ? ' <span class="tag-new">Novo</span>' : ''}</span>${i.note ? `<small>${esc(i.note)}</small>` : ''}${i.web || i.bios ? `<span class="cg-tags">${i.web ? '<span class="t-web" title="Também roda no navegador">navegador</span>' : ''}${i.bios ? '<span class="t-bios" title="Pede a BIOS do seu console">BIOS</span>' : ''}</span>` : ''}</li>`).join('')}</ul>
+      <ul class="cg-list">${g.items.map((i) => `<li><span class="cg-name">${esc(i.name)}${i.fresh ? ' <span class="tag-new">Novo</span>' : ''}</span>${i.note ? `<small>${esc(i.note)}</small>` : ''}${i.web || i.bios ? `<span class="cg-tags">${i.web ? '<span class="t-web" title="Também roda no navegador">navegador</span>' : ''}${i.bios ? '<span class="t-bios" title="Precisa da BIOS do seu próprio console">precisa de BIOS</span>' : ''}</span>` : ''}</li>`).join('')}</ul>
     </article>`).join('\n    ');
   const consoles = `<section class="l-sec" id="consoles" aria-labelledby="consTitle">
   <div class="l-wrap">
@@ -335,6 +342,7 @@ export function landingTop({ app, zip, apk, tgz }) {
       <p class="l-kicker">Consoles</p>
       <h2 id="consTitle">${SYSTEM_COUNT} sistemas, um app só</h2>
       <p>De 1977 a 2001, dos fliperamas aos portáteis. O mesmo Índigo no PC e no celular.</p>
+      <p class="bios-line">${ICON.lock}<span>Os marcados com <span class="t-bios">precisa de BIOS</span> só funcionam com a BIOS do seu próprio console, que o Índigo não traz. <a href="#bios">Como usar a BIOS</a></span></p>
     </div>
     <div class="tabs" role="tablist" aria-label="Ver os consoles" hidden>
       <button type="button" role="tab" id="tabTl" aria-controls="panelTl" aria-selected="true">Linha do tempo</button>
@@ -348,7 +356,7 @@ export function landingTop({ app, zip, apk, tgz }) {
       <h3 class="tab-title">Por família</h3>
       <ul class="legend" aria-label="Legenda">
         <li><span class="t-web">navegador</span>também roda aqui no site, sem instalar</li>
-        <li><span class="t-bios">BIOS</span>pede o arquivo do seu próprio console</li>
+        <li><span class="t-bios">precisa de BIOS</span>só funciona com a BIOS do seu próprio console</li>
       </ul>
       <div class="cg-grid">
       ${groups}
@@ -429,6 +437,16 @@ export function downloadsSection({ app, zip, apk, tgz }) {
       </ol>
     </article>` : ''}
   </div>
+  <div class="get-bios" id="bios">
+    <h3>${ICON.lock}Alguns consoles precisam da BIOS</h3>
+    <p><b>${esc(BIOS_TEXT)}</b> só abrem jogos com a BIOS (o programa interno) do seu próprio console. O Índigo não traz nenhuma BIOS e não indica onde baixar.</p>
+    <ol>
+      <li>Abra o jogo normalmente. Se faltar a BIOS, o Índigo avisa qual arquivo precisa.</li>
+      <li>Abra o arquivo da BIOS no Índigo do mesmo jeito que abre um jogo (arrastando para a janela ou com <kbd>Ctrl</kbd>+<kbd>O</kbd>; no celular, pelo botão de abrir).</li>
+      <li>Pronto: ele fica guardado e não é preciso repetir.</li>
+    </ol>
+    <p class="get-bios-ok">Os outros consoles rodam só com o jogo, sem nada a mais.</p>
+  </div>
   <p class="get-ios" hidden>No iPhone e no iPad, o Índigo funciona aqui mesmo no navegador: <a href="#jogar">jogar agora</a>.</p>
   <div class="get-foot">
     <div class="get-news">
@@ -449,7 +467,8 @@ export function landingMid({ press = [] } = {}) {
   const phases = [
     ['Fase 1', 'No navegador', 'O Índigo nasce como emulador web: Game Boy, Game Boy Color e Game Boy Advance, depois Master System, Game Gear e Neo Geo Pocket.', 'done'],
     ['Fase 2', 'App para PC e celular', 'Um app nativo para Windows e Android (e agora Linux), console por console, dos 8 bits até o PlayStation na versão 2.0.', 'done'],
-    ['Fase 3', 'Manutenção e melhorias', 'Sem consoles novos depois do 3DO: o foco agora é deixar cada um melhor. Precisão, compatibilidade e velocidade, e recursos como resolução aumentada no PlayStation, rebobinar e filtros de imagem.', 'now'],
+    ['Fase 3', 'Os últimos consoles', 'Nintendo 64, Dreamcast e Nintendo DS, em desenvolvimento para a versão 2.6. São os últimos consoles novos do Índigo.', 'now'],
+    ['Fase 4', 'Só melhorias', 'Depois deles, nenhum console novo: o tempo vai todo para precisão, compatibilidade e velocidade dos que já estão lá.', 'next'],
   ];
   const open = `<section class="l-sec" id="codigo" aria-labelledby="codeTitle">
   <div class="l-wrap code-grid">
@@ -457,7 +476,7 @@ export function landingMid({ press = [] } = {}) {
       <p class="l-kicker">Código aberto</p>
       <h2 id="codeTitle">Aberto, e com um ponto final de propósito</h2>
       <p>O código do Índigo é aberto, sob a licença <b>GPL-3.0</b>: qualquer pessoa pode ler, estudar e melhorar, e ele continua livre para sempre.</p>
-      <p>A lista vai até a geração do PlayStation e do Saturn (o Saturn, o 3DO, o Jaguar e o PC-FX ainda são experimentais). Daqui em diante, em vez de correr atrás do próximo console, o Índigo investe em qualidade: a meta é ser o melhor emulador de código aberto até a geração do PlayStation.</p>
+      <p>A lista vai até o Dreamcast e o Nintendo DS, que estão a caminho na versão 2.6. Depois deles, o Índigo para de adicionar consoles de propósito: em vez de correr atrás do próximo, investe em qualidade. <a href="#por-que">Entenda por quê</a>.</p>
       <div class="code-badges">
         <span class="badge">${ICON.code}GPL-3.0</span>
         <a class="badge" href="https://github.com/joaoabitante/indigo" target="_blank" rel="noopener">${ICON.code}Código no GitHub</a>
@@ -469,17 +488,54 @@ export function landingMid({ press = [] } = {}) {
   </div>
 </section>`;
 
+  const whyCards = [
+    ['lock', 'Por que o Índigo não traz BIOS', [
+      'A BIOS é o programa que o fabricante gravou dentro do console. Ela tem dono: é protegida por direito autoral (no Brasil, pela Lei do Software, nº 9.609/98), e distribuir cópias sem autorização é ilegal, mesmo de graça.',
+      'O emulador é legal porque é código escrito do zero, sem nada do fabricante. Para continuar assim, o Índigo não traz BIOS e não indica onde baixar: quem tem o console pode copiar a BIOS do próprio aparelho.',
+      'Sempre que dá, o Índigo dispensa a BIOS: o MSX usa a C-BIOS, uma BIOS livre, e o Game Boy Advance, o 32X e o Jaguar ligam com uma partida própria do Índigo. O Nintendo 64 e o Nintendo DS também vão ligar assim. A BIOS só é pedida quando os jogos dependem dela de verdade.',
+    ]],
+    ['code', 'Por que código próprio, e não emuladores prontos', [
+      'Existem ótimos emuladores feitos pela comunidade, e o Índigo deve muito a eles: a documentação e os testes que eles publicaram mostram como cada console funciona. Mas juntar emuladores prontos num app só, como faz o RetroArch, não daria o Índigo:',
+      '<b>Licença.</b> Vários dos melhores emuladores proíbem uso comercial ou versões modificadas, e essas licenças não podem ser misturadas com a GPL-3.0. Onde a licença permite, o Índigo reaproveita e dá o crédito, na lista de terceiros do código.',
+      '<b>Um app só.</b> O mesmo menu, os mesmos controles e os mesmos saves na nuvem em todos os consoles, no PC, no celular e no navegador.',
+      `<b>Testes e segurança.</b> Todo console passa pela mesma bateria de testes a cada versão (${COMPARISONS} comparações) e pela mesma revisão de segurança, com arquivos estragados de propósito. Com dezenas de códigos de autores diferentes, isso não seria possível.`,
+      '<b>Feito com IA, conferido por testes.</b> O Índigo é escrito por uma pessoa com ajuda de inteligência artificial. Nada entra sem passar pelos testes automáticos, e o código é aberto para quem quiser conferir.',
+    ]],
+    ['target', 'Por que parar no Dreamcast e no Nintendo DS', [
+      'Do PlayStation 2, GameCube, Wii e PSP em diante, cada console exige um recompilador (que traduz o código do console para o processador do aparelho enquanto o jogo roda) e a tradução do vídeo do console para a placa de vídeo do aparelho.',
+      'Os projetos dedicados a um só desses consoles têm equipes trabalhando há anos, alguns há mais de 20. Num celular comum, a maioria desses jogos não rodaria na velocidade certa, e o Índigo não conseguiria manter o mesmo padrão de testes dos outros consoles.',
+      'O Dreamcast (1998) e o Nintendo DS (2004) são os últimos que dá para emular inteiros, no PC e no celular, com esse cuidado. Depois deles, o tempo vai todo para deixar melhor o que já existe.',
+    ]],
+  ];
+  const why = `<section class="l-sec" id="por-que" aria-labelledby="whyTitle">
+  <div class="l-wrap">
+    <div class="l-head">
+      <p class="l-kicker">Por que assim</p>
+      <h2 id="whyTitle">Por que o Índigo é do jeito que é</h2>
+      <p>Três decisões que parecem estranhas à primeira vista, e o motivo de cada uma.</p>
+    </div>
+    <div class="why-grid">
+      ${whyCards.map(([ic, t, ps]) => `<article class="why-card">
+        <h3><span class="why-ico">${ICON[ic]}</span>${esc(t)}</h3>
+        ${ps.map((x) => `<p>${x}</p>`).join('\n        ')}
+      </article>`).join('\n      ')}
+    </div>
+  </div>
+</section>`;
+
   const faq = [
     ['O Índigo é grátis mesmo?', 'Sim. O app e o site são grátis, sem cadastro. O código é aberto (GPL-3.0), em github.com/joaoabitante/indigo.'],
     ['O Índigo vem com jogos ou BIOS?', 'Não. O Índigo não traz nenhum jogo e nenhuma BIOS, e não indica onde baixar. Use cópias dos seus próprios cartuchos e discos.', 'faq-jogos'],
-    ['Quais consoles pedem BIOS?', 'O PlayStation, o Saturn, o Sega CD, o Neo Geo, o Neo Geo CD, o PC Engine CD, o PC-FX, o 3DO, o ColecoVision, o Famicom Disk System, o Atari 5200, o Intellivision e o Game.com. O Game & Watch usa o .zip do MAME, que traz o desenho da tela. Na primeira vez, o app pede o arquivo da BIOS do seu console. Os outros sistemas rodam sem nada além do jogo.'],
+    ['Quais consoles pedem BIOS?', `${BIOS_TEXT} só abrem jogos com a BIOS do seu próprio console. Na primeira vez, o Índigo avisa qual arquivo falta: abra o arquivo da BIOS no Índigo do mesmo jeito que abre um jogo, e ele fica guardado. O Game & Watch usa o .zip do MAME, que traz o desenho da tela. Os outros sistemas rodam só com o jogo.`, 'faq-bios'],
     ['Quais arquivos de jogo ele abre?', 'Os arquivos comuns de cada console, inclusive dentro de .zip. Os jogos em CD abrem em .cue/.bin, .chd ou .iso.'],
     ['Precisa de internet?', 'Não. O app roda tudo no aparelho. A internet só é usada se você ligar os saves na nuvem.'],
     ['Como funcionam os saves na nuvem?', 'Você escolhe um PIN e usa o mesmo em todos os aparelhos e neste site. Os saves vão para a nuvem e os mais novos descem para os outros aparelhos. Os jogos nunca saem do seu aparelho.'],
     ['Que dados a nuvem guarda?', 'Só os seus saves, com o nome do jogo e do aparelho, ligados ao seu PIN. O Índigo não pede nome, e-mail nem documento, e os jogos nunca saem do seu aparelho. Quem não liga a nuvem não manda nada para a internet.'],
     ['O Windows avisou que o arquivo pode ser perigoso. E agora?', 'O Índigo ainda não tem assinatura digital, por isso o Windows desconfia de todo programa novo. Antes de extrair, clique com o botão direito no .zip, abra Propriedades e marque Desbloquear. Se aparecer “O Windows protegeu o computador”, clique em Mais informações e em Executar assim mesmo.'],
     ['Tem para iPhone ou Mac?', 'O app é para Windows, Linux (PC e Steam Deck) e Android. Em qualquer outro aparelho, use o emulador do navegador aqui do site, que roda Game Boy, Game Boy Color, GBA, Master System, Game Gear e Neo Geo Pocket.'],
-    ['Por que parar na geração do PlayStation?', 'Para fazer bem feito. O Índigo vai até a geração do PlayStation: o 3DO, de 1993, é da mesma época e chegou na versão 2.2 (ainda experimental), como o último console novo. Depois disso, o tempo vai só para melhorar os que já estão lá: precisão, compatibilidade e velocidade.'],
+    ['Até que console o Índigo vai?', 'Até o Dreamcast e o Nintendo DS, que estão a caminho junto com o Nintendo 64 na versão 2.6. Do PlayStation 2 em diante, cada console exige um recompilador e a tradução do vídeo para a placa do aparelho, e não rodaria bem num celular comum. Depois desses três, o tempo vai só para melhorar os que já estão lá. Os motivos estão na seção “Por que o Índigo é do jeito que é”.'],
+    ['Por que o Índigo não traz BIOS?', 'Porque a BIOS é um programa do fabricante, protegido por direito autoral, e distribuir cópias sem autorização é ilegal. O Índigo é escrito do zero, sem nada do fabricante. Quem tem o console pode copiar a BIOS do próprio aparelho. Sempre que dá, o Índigo liga o console sem BIOS nenhuma.'],
+    ['Por que não usar emuladores prontos?', 'Porque vários dos melhores têm licenças que proíbem uso comercial ou versões modificadas, que não combinam com a GPL-3.0, e porque com um código só todos os consoles têm o mesmo menu, os mesmos saves na nuvem e passam pelos mesmos testes e pela mesma revisão de segurança. Onde a licença permite, o Índigo reaproveita e dá o crédito.'],
   ];
   const faqHtml = `<section class="l-sec" id="perguntas" aria-labelledby="faqTitle">
   <div class="l-wrap">
@@ -500,7 +556,7 @@ export function landingMid({ press = [] } = {}) {
     </div>
     <ul class="press">
       ${press.map((m) => `<li class="press-card">
-        <p class="press-src"><span class="press-outlet">${esc(m.outlet)}</span><span>${esc(m.author)} · ${esc(m.date)}</span></p>
+        <p class="press-src"><span class="press-outlet">${esc(m.outlet)}</span><span>${[m.author, m.date].filter(Boolean).map(esc).join(' · ')}</span></p>
         <h3><a href="${esc(m.url)}" target="_blank" rel="noopener">${esc(m.title)}<span class="sr"> (abre em nova aba)</span></a></h3>
         <p>${esc(m.summary)}</p>
         <span class="press-more" aria-hidden="true">Ler a matéria ${ICON.ext}</span>
@@ -508,7 +564,7 @@ export function landingMid({ press = [] } = {}) {
     </ul>
   </div>
 </section>` : '';
-  return [open, pressHtml, faqHtml].join('\n');
+  return [open, why, pressHtml, faqHtml].join('\n');
 }
 
 // Autista Empreende: fecha o conteúdo, logo depois do emulador do navegador

@@ -14,6 +14,22 @@ const SITE_URL = 'https://indigo.nexus';
 // "O Índigo na mídia": uma entrada por matéria (só o nome do veículo em texto, sem logotipo). Lista vazia: a seção some.
 const PRESS = [
   {
+    outlet: '33Giga',
+    title: 'Emuladores criados com IA podem ampliar o acesso a jogos clássicos',
+    author: '',
+    date: '02/11/2026',
+    summary: 'Conta que o João, contador e criador do canal Autista Empreende, fez o próprio emulador em cerca de duas semanas com o Claude Code, e discute como a IA pode ampliar o acesso a jogos clássicos.',
+    url: 'https://33giga.com.br/emuladores-criados-com-ia',
+  },
+  {
+    outlet: 'Gamers e Games',
+    title: 'Inteligência artificial impulsiona emulação de jogos e traz novos rumos para o futuro dos consoles',
+    author: '',
+    date: '01/11/2026',
+    summary: 'Fala do emulador que o João programou com IA em duas semanas, que roda direto no navegador do computador, e do papel da IA e da nuvem no futuro dos consoles.',
+    url: 'https://www.gamersegames.com.br/2026/11/01/inteligencia-artificial-impulsiona-emulacao-de-jogos-e-traz-novos-rumos-para-o-futuro-dos-consoles/',
+  },
+  {
     outlet: 'Technobit',
     title: 'Inteligência artificial pode transformar a emulação de games e mudar o futuro dos consoles',
     author: 'Alan Leocadio',

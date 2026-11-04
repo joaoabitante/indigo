@@ -16,6 +16,10 @@ Licença
 - O Índigo é software livre (GNU GPL versão 3). Ele não traz jogos nem BIOS: use cópias dos seus.
   Créditos de terceiros: veja TERCEIROS.md no código-fonte (github.com/joaoabitante, em breve público).
 
+Novo na 2.5.1
+- 3DO: com a BIOS real do console, o Índigo ficava com a tela escura ao abrir qualquer jogo. Agora a BIOS
+  mostra o logo do 3DO e a tela inicial (e o Storage Manager, segurando o X). O 3DO continua experimental.
+
 Novo na 2.5
 - Os consoles experimentais ficaram mais perto do aparelho: Sega Saturn (leitor de CD, efeitos de cor, som),
   Atari Jaguar, PC-FX (vídeos e imagens comprimidas, mouse), 3DO, Intellivision (.bin com .cfg, troca de

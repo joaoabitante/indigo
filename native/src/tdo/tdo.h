@@ -24,7 +24,8 @@
 // com o driver do 3DO no MAME, licença BSD-3-Clause):
 //   0x0000 revisão (0x02020000)  0x0004 CSYSBITS  0x0008/0x000C linhas das interrupções de vídeo VINT0/VINT1
 //     (0xFFFFFFFF = desligada)  0x0020 AUDIN  0x0024 AUDOUT  0x0028 CSTATBITS (bit 0 = ligou agora, bit 6 =
-//     reinício pelo DIPIR; escrever o bit 4 reinicia a CPU, o bit 5 apaga o pedido do DIPIR)  0x002C watchdog
+//     reinício pelo DIPIR; escrever o bit 4 reinicia a CPU sem apagar os registradores, ver Arm60::requestReset; o bit 5 apaga o
+//     pedido do DIPIR)  0x002C watchdog
 //   0x0030 contador horizontal  0x0034 linha atual (bits 0-10) e campo (bit 11)  0x0038 semente  0x003C aleatório
 //   0x0040/0x0044 liga/limpa interrupções pendentes (palavra 0)  0x0048/0x004C liga/limpa a máscara 0 (o bit 31
 //     da máscara é sempre lido ligado)  0x0050/0x0054 liga/limpa MODE (bits 16-28: interrupção quando o canal de
@@ -41,7 +42,8 @@
 //     de 25 MHz (o dobro do da CPU). Timer sem recarga para ao estourar (fica 0xFFFF).
 //   0x0304/0x0308 liga/limpa DMA: bits 0..12 canais RAM -> DSP, bit 20 XBUS -> RAM (só anda com o bit 11 do
 //     EXPCTL)
-//   0x0400/0x0404 liga/limpa EXPCTL (bits 7, 9, 11, 14, 15; bit 7 = a CPU tem o barramento)  0x0408 TYPE0_4
+//   0x0400/0x0404 liga/limpa EXPCTL (bits 7, 9, 11, 14, 15; bit 7 = a CPU tem o barramento: volta a 1 sozinho
+//     quando não há DMA do XBUS pedido)  0x0408 TYPE0_4
 //   0x040C XFRCNT  0x0410/0x0414 DIPIR1/DIPIR2 (bit 15 = pedido ativo, bits 0-7 = dispositivo)
 //   0x0500 dispositivo do XBUS escolhido (0 = CD; só 0 e 0x8F respondem: nos outros a CPU leva um "data abort"
 //     e o bit 2 do ABORTBITS do MADAM liga)
@@ -140,6 +142,7 @@ private:
   void runLine();
   void timersTick(int cycles);
   void xbusDma();
+  void expBus();
   // canal de DMA do DSP de um registrador do MADAM (0x400 + 16n): 0..12 e 16..19; -1 = outro
   static int dspDmaChannel(uint32_t off) {
     if (off < 0x400 || off >= 0x600) return -1;

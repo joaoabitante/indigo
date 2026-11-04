@@ -450,3 +450,28 @@ a:focus-visible, button:focus-visible, summary:focus-visible, select:focus-visib
 @keyframes netFlow { to { stroke-dashoffset: -48; } }
 #heroTitle { font-size: clamp(36px, 5.2vw, 60px); }
 @media (max-width: 420px) { .l-nav .l-nexus { display: none; } }
+
+/* ---------- aviso da BIOS ---------- */
+.bios-line { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px !important; font-size: 14.5px; }
+.bios-line .ico { flex: none; width: 16px; height: 16px; margin-top: 3px; color: var(--l-amber); }
+.bios-line a { color: var(--l-amber); font-weight: 600; }
+.tl-card h4 .t-bios { vertical-align: middle; }
+.get-bios { margin: 16px 0 0; padding: 18px 20px; border-radius: 16px; border: 1px solid var(--l-amber); background: rgba(10,10,24,.45); color: var(--l-ink); font-size: 15px; line-height: 1.6; scroll-margin-top: calc(var(--l-nav-h, 64px) + 16px); }
+.get-bios h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font: 700 18px/1.3 var(--font-display); }
+.get-bios h3 .ico { width: 20px; height: 20px; color: var(--l-amber); }
+.get-bios p { margin: 0; }
+.get-bios ol { margin: 10px 0 0; padding-left: 22px; }
+.get-bios li + li { margin-top: 4px; }
+.get-bios .get-bios-ok { margin-top: 10px; color: var(--l-muted); font-size: 14px; }
+
+/* ---------- por que o Índigo é assim ---------- */
+.why-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.why-card { padding: 22px 24px; border-radius: 18px; border: 1px solid var(--l-line); background: linear-gradient(180deg, var(--l-panel), var(--l-bg-2)); }
+.why-card h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font: 700 19px/1.25 var(--font-display); }
+.why-ico { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; color: var(--l-amber); background: color-mix(in srgb, var(--l-amber) 14%, transparent); }
+.why-ico .ico { width: 20px; height: 20px; }
+.why-card p { margin: 0; color: var(--l-muted); font-size: 15px; line-height: 1.6; }
+.why-card p + p { margin-top: 10px; }
+.why-card b { color: var(--l-ink); font-weight: 600; }
+.code-copy p a { color: var(--l-amber); font-weight: 600; }
+@media (max-width: 1000px) { .why-grid { grid-template-columns: minmax(0, 1fr); } }

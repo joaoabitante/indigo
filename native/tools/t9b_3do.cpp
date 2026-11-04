@@ -759,7 +759,15 @@ static void testMatrixVdl() {
   w32(s, v + 16, 0x60000000u | 31u << 24 | 0x400000);  // vermelho do índice 31 = 0x40
   w32(s, v + 20, 0xE000FF00u);                         // fundo verde
   w32(s, 0x5000, 120); w32(s, 0x5004, 0); w32(s, 0x5008, 0); w32(s, 0x500C, 0x5000);
+  // pré-exibição: as 16 primeiras linhas da VDL não aparecem
+  w32(s, 0x3000, 16); w32(s, 0x300C, v);
+  w32(s, 0x3100, 16); w32(s, 0x310C, 0x6000);
   w32(s, 0x03300580, v);
+  w32(s, 0x03300008, 0x6000);
+  s.madam.renderFrame(s.fb);
+  CHECK(s.fb[10] == 0xFF00FF00u, "VDL: as 16 primeiras linhas ficam fora da tela (%08X)", s.fb[10]);
+  w32(s, 0x03300008, 0);
+  w32(s, 0x03300580, 0x3000);
   s.madam.renderFrame(s.fb);
   CHECK(s.fb[10] == 0xFF000000u, "VDL desligada no MCTL: tela preta");
   w32(s, 0x03300008, 0x6000);
@@ -776,7 +784,7 @@ static void testMatrixVdl() {
   w32(s, 0x6104, 0x200000 | 2); w32(s, 0x6108, 0); w32(s, 0x610C, 0x6100);
   s.madam.w16(0x200000 + 10 * 4 + 2, 0x7C00);            // linha 1 do quadro -> 1ª linha da tela
   s.madam.w16(0x200000 + 640 * 4 + 10 * 4, 0x7C00);      // linha 2 (largura 640) -> 2ª linha
-  w32(s, 0x03300580, 0x6000);
+  w32(s, 0x03300580, 0x3100);
   s.madam.renderFrame(s.fb);
   CHECK(s.fb[10] == 0xFF000080u && s.fb[320 + 10] == 0xFF000080u, "VDL: entrada de 0 linhas, largura 640 e linha ímpar (%08X %08X)", s.fb[10], s.fb[330]);
   // controle do vídeo (0xC0, bit 25): pixel com o bit 15 usa a CLUT fixa (rampa) em vez da carregada
@@ -835,6 +843,9 @@ static void testClio() {
   {
     System s(idleBios(), nullptr);
     CHECK(s.clioRead(0x0000) == 0x02020000 && s.clioRead(0x0028) == 1 && s.clioRead(0x0400) == 0x80, "revisão, CSTATBITS (ligou agora) e EXPCTL");
+    // sem DMA do XBUS pedido, o barramento volta logo para a CPU (a BIOS real apaga o bit 7 e espera ele voltar)
+    s.clioWrite(0x0404, 0x80);
+    CHECK(s.clioRead(0x0400) == 0x80, "EXPCTL: bit 7 volta sem DMA do XBUS (%08X)", s.clioRead(0x0400));
     s.clioWrite(0x0038, 0xFFFFFFFF);
     const uint32_t seed = s.clioRead(0x0038);
     const uint32_t r1 = s.clioRead(0x003C), r2 = s.clioRead(0x003C);
@@ -900,8 +911,11 @@ static void testClio() {
     // mov r0, #0x03400000; mov r1, #0x10; str r1, [r0, #0x28]!; b .
     System s(biosFrom({0xE3A00634, 0xE3A01010, 0xE5A01028, 0xEAFFFFFE}), nullptr);
     for (int i = 0; i < 4; i++) s.cpu.step();
-    CHECK(s.cpu.r[15] == 0 && s.cpu.r[0] == 0 && (s.cpu.cpsr & 0x1F) == 0x13 && s.overlay(),
-          "reinício pela CPU: banco zerado depois da escrita da base (r0 %08X pc %08X)", s.cpu.r[0], s.cpu.r[15]);
+    // como no ARM6: os registradores ficam, LR_svc = próxima instrução e SPSR_svc = CPSR (a BIOS real volta assim)
+    CHECK(s.cpu.r[15] == 0 && s.cpu.r[0] == 0x03400028 && s.cpu.r[14] == 0x03000014 && s.cpu.spsr() == 0xD3 &&
+          (s.cpu.cpsr & 0xDF) == 0xD3 && s.overlay(),
+          "reinício pela CPU: registradores mantidos, LR e SPSR como exceção (r0 %08X lr %08X pc %08X)", s.cpu.r[0],
+          s.cpu.r[14], s.cpu.r[15]);
   }
   // SPORT da VRAM (cor + preenchimento, cópia de página com máscara), UNCLE e a porta de diagnóstico
   {
@@ -1407,17 +1421,86 @@ static void testBoot(const std::string& dir) {
   }
 }
 
+// pixels claros (algum canal acima de 0x40): o fundo do logotipo é quase preto (0x010101) e não conta
+static int litPixels(const uint32_t* fb) {
+  int n = 0;
+  for (int i = 0; i < 320 * 240; i++) n += (fb[i] & 0xC0C0C0) != 0;
+  return n;
+}
+
+static void savePpm(const uint32_t* fb, const std::string& path) {
+  std::ofstream f(path, std::ios::binary);
+  f << "P6\n320 240\n255\n";
+  for (int i = 0; i < 320 * 240; i++) { const uint32_t p = fb[i]; const char rgb[3] = {char(p), char(p >> 8), char(p >> 16)}; f.write(rgb, 3); }
+}
+
+// BIOS real do usuário (ex.: Panasonic FZ-10). Nunca vem com o Índigo nem entra no repositório.
+// T9B_BIOS_PPM=prefixo grava as telas obtidas (prefixo-logo.ppm, prefixo-espera.ppm, prefixo-disco.ppm).
 static void testUserBios(const std::string& dir) {
-  std::printf("== BIOS do usuário (bios-joao/3do)\n");
+  std::printf("== BIOS do usuário (bios-joao)\n");
   const char* env = std::getenv("INDIGO_3DO_BIOS");
-  const std::string p = env ? env : "/root/indigo-env/bios-joao/3do/panafz10.bin";
+  const std::string p = env ? env : "/root/indigo-env/bios-joao/panafz10.bin";
   if (!std::filesystem::exists(p)) { std::printf("  pulados (sem a BIOS do usuário em %s)\n", p.c_str()); skipped++; return; }
   const auto bios = readAll(p);
   CHECK(isTdoBios(bios), "BIOS do usuário reconhecida");
-  TdoCore c(std::make_unique<OperaDisc>(), nullptr, &bios);
-  for (int f = 0; f < 300; f++) c.runFrame();
-  std::printf("  rodou 300 quadros; instruções indefinidas: %u, PC %08X\n", c.sys().cpu.undefinedCount, c.sys().cpu.r[15]);
-  (void)dir;
+  const char* ppm = std::getenv("T9B_BIOS_PPM");
+  // a tela de espera do disco ("Insert CD") ocupa a tela toda; o logotipo e a tela da Panasonic, não
+  constexpr int WAIT_LIT = 60000, MAX_FRAMES = 1800;
+  // sem disco: logotipo do 3DO e depois a tela de espera do disco
+  {
+    TdoCore c(nullptr, nullptr, &bios);
+    int logo = -1, wait = -1, f = 0;
+    for (; f < MAX_FRAMES && wait < 0; f++) {
+      c.runFrame();
+      const int lit = litPixels(c.framebuffer());
+      if (logo < 0 && lit > 2000) logo = f;
+      if (logo >= 0 && f > logo + 300 && lit > WAIT_LIT) wait = f;
+    }
+    CHECK(logo >= 0 && logo < 120, "logotipo do 3DO na tela (quadro %d)", logo);
+    std::printf("  sem disco: logotipo no quadro %d, tela de espera do disco no quadro %d\n", logo, wait);
+    CHECK(wait > 0, "tela de espera do disco (quadro %d; PC %08X)", wait, c.sys().cpu.r[15]);
+    CHECK(c.sys().cpu.undefinedCount == 0, "sem instruções indefinidas (%u)", c.sys().cpu.undefinedCount);
+    if (ppm) savePpm(c.framebuffer(), std::string(ppm) + "-espera.ppm");
+    // estado salvo na tela da BIOS repete os quadros
+    const auto st = c.saveState();
+    for (int k = 0; k < 20; k++) c.runFrame();
+    const uint32_t h1 = hashFb(c.framebuffer(), 320 * 240);
+    c.loadState(st);
+    for (int k = 0; k < 20; k++) c.runFrame();
+    CHECK(hashFb(c.framebuffer(), 320 * 240) == h1, "estado salvo na tela da BIOS repete os quadros");
+  }
+  // com disco: o DIPIR da BIOS lê o rótulo Opera. O homebrew do Índigo não tem a assinatura RSA dos discos
+  // licenciados, então a BIOS real o recusa como o console faria: abre a gaveta e volta à tela de espera.
+  {
+    const std::string cue = dir + "/disco/homebrew.cue";
+    std::unique_ptr<cdrom::Disc> disc;
+    std::string err;
+    if (std::filesystem::exists(cue)) disc = cdrom::open(cue, &err);
+    if (!disc) disc = std::make_unique<OperaDisc>();
+    TdoCore c(std::move(disc), nullptr, &bios);
+    int logo = -1, eject = -1, wait = -1, home = -1, f = 0;
+    for (; f < MAX_FRAMES && wait < 0 && home < 0; f++) {
+      c.runFrame();
+      const int lit = litPixels(c.framebuffer());
+      if (logo < 0 && lit > 2000) {
+        logo = f;
+        if (ppm) savePpm(c.framebuffer(), std::string(ppm) + "-logo.ppm");
+      }
+      if (eject < 0 && c.sys().cd.doorOpen()) eject = f;
+      if (c.sys().madam.m32(0x000FFF00) == 0x484F4D45) home = f;  // "HOME": o homebrew começou
+      if (eject >= 0 && f > eject + 60 && lit > WAIT_LIT) wait = f;
+    }
+    CHECK(logo >= 0 && logo < 120, "com disco: logotipo do 3DO (quadro %d)", logo);
+    std::printf("  com o homebrew: logotipo no quadro %d, gaveta aberta no %d, tela de espera no %d\n", logo, eject, wait);
+    if (home >= 0) {
+      std::printf("  o homebrew do disco começou com a BIOS real (quadro %d)\n", home);
+    } else {
+      CHECK(eject >= 0, "disco sem assinatura recusado pelo DIPIR: gaveta aberta (quadro %d)", eject);
+      CHECK(wait > 0, "depois da recusa, a tela de espera do disco (quadro %d; PC %08X)", wait, c.sys().cpu.r[15]);
+      std::printf("  o homebrew não parte com esta BIOS (disco sem assinatura; uma BIOS sem a checagem RSA o aceitaria)\n");
+    }
+    if (ppm) savePpm(c.framebuffer(), std::string(ppm) + "-disco.ppm");
+  }
 }
 
 int main(int argc, char** argv) {

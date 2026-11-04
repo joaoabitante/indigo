@@ -2,6 +2,13 @@
 
 Gerado de `web/changelog.js` (o mesmo texto aparece no cartão “Registro” da página).
 
+## 04/11/2026 · App 2.5.1: 3DO liga com a BIOS do console
+
+- 3DO: com a BIOS real do console, a tela ficava escura ao abrir qualquer jogo. Agora a BIOS mostra o logo do 3DO e a tela inicial (e o Storage Manager, segurando o X).
+- O 3DO continua experimental: ainda não foi testado com jogos de verdade.
+
+**Testes:** Teste do 3DO com 175 verificações e 0 falhas; revalidação de 1043 comparações iguais e robustez com 0 problemas.
+
 ## 03/11/2026 · App 2.5: consoles experimentais mais perto do aparelho
 
 - Sega Saturn: leitor de CD com os comandos e os tempos que a BIOS espera, efeitos de cor, sombras e mosaico do vídeo, tempo de desenho do VDP1 e som com envelope, LFO e efeitos (DSP).

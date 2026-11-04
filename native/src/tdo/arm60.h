@@ -39,9 +39,11 @@ public:
   // o barramento recusou o acesso da instrução atual: ao fim dela a CPU entra no "data abort" (vetor 0x10,
   // LR = endereço da instrução + 8); fora de uma instrução não tem efeito
   void dataAbort() { if (inStep_) abortPending_ = true; }
-  // reinício pedido por um registrador (CSTATBITS do CLIO): no meio de uma instrução só vale ao fim dela, para o
-  // resto da instrução (escrita de volta da base) não cair no banco já zerado
-  void requestReset() { if (inStep_) resetPending_ = true; else reset(0); }
+  // reinício "macio" pedido por um registrador (CSTATBITS do CLIO): no meio de uma instrução só vale ao fim dela.
+  // Como no ARM6 de verdade, os registradores ficam: entra no SVC como uma exceção (LR_svc = próxima instrução,
+  // SPSR_svc = CPSR) e vai para o endereço 0. A BIOS real volta do DIPIR com esse LR/SPSR e o SP antigo.
+  void requestReset() { if (inStep_) resetPending_ = true; else softReset(); }
+  void softReset();
 
   // registradores do modo atual (r[15] = endereço da próxima instrução a buscar)
   uint32_t r[16] = {};

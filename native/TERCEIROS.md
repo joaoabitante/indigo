@@ -29,7 +29,7 @@ Partes de terceiros incluídas, todas com licença compatível com a GPL-3.0:
 | SDL3 (biblioteca usada para compilar; no Linux vai no pacote, em `lib/`) | baixada pelo `setup-env.sh` | zlib |
 | Gradle wrapper | `native/android/gradle/` | Apache-2.0 |
 | Tabelas de cor CRY do Atari Jaguar (dados da documentação do console, na forma do Virtual Jaguar) | `native/src/jaguar/jaguar.cpp` | GPL-3.0 (Virtual Jaguar / virtualjaguar-libretro) |
-| 3DO: conjunto de instruções e modelo de quadro/FIFO/DMA do DSPP, mapa dos registradores do CLIO e do MADAM (timers, interrupções, MSYSBITS, DMA do XBUS e do controle, VDL, motor de matrizes, campos do CCB/PRE1/PIXC) e comandos da unidade de CD CR-560-B, reescritos a partir dos fontes `src/devices/cpu/dspp`, `src/mame/misc/3do*` e `src/devices/machine/cr560b*` do MAME (Philip Bennett, Angelo Salese, Wilbert Pol) | `native/src/tdo/` | BSD-3-Clause (aviso abaixo) |
+| 3DO: conjunto de instruções e modelo de quadro/FIFO/DMA do DSPP, mapa dos registradores do CLIO e do MADAM (timers, interrupções, MSYSBITS, DMA do XBUS e do controle, EXPCTL, reinício pelo CSTATBITS, VDL com as linhas antes da área visível, motor de matrizes, campos do CCB/PRE1/PIXC) e comandos da unidade de CD CR-560-B, reescritos a partir dos fontes `src/devices/cpu/dspp`, `src/mame/misc/3do*` e `src/devices/machine/cr560b*` do MAME (Philip Bennett, Angelo Salese, Wilbert Pol) | `native/src/tdo/` | BSD-3-Clause (aviso abaixo) |
 
 Partes do núcleo do PC-FX (`native/src/pcfx/`) são **adaptadas do código do Mednafen** (Beetle PC-FX, Mednafen
 Team, GPL-2.0 ou posterior, usado aqui sob a GPL-3.0), reescritas no estilo do Índigo mas derivadas dele: o desenho

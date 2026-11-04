@@ -101,6 +101,12 @@ void Arm60::exception(uint32_t vector, uint32_t mode, uint32_t lr, bool fiq) {
   extra_ += 2;
 }
 
+void Arm60::softReset() {
+  exception(0x00, SVC, r[15], true);
+  extra_ = 0;
+  branched_ = false;
+}
+
 void Arm60::undefined() {
   undefinedCount++;
   exception(0x04, UND, r[15], false);
@@ -172,7 +178,7 @@ int Arm60::step() {
   inStep_ = false;
   if (resetPending_) {  // o reinício ganha de um "data abort" da mesma instrução
     resetPending_ = abortPending_ = false;
-    reset(0);
+    softReset();
     return 1;
   }
   if (abortPending_) {  // acesso recusado pelo barramento: "data abort"

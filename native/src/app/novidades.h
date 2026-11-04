@@ -11,6 +11,10 @@ struct Versão {
 };
 
 inline constexpr Versão VERSOES[] = {
+    {"2.5.1", "04/11/2026",
+     {"3DO: a BIOS do console agora",
+      "liga (logo e tela inicial);",
+      "antes a tela ficava escura", nullptr}},
     {"2.5", "03/11/2026",
      {"Consoles experimentais mais",
       "perto do aparelho: Saturn,",

@@ -2,6 +2,15 @@
 // A entrada mais nova fica em cima.
 export const CHANGELOG = [
   {
+    date: '2026-11-04',
+    title: 'App 2.5.1: 3DO liga com a BIOS do console',
+    items: [
+      '3DO: com a BIOS real do console, a tela ficava escura ao abrir qualquer jogo. Agora a BIOS mostra o logo do 3DO e a tela inicial (e o Storage Manager, segurando o X).',
+      'O 3DO continua experimental: ainda não foi testado com jogos de verdade.',
+    ],
+    tests: 'Teste do 3DO com 175 verificações e 0 falhas; revalidação de 1043 comparações iguais e robustez com 0 problemas.',
+  },
+  {
     date: '2026-11-03',
     title: 'App 2.5: consoles experimentais mais perto do aparelho',
     items: [

@@ -68,7 +68,9 @@ public:
   int drawCels(uint32_t ccb);
   void matrixOp(uint32_t cmd);
 
-  // VDL: monta a imagem de 320x240 em out (0xAABBGGRR)
+  // VDL: monta a imagem de 320x240 em out (0xAABBGGRR). As 16 primeiras linhas da VDL ficam antes da área
+  // visível (o sistema real põe ali a sua "pré-exibição"; o MAME começa a VDL 16 linhas antes da 1ª visível).
+  static constexpr int HIDDEN_LINES = 16;
   void renderFrame(uint32_t* out);
 
   void sync(StateIO& io);
