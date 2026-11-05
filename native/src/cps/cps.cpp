@@ -124,56 +124,73 @@ uint32_t Cps::cpsBase(int reg, uint32_t boundary) const {
 }
 
 uint16_t Cps::inputWord(int which) const {
-  const uint32_t k = keys_;
+  const uint32_t k = keys_, k2 = keys2_;
   const bool six = (game.flags & GF_6BUTTONS) != 0;
   const bool forgottn = !cps2 && std::strncmp(game.name, "forgottn", 8) == 0;
-  bool b[7] = {};
-  if (six) {
-    b[1] = k & KEY_Y; b[2] = k & KEY_X; b[3] = k & KEY_R; b[4] = k & KEY_B; b[5] = k & KEY_A; b[6] = k & KEY_L;
-  } else {
-    b[1] = (k & (KEY_Y | KEY_B)) != 0; b[2] = (k & (KEY_X | KEY_A)) != 0; b[3] = k & KEY_R;
-    b[4] = !forgottn && (k & KEY_L);
-  }
-  uint8_t joy = 0xFF;
-  if (k & KEY_RIGHT) joy &= ~0x01;
-  if (k & KEY_LEFT) joy &= ~0x02;
-  if (k & KEY_DOWN) joy &= ~0x04;
-  if (k & KEY_UP) joy &= ~0x08;
-  if (b[1]) joy &= ~0x10;
-  if (b[2]) joy &= ~0x20;
-  if (b[3]) joy &= ~0x40;
+  // botões 1-6 de um jogador (b[0] sem uso) e o byte do joystick com os botões 1-3
+  struct Pad { bool b[7] = {}; uint8_t joy = 0xFF; };
+  auto pad = [&](uint32_t m) {
+    Pad p;
+    bool* b = p.b;
+    if (six) {
+      b[1] = m & KEY_Y; b[2] = m & KEY_X; b[3] = m & KEY_R; b[4] = m & KEY_B; b[5] = m & KEY_A; b[6] = m & KEY_L;
+    } else {
+      b[1] = (m & (KEY_Y | KEY_B)) != 0; b[2] = (m & (KEY_X | KEY_A)) != 0; b[3] = m & KEY_R;
+      b[4] = !forgottn && (m & KEY_L);
+    }
+    if (m & KEY_RIGHT) p.joy &= ~0x01;
+    if (m & KEY_LEFT) p.joy &= ~0x02;
+    if (m & KEY_DOWN) p.joy &= ~0x04;
+    if (m & KEY_UP) p.joy &= ~0x08;
+    if (b[1]) p.joy &= ~0x10;
+    if (b[2]) p.joy &= ~0x20;
+    if (b[3]) p.joy &= ~0x40;
+    if (cps2 && !six && b[4]) p.joy &= ~0x80;
+    return p;
+  };
+  const Pad p1 = pad(k), p2 = pad(k2);
   switch (which) {
-    case 0:  // CPS1: jogadores (IN1); CPS2: IN0
-      if (cps2 && !six && b[4]) joy &= ~0x80;
-      return static_cast<uint16_t>(0xFF00 | joy);
-    case 1: {  // CPS2 IN1: botões 4-6 do jogador 1 (jogos de 6 botões)
+    case 0:  // CPS1: jogadores (IN1); CPS2: IN0. Jogador 1 no byte de baixo, jogador 2 no de cima
+      return static_cast<uint16_t>((p2.joy << 8) | p1.joy);
+    case 1: {  // CPS2 IN1: botões 4-6 dos jogadores 1 (bits 0-2) e 2 (bits 4-6) nos jogos de 6 botões
       uint16_t v = 0xFFFF;
       if (six) {
-        if (b[4]) v &= ~0x0001;
-        if (b[5]) v &= ~0x0002;
-        if (b[6]) v &= ~0x0004;
-      } else if (!(game.flags & GF_4PLAYERS) && b[4]) {
-        v &= ~0x0001;
+        if (p1.b[4]) v &= ~0x0001;
+        if (p1.b[5]) v &= ~0x0002;
+        if (p1.b[6]) v &= ~0x0004;
+        if (p2.b[4]) v &= ~0x0010;
+        if (p2.b[5]) v &= ~0x0020;
+        if (p2.b[6]) v &= ~0x0040;
+      } else if (!(game.flags & GF_4PLAYERS)) {
+        if (p1.b[4]) v &= ~0x0001;
+        if (p2.b[4]) v &= ~0x0010;
       }
       return v;
     }
-    case 2: {  // CPS1 IN2 (placa C): botões 4-6
+    case 2: {  // CPS1 IN2 (placa C): botões 4-6 dos jogadores 1 (bits 0-2) e 2 (bits 4-6)
       uint16_t v = 0x00FF;
-      if (b[4]) v &= ~0x01;
-      if (b[5]) v &= ~0x02;
-      if (b[6]) v &= ~0x04;
+      if (p1.b[4]) v &= ~0x01;
+      if (p1.b[5]) v &= ~0x02;
+      if (p1.b[6]) v &= ~0x04;
+      if (p2.b[4]) v &= ~0x10;
+      if (p2.b[5]) v &= ~0x20;
+      if (p2.b[6]) v &= ~0x40;
       return v;
     }
-    default: {  // sistema: CPS1 IN0 (byte) / CPS2 IN2
+    default: {  // sistema: CPS1 IN0 (byte) / CPS2 IN2. Select = moeda
       if (cps2) {
         uint16_t v = 0xFFFE | (eeprom_.dataOut() ? 1 : 0);
         if (k & KEY_START) v &= ~0x0100;
+        if (k2 & KEY_START) v &= ~0x0200;
         if (k & KEY_SELECT) v &= ~0x1000;
+        if (k2 & KEY_SELECT) v &= ~0x2000;
         return v;
       }
       uint8_t v = 0xFF;
       if (k & KEY_SELECT) v &= ~0x01;
+      if (k2 & KEY_SELECT) v &= ~0x02;
       if (k & KEY_START) v &= ~0x10;
+      if (k2 & KEY_START) v &= ~0x20;
       return v;
     }
   }

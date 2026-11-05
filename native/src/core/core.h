@@ -30,6 +30,10 @@ public:
   virtual void runFrame() = 0;
   virtual void reset() = 0;
   virtual void setKeys(uint32_t mask) = 0;   // bits de Key, 1 = apertado
+  // controle do jogador 2 (mesmos bits de Key). A primeira chamada liga o controle 2 no console; os núcleos sem
+  // jogador 2 ignoram. players() diz quantos jogadores o núcleo aceita.
+  virtual void setKeys2(uint32_t mask) {}
+  virtual int players() const { return 1; }
 
   // vídeo: pixels 0xAABBGGRR (bytes R, G, B, A na memória), como o Uint32Array da versão web
   virtual const uint32_t* framebuffer() const = 0;

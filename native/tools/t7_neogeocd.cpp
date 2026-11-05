@@ -10,6 +10,7 @@
 //     salvar dá os mesmos bytes; estados truncados/danificados são recusados sem travar;
 //  5. RAM de backup (o save): exportar/importar; janela de upload e DMA (operações do NeoCD) no barramento;
 //  6. robustez: BIOS e CDs aleatórios ou danificados não travam.
+//  7. dois jogadores: o controle 2 chega às entradas do jogador 2.
 // Uso: indigo-t7_neogeocd pasta            (todos os testes)
 //      indigo-t7_neogeocd pasta rodar disco.cue quadros saida.ppm [teclas]   (depuração: grava o último quadro)
 #include <algorithm>
@@ -329,6 +330,20 @@ void testState(const std::string& dir, const std::string& file, uint32_t keys, i
   const double expect = 60 / ng.fps() * 48000 * 2;
   check(std::fabs(static_cast<double>(a3.size()) - expect) < expect * 0.02, file + ": som na taxa certa depois do reset");
   std::printf("save state (%s): determinístico, %d estados danificados recusados, %d rodaram\n", file.c_str(), refused, ran);
+}
+
+// ------------------------------------------------------------------ dois jogadores
+// o controle 2 chega a $340000 e aos bits 2-3 de $380000, sem mexer no jogador 1
+void testPlayer2(const std::string& dir) {
+  indigo::neogeocd::NeoGeoCdCore core(indigo::cdrom::open(dir + "/discos/helloworld.cue"), nullptr);
+  NeoGeoCd& ng = core.ngcd();
+  check(core.players() == 2, "2 jogadores: players() == 2");
+  core.setKeys(indigo::KEY_UP | indigo::KEY_START);
+  core.setKeys2(indigo::KEY_A | indigo::KEY_LEFT | indigo::KEY_SELECT);
+  check(ng.read8(0x300000) == 0xFE && ng.read8(0x340000) == 0xDB, "2 jogadores: controles 1 e 2");
+  check((ng.read8(0x380000) & 0x0F) == 0x06, "2 jogadores: start do 1 e select do 2");
+  core.setKeys2(0);
+  check(ng.read8(0x340000) == 0xFF && (ng.read8(0x380000) & 0x0F) == 0x0E, "2 jogadores: jogador 2 solto");
 }
 
 // ------------------------------------------------------------------ 5. RAM de backup, janela de upload e DMA
@@ -660,6 +675,7 @@ int main(int argc, char** argv) {
     if (argc > 2 && std::string(argv[2]) == "rodar") return runMode(argc, argv);
     testBios(dir, bios);
     testBus(dir);
+    testPlayer2(dir);
     testUploads(dir);
     testFrames(dir);
     testAudio(dir);

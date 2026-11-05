@@ -382,8 +382,8 @@ uint8_t MD::padRead(int port) {
   port &= 1;
   const bool th = (ioCtrl_[port] & 0x40) ? (ioData_[port] & 0x40) != 0 : true;
   if (now() - padLastTh_[port] > PAD_TIMEOUT) padPhase_[port] = 0;
-  if (port == 1) padPhase_[1] = 0;  // controle 2: 3 botões, nada apertado
-  const uint32_t k = port == 0 ? keys_ : 0;  // controle 2 ligado, sem nada apertado
+  if (port == 1 && !pad2On_) padPhase_[1] = 0;  // controle 2 sem o app: 3 botões, nada apertado
+  const uint32_t k = port == 0 ? keys_ : pad2On_ ? keys2_ : 0;
   auto bit = [&](uint32_t key, int b) { return (k & key) ? 0 : (1 << b); };
   uint8_t v;
   if (th) {

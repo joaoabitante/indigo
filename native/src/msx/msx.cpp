@@ -141,14 +141,14 @@ void MSX::write(int a, int v) {
 }
 
 int MSX::joystick() const {
-  if (psg.portB() & 0x40) return 0x7F;  // porta 2: nada ligado
+  const uint32_t k = (psg.portB() & 0x40) ? keys2 : keys;  // bit 6 do PSG escolhe a porta 2
   int v = 0x7F;
-  if (keys & KEY_UP) v &= ~0x01;
-  if (keys & KEY_DOWN) v &= ~0x02;
-  if (keys & KEY_LEFT) v &= ~0x04;
-  if (keys & KEY_RIGHT) v &= ~0x08;
-  if (keys & KEY_A) v &= ~0x10;
-  if (keys & KEY_B) v &= ~0x20;
+  if (k & KEY_UP) v &= ~0x01;
+  if (k & KEY_DOWN) v &= ~0x02;
+  if (k & KEY_LEFT) v &= ~0x04;
+  if (k & KEY_RIGHT) v &= ~0x08;
+  if (k & KEY_A) v &= ~0x10;
+  if (k & KEY_B) v &= ~0x20;
   return v;
 }
 

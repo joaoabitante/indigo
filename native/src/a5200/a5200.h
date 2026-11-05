@@ -21,6 +21,8 @@
 // centro e os gatilhos soltos): X + direcional escolhe a tecla pela posição no teclado 3×4 do controle
 // (↖ 1, ↑ 2, ↗ 3, ← 4, → 6, ↙ 7, ↓ 8, ↘ 9), X + A = 5, X + B = 0, X + Y = 1, X + L = *, X + R = #,
 // X + START = Reset.
+// Jogador 2 (setKeys2): joystick e botão de cima do controle 2 (potenciômetros 2 e 3, TRIG1); sem o teclado e
+// sem o botão de baixo.
 #pragma once
 #include <cstdint>
 #include <memory>
@@ -81,6 +83,7 @@ public:
   void reset(bool power);
   void runFrame();
   void setKeys(uint32_t mask);
+  void setKeys2(uint32_t mask);
   // entrada direta (testes): potenciômetros do controle 1, gatilhos e teclado
   void setInput(uint8_t potX, uint8_t potY, bool trig, bool shift, int key);
   // avança n ciclos com a CPU parada (testes: põe o relógio num ciclo exato antes de um poke)
@@ -195,6 +198,8 @@ public:
   void runFrame() override { m_->runFrame(); }
   void reset() override { m_->reset(false); }
   void setKeys(uint32_t mask) override { m_->setKeys(mask); }
+  void setKeys2(uint32_t mask) override { m_->setKeys2(mask); }
+  int players() const override { return 2; }
   std::string note() const override {
     return " · teclado do controle: teclado numérico do PC, ou segure X + direcional (posição da tecla), A = 5, B = 0";
   }

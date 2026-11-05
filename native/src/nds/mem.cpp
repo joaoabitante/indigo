@@ -595,7 +595,9 @@ uint32_t NDS::io9Read(uint32_t a, int size) {
     if (r == 10) return d.cnt >> 16;
     return 0;
   }
-  if (off >= 0x320 && off < 0x700) return gpu3d.readReg(a);
+  // leitura de 16 bits: a metade certa do registrador de 32 bits (GXSTAT em 0x602 é a metade de cima)
+  if (off >= 0x600 && off < 0x700) return (gpu3d.readReg(a & ~3u) >> ((a & 2) * 8)) & 0xFFFF;
+  if (off >= 0x320 && off < 0x600) return gpu3d.readReg(a) & 0xFFFF;
   return 0;
 }
 
@@ -662,7 +664,7 @@ void NDS::io9Write(uint32_t a, uint32_t v, int size) {
     if (off == 0x208) { io9.ime = v & 1; updateIrq(); return; }
     if (off == 0x300) { postflg9 = (postflg9 & 1) | (v & 3); return; }
     if (off == 0x180 || off == 0x181 || off == 0x184 || off == 0x185) { ipcWrite(0, a, v, 1); return; }
-    if (off >= 0x214 && off < 0x218) { io9.ifr &= ~(v << ((off - 0x214) * 8)); updateIrq(); return; }
+    if (off >= 0x214 && off < 0x218) { io9.ifr &= ~(v << ((off - 0x214) * 8)); gpu3d.gxIrq(); updateIrq(); return; }
     // demais: combina com o valor atual de 16 bits
     const uint32_t cur = io9Read(a & ~1u, 2);
     const uint32_t nv = (a & 1) ? (cur & 0xFF) | (v << 8) : (cur & 0xFF00) | v;
@@ -694,8 +696,9 @@ void NDS::io9Write(uint32_t a, uint32_t v, int size) {
     case 0x208: io9.ime = v & 1; updateIrq(); return;
     case 0x210: io9.ie = (io9.ie & 0xFFFF0000u) | v; updateIrq(); return;
     case 0x212: io9.ie = (io9.ie & 0xFFFF) | (v << 16); updateIrq(); return;
-    case 0x214: io9.ifr &= ~v; updateIrq(); return;
-    case 0x216: io9.ifr &= ~(v << 16); updateIrq(); return;
+    // a IRQ da FIFO de geometria é por nível: volta na hora se a condição continua valendo
+    case 0x214: io9.ifr &= ~v; gpu3d.gxIrq(); updateIrq(); return;
+    case 0x216: io9.ifr &= ~(v << 16); gpu3d.gxIrq(); updateIrq(); return;
     case 0x240: writeVramcnt(0, uint8_t(v)); writeVramcnt(1, uint8_t(v >> 8)); return;
     case 0x242: writeVramcnt(2, uint8_t(v)); writeVramcnt(3, uint8_t(v >> 8)); return;
     case 0x244: writeVramcnt(4, uint8_t(v)); writeVramcnt(5, uint8_t(v >> 8)); return;

@@ -4,6 +4,7 @@
 //   indigo-t7_a7800 --png rom.a78 quadros saida.png [teclas@quadro ...]   grava a tela (para conferir a olho)
 //   indigo-t7_a7800 --hash rom.a78 quadros [teclas@quadro ...]           imprime o hash da tela
 // Teclas: letras A B S(start) E(select) U D L R X, aplicadas a partir do quadro indicado, ex.: S@60 A@120.
+// As verificações incluem os dois jogadores (joystick 2 na porta 2).
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -224,6 +225,28 @@ static void syntheticTests() {
   }
 }
 
+// dois jogadores: o joystick 2 chega aos bits baixos do SWCHA e aos INPT2/3/5, sem mexer no joystick 1
+static void player2Test() {
+  std::vector<uint8_t> rom(0x8000, 0xEA);
+  rom[0x7FFC] = 0x00; rom[0x7FFD] = 0x80;
+  A7800Core c(rom, nullptr);
+  a7800::A7800& m = c.m();
+  check(c.players() == 2, "2 jogadores: players() == 2");
+  c.setKeys(0);
+  c.setKeys2(KEY_UP | KEY_LEFT | KEY_A);
+  check(m.read(0x280) == 0xFA, "2 jogadores: SWCHA com o jogador 2 em cima+esquerda (lido " + std::to_string(m.read(0x280)) + ")");
+  check(m.read(0x0B) == 0x80 && m.read(0x0A) == 0 && m.read(0x09) == 0 && m.read(0x08) == 0,
+        "2 jogadores: botão esquerdo do jogador 2 só no INPT3");
+  check(m.read(0x0D) == 0 && m.read(0x0C) == 0x80, "2 jogadores: modo de um botão: INPT5 apertado, INPT4 solto");
+  m.write(0x283, 0x14);  // SWCHB: pinos 6 das duas portas em saída baixa = joysticks de dois botões
+  m.write(0x282, 0x00);
+  check(m.read(0x0D) == 0x80, "2 jogadores: modo de dois botões: INPT5 solto");
+  c.setKeys(KEY_RIGHT | KEY_B);
+  c.setKeys2(0);
+  check(m.read(0x280) == 0x7F, "2 jogadores: jogador 1 sozinho não mexe nos bits do jogador 2");
+  check(m.read(0x08) == 0x80 && m.read(0x0A) == 0, "2 jogadores: botão direito do jogador 1 só no INPT0");
+}
+
 int main(int argc, char** argv) {
   if (argc >= 5 && !std::strcmp(argv[1], "--png")) {
     const auto rom = readAll(argv[2]);
@@ -267,6 +290,7 @@ int main(int argc, char** argv) {
     return 0;
   }
   syntheticTests();
+  player2Test();
   // 1) telas de referência
   for (const Ref& r : kRefs) {
     const std::string p = dir + "/" + r.rom;

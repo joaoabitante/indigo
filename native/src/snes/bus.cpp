@@ -326,7 +326,7 @@ void SNES::reset(bool power) {
   cpu.reset();
 }
 
-void SNES::setKeys(uint32_t m) {
+void SNES::setKeys(uint32_t m, int player) {
   uint16_t b = 0;
   if (m & KEY_B) b |= 0x8000;
   if (m & KEY_Y) b |= 0x4000;
@@ -343,7 +343,8 @@ void SNES::setKeys(uint32_t m) {
   // cima+baixo ou esquerda+direita juntos travam alguns jogos (o controle de verdade não deixa)
   if ((b & 0x0C00) == 0x0C00) b &= ~0x0C00;
   if ((b & 0x0300) == 0x0300) b &= ~0x0300;
-  pad = b;
+  if (player == 1) { pad2 = b; pad2On = true; }
+  else pad = b;
 }
 
 void SNES::runFrame() {
@@ -446,7 +447,8 @@ void SNES::newLine() {
 
 void SNES::autoJoypad() {
   joy[0] = pad;
-  joy[1] = joy[2] = joy[3] = 0;
+  joy[1] = pad2On ? pad2 : 0;
+  joy[2] = joy[3] = 0;
   joyShift[0] = 0xFFFFFFFFu;  // depois da leitura automática, a leitura manual devolve 1
   joyShift[1] = 0xFFFFFFFFu;
   autoJoyBusy = true;
@@ -597,7 +599,8 @@ void SNES::ioWrite(uint16_t a, uint8_t v) {
     case 0x2183: wramAddr = (wramAddr & 0x0FFFF) | ((v & 1) << 16); return;
     case 0x4016:
       joyLatch = v & 1;
-      if (joyLatch) { joyShift[0] = (uint32_t(pad) << 16) | 0xFFFF; joyShift[1] = 0; }
+      // porta 2 sem controle devolve 0; com controle, 1 depois dos 16 bits
+      if (joyLatch) { joyShift[0] = (uint32_t(pad) << 16) | 0xFFFF; joyShift[1] = pad2On ? (uint32_t(pad2) << 16) | 0xFFFF : 0; }
       return;
     case 0x4200: {
       const uint8_t old = nmitimen;

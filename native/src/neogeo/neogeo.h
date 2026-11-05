@@ -64,6 +64,7 @@ public:
 
   void reset();
   void setKeys(uint32_t k) { keys_ = k; }
+  void setKeys2(uint32_t k) { keys2_ = k; }
   void runFrame();
   double masterClock() const { return mvs ? 24000000.0 : 24167829.0; }
   double fps() const { return masterClock() / (2.0 * LSPC::CYC_PER_LINE * LSPC::LINES); }
@@ -113,7 +114,8 @@ private:
   void soundCommand(uint8_t v);
   uint8_t statusA();
   uint8_t statusB();
-  uint8_t p1();
+  uint8_t p1() { return pad(keys_); }
+  uint8_t pad(uint32_t k);  // REG_P1CNT / REG_P2CNT (1 = solto)
 
   // RTC uPD4990A (só MVS)
   void rtcWrite(uint8_t v);
@@ -151,7 +153,7 @@ private:
 
   int64_t cyc_ = 0, frameEnd_ = 0, z80Cyc_ = 0;
   int resetStall_ = 0;
-  uint32_t keys_ = 0;
+  uint32_t keys_ = 0, keys2_ = 0;
   bool dirty_ = false;
 };
 
@@ -168,6 +170,8 @@ public:
   void runFrame() override { m_->runFrame(); }
   void reset() override { m_->reset(); }
   void setKeys(uint32_t mask) override { m_->setKeys(mask); }
+  void setKeys2(uint32_t mask) override { m_->setKeys2(mask); }
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return m_->lspc.fb; }
   int width() const override { return LSPC::OUT_W; }
   int height() const override { return LSPC::OUT_H; }

@@ -11,6 +11,14 @@ struct Versão {
 };
 
 inline constexpr Versão VERSOES[] = {
+    {"2.7", "05/11/2026",
+     {"Modo de 2 jogadores: o 2º",
+      "controle é o jogador 2 (menu",
+      "Controles); Bluetooth também",
+      "Dreamcast: a BIOS chega ao menu",
+      "DS: Pokémon HeartGold e Black 2",
+      "passam da tela branca; save,",
+      "toque e relógio certos", nullptr}},
     {"2.6", "04/11/2026",
      {"3 consoles novos, experimentais:",
       "Nintendo 64, Nintendo DS e",

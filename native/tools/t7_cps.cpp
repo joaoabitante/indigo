@@ -11,6 +11,7 @@
 //  4. save state: salvar -> rodar -> carregar -> rodar dá a mesma tela e o mesmo som; salvar -> carregar ->
 //     salvar dá bytes idênticos; estados truncados/danificados não derrubam o núcleo;
 //  5. detecção: isCpsSet, pacote incompleto, lixo.
+//  6. dois jogadores (CPS1 e CPS2): o controle 2 chega às entradas do jogador 2.
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -270,6 +271,28 @@ static void stateChecks(Cps& c, const std::string& nome) {
   check(okAll, nome + ": estados truncados são recusados e estados danificados rodam sem travar");
 }
 
+// dois jogadores (jogos de 6 botões): o controle 2 chega ao byte de cima das entradas dos jogadores, aos botões
+// 4-6 do jogador 2 e ao start/moeda 2, sem mexer no jogador 1
+static void player2Checks(CpsCore& core, const std::string& nome) {
+  Cps& c = core.cps();
+  check(core.players() == 2, nome + ": 2 jogadores");
+  core.setKeys(KEY_UP);
+  core.setKeys2(KEY_RIGHT | KEY_Y | KEY_A | KEY_START | KEY_SELECT);  // Y = soco fraco, A = chute médio
+  if (!c.cps2) {
+    check(c.read16(0x800000) == 0xEEF7, nome + ": jogadores 1 (byte de baixo) e 2 (de cima)");
+    check(c.read16(0x800018) == 0xDDFF, nome + ": start e moeda do jogador 2");
+    const uint32_t base = (c.game.flags & GF_CPSB_C0) ? 0x8001C0 : 0x800140;
+    check(c.game.in2 && (c.read16(base + c.game.in2) & 0xFF) == 0xDF, nome + ": chute médio do jogador 2 (bit 5 do IN2)");
+  } else {
+    check(c.read16(0x804000) == 0xEEF7, nome + ": IN0 com os jogadores 1 e 2");
+    check((c.read16(0x804010) & 0x77) == 0x57, nome + ": IN1 com o chute médio do jogador 2");
+    check((c.read16(0x804020) & 0x3300) == 0x1100, nome + ": IN2 com start e moeda do jogador 2");
+  }
+  core.setKeys2(0);
+  check((c.read16(c.cps2 ? 0x804000 : 0x800000) >> 8) == 0xFF, nome + ": jogador 2 solto");
+  core.setKeys(0);
+}
+
 static void testCps1() {
   const std::vector<uint8_t> zip = cps1Set();
   check(isCpsSet(zip, "sf2.zip"), "CPS1: pacote sintético sf2.zip reconhecido");
@@ -307,6 +330,7 @@ static void testCps1() {
   rms = std::sqrt(rms / static_cast<double>(l.size()));
   check(rms > 0.01 && rms < 0.9, "CPS1: nível de som razoável (RMS " + std::to_string(rms) + ")");
   stateChecks(c, "CPS1");
+  player2Checks(core, "CPS1");
 }
 
 // ------------------------------------------------------------------ 3. CPS2
@@ -405,6 +429,7 @@ static void testCps2() {
   const auto sv = core.exportSave();
   check(sv.size() == 128 && sv[10] == 0xBE && sv[11] == 0xEF, "CPS2: save da EEPROM exportado (128 bytes)");
   stateChecks(c, "CPS2");
+  player2Checks(core, "CPS2");
 }
 
 // ------------------------------------------------------------------ 5. detecção e lixo

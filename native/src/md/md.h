@@ -8,7 +8,8 @@
 // nenhuma BIOS é necessária. Arquivos .smd (cabeçalho de 512 bytes e blocos de 16 KB intercalados) são
 // desintercalados.
 //
-// Controle de 6 botões no controle 1 (o 2 fica desligado). Teclas do Índigo (bits de Key), pensando num controle
+// Controle de 6 botões no controle 1. O controle 2 fica ligado sem nada apertado (3 botões) até setKeys2, que o
+// troca por um de 6 botões. Teclas do Índigo (bits de Key), pensando num controle
 // de Xbox (A embaixo, B à direita, X à esquerda, Y em cima) e na fileira de baixo do controle do Mega Drive:
 //   Y do Índigo (X do Xbox, à esquerda)  = A do Mega Drive
 //   A do Índigo (A do Xbox, embaixo)     = B do Mega Drive
@@ -86,6 +87,7 @@ public:
   void attach(MdExpansion* e) { ext_ = e; }
   int64_t cpuTime() const { return now(); }  // hora do 68000 em ciclos mestres (para a expansão)
   void setKeys(uint32_t mask) { keys_ = mask; }
+  void setKeys2(uint32_t mask) { keys2_ = mask; pad2On_ = true; }
   void runFrame();
   double fps() const { return masterClock() / (3420.0 * vdp.linesPerFrame()); }
   double masterClock() const { return pal ? 53203424.0 : 53693175.0; }
@@ -161,7 +163,8 @@ private:
   uint8_t ioData_[3] = {}, ioCtrl_[3] = {};
   int padPhase_[2] = {};
   int64_t padLastTh_[2] = {};
-  uint32_t keys_ = 0;
+  uint32_t keys_ = 0, keys2_ = 0;
+  bool pad2On_ = false;  // controle 2 de 6 botões ligado pelo app (não vai no estado)
   void mixAudio();
   static constexpr size_t OUTBUF = 16384;
   std::vector<float> ymL_, ymR_, psgL_, psgR_;
@@ -180,6 +183,8 @@ public:
   void runFrame() override { m_->runFrame(); }
   void reset() override { m_->reset(); }
   void setKeys(uint32_t mask) override { m_->setKeys(mask); }
+  void setKeys2(uint32_t mask) override { m_->setKeys2(mask); }
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return m_->vdp.fb; }
   int width() const override { return m_->vdp.outW; }
   int height() const override { return m_->vdp.outH; }

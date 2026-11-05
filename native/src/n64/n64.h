@@ -179,7 +179,9 @@ public:
   std::string title() const override { return m_->title; }
   void runFrame() override { m_->runFrame(); }
   void reset() override { m_->reset(); }
-  void setKeys(uint32_t mask) override;
+  void setKeys(uint32_t mask) override { keys(mask, 0); }
+  void setKeys2(uint32_t mask) override { m_->padOn[1] = true; keys(mask, 1); }  // liga o controle 2 (canal 1)
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return m_->fb.data(); }
   int width() const override { return m_->outW; }
   int height() const override { return m_->outH; }
@@ -196,6 +198,7 @@ public:
   void loadState(const std::vector<uint8_t>& s) override { m_->loadState(s); }
 
 private:
+  void keys(uint32_t mask, int n);  // teclas do controle n (0 = jogador 1)
   std::unique_ptr<N64> m_;
 };
 

@@ -5,7 +5,8 @@
 // 2) programas do CVBasic (montados pelo t7_tms.sh) nos dois consoles: tela depois de N quadros comparada
 //    por hash com a referência (conferida a olho), nenhum acesso à VRAM rápido demais (os programas são
 //    feitos para o aparelho real), MegaCart, mapeador Sega e Super Game Module (som do AY);
-// 3) save state determinístico; ROMs e estados de lixo não travam.
+// 3) save state determinístico; ROMs e estados de lixo não travam;
+// 4) dois jogadores: o controle 2 chega às portas do controle 2.
 // O ColecoVision usa aqui uma BIOS mínima de teste (só desvia para o cartucho e traz a fonte do CVBasic):
 // a BIOS original tem direitos autorais e não pode ser baixada.
 #include <cmath>
@@ -509,11 +510,40 @@ void stateTests(const std::string& dir) {
 }
 }  // namespace
 
+// dois jogadores: o controle 2 chega às portas do controle 2 sem mexer no 1
+void player2Tests() {
+  {
+    SG1000Core c(std::vector<uint8_t>(0x8000, 0), nullptr);
+    auto& m = c.machine();
+    check(c.players() == 2, "SG-1000, 2 jogadores: players() == 2");
+    c.setKeys(KEY_LEFT);
+    c.setKeys2(KEY_UP | KEY_RIGHT | KEY_A);
+    check(m.in(0xDC) == 0xBB && m.in(0xDD) == 0xF5, "SG-1000, 2 jogadores: DCh e DDh com os dois controles");
+    c.setKeys2(0);
+    check(m.in(0xDC) == 0xFB && m.in(0xDD) == 0xFF, "SG-1000, 2 jogadores: controle 2 solto");
+  }
+  {
+    setFirmware("coleco", testBios({}));
+    ColecoCore c(std::vector<uint8_t>(0x8000, 0), nullptr);
+    setFirmware("coleco", {});
+    auto& m = c.machine();
+    check(c.players() == 2, "ColecoVision, 2 jogadores: players() == 2");
+    c.setKeys(KEY_UP);
+    c.setKeys2(KEY_RIGHT | KEY_A);
+    m.out(0xC0, 0);  // modo joystick
+    check(m.in(0xFC) == 0x7E && m.in(0xFF) == 0x3D, "ColecoVision, 2 jogadores: joysticks 1 e 2");
+    m.out(0x80, 0);  // modo teclado
+    c.setKeys2(KEY_START);
+    check(m.in(0xFC) == 0x7F && m.in(0xFF) == 0x7D, "ColecoVision, 2 jogadores: teclado do controle 2 (tecla 1)");
+  }
+}
+
 int main(int argc, char** argv) {
   const std::string dir = argc > 1 ? argv[1] : "/root/indigo-env/roms/tms";
   const std::string outDir = argc > 2 ? argv[2] : "";
   vdpTests();
   soundTests();
+  player2Tests();
   if (!exists(dir)) {
     std::printf("pasta %s não existe: pulei os programas de teste\n", dir.c_str());
   } else {

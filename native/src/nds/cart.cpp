@@ -23,6 +23,15 @@ void Cart::load(const std::vector<uint8_t>& data) {
   save.clear();
   addrBytes = 0;
   dirty = false;
+  // cartuchos com infravermelho, todos com FLASH de 512 KB: HeartGold/SoulSilver (IPK/IPG), Black/White (IRB/IRA)
+  // e Black 2/White 2 (IRE/IRD). A letra final é a região.
+  ir = false;
+  if (rom.size() > 0x0F) {
+    static const char* IR_GAMES[] = {"IPK", "IPG", "IRA", "IRB", "IRD", "IRE"};
+    for (const char* g : IR_GAMES) if (std::memcmp(&rom[0x0C], g, 3) == 0) ir = true;
+  }
+  irPos = irCmd = 0;
+  if (ir) resizeFor(3);
 }
 
 void Cart::resizeFor(int ab) {
@@ -37,6 +46,7 @@ void Cart::setSave(const std::vector<uint8_t>& data) {
   if (save.size() <= 512) { save.resize(512, 0xFF); addrBytes = 1; }
   else if (save.size() <= 0x10000) addrBytes = 2;
   else addrBytes = 3;
+  if (ir && save.size() < 0x80000) { save.resize(0x80000, 0xFF); addrBytes = 3; }
   // tamanho potência de 2 (para o espelhamento dos endereços)
   size_t p = 512;
   while (p < save.size()) p <<= 1;
@@ -114,8 +124,21 @@ void Cart::writeAuxSpiCnt(uint16_t v) {
 
 void Cart::writeAuxSpiData(uint8_t v) {
   if (!(auxspicnt & 0x2000)) { spiOut = 0xFF; return; }
+  const bool hold = auxspicnt & 0x40;
+  if (ir) {
+    // chip de IR: o primeiro byte é o comando dele; 0x00 liga a FLASH até o fim da conversa, 0x08 é a identificação
+    const int pos = irPos++;
+    if (pos == 0) { irCmd = v; spiOut = 0xFF; }
+    else if (irCmd == 0x00) spiOut = spiByte(v);
+    else spiOut = irCmd == 0x08 ? 0xAA : 0x00;
+    if (!hold) {
+      irPos = 0;
+      if (irCmd == 0x00 && pos > 0) { spiPos = 0; spiCmd = 0; }
+    }
+    return;
+  }
   spiOut = spiByte(v);
-  if (!(auxspicnt & 0x40)) {
+  if (!hold) {
     // fim da conversa: o chip solta a seleção
     if (addrBytes == 0) finishProbe();
     spiPos = 0;
@@ -241,6 +264,7 @@ void Cart::sync(StateIO& io) {
     if (addrBytes < 0 || addrBytes > 3 || (addrBytes && save.empty())) { addrBytes = 0; }
     if (xferLeft > 0x4000 || (xferLeft & 3)) xferLeft = 0;  // a transferência anda de 4 em 4 bytes
     probe.clear();
+    irPos = irCmd = 0;
   }
 }
 
@@ -273,9 +297,11 @@ void Spi::buildFirmware() {
     p16(0x5E, 0xE0 * 16); p16(0x60, 0xA0 * 16); u[0x62] = 0xE0; u[0x63] = 0xA0;
     p16(0x64, 0x0001 | (3 << 4));  // inglês, luz de fundo máxima
     u[0x66] = 26;                    // ano
-    p16(0x68, copy == 0 ? 1 : 0);    // contador de atualização (a cópia 0 é a mais nova)
+    // 0x68: ajuste do relógio (0); 0x70: contador de atualização (a cópia 0 é a mais nova); 0x72: CRC de 0x00..0x6F.
+    // Com o CRC no lugar errado o SDK descartava as duas cópias e zerava a calibração: o toque caía fora dos botões.
+    p16(0x70, copy == 0 ? 1 : 0);
     const uint16_t crc = crc16(0xFFFF, u, 0x70);
-    p16(0x70, crc);
+    p16(0x72, crc);
   }
 }
 
@@ -419,15 +445,21 @@ void Rtc::write(uint16_t v) {
   const bool cs = v & 4, sck = v & 2;
   if (!cs) { haveCmd = false; bits = 0; byteIdx = 0; cur = 0; return; }
   if (!csOld) { haveCmd = false; bits = 0; byteIdx = 0; cur = 0; }
+  uint8_t g = rev8(cmd);
+  if ((g & 0xF) != 6) g = cmd;
+  const bool rd = g & 0x80;
+  // na leitura o chip põe o bit na saída na borda de descida: o SDK lê com o SCK ainda baixo, antes de subir.
+  // Antes o bit só saía na subida e o jogo recebia sempre o anterior (hora errada no HeartGold).
+  if (sckOld && !sck) {
+    if (haveCmd && rd) outBit_ = byteIdx < 8 ? ((data[byteIdx] >> bits) & 1) : 0;
+    return;
+  }
   if (sckOld || !sck) return;  // borda de subida do relógio
   if (!haveCmd) {
     cur = uint8_t((cur << 1) | (v & 1));
     if (++bits == 8) { cmd = cur; haveCmd = true; command(); bits = 0; byteIdx = 0; cur = 0; }
     return;
   }
-  uint8_t g = rev8(cmd);
-  if ((g & 0xF) != 6) g = cmd;
-  const bool rd = g & 0x80;
   if (rd) {
     outBit_ = byteIdx < 8 ? ((data[byteIdx] >> bits) & 1) : 0;
   } else {

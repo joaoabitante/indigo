@@ -149,6 +149,12 @@ void A5200::setKeys(uint32_t m) {
   setInput(x, y, m & KEY_A, m & KEY_B, k);
 }
 
+void A5200::setKeys2(uint32_t m) {
+  pokey.pot[2] = (m & KEY_LEFT) ? 6 : (m & KEY_RIGHT) ? 220 : 114;
+  pokey.pot[3] = (m & KEY_UP) ? 6 : (m & KEY_DOWN) ? 220 : 114;
+  trig = static_cast<uint8_t>((trig & ~2) | ((m & KEY_A) ? 2 : 0));
+}
+
 // ---------------------------------------------------------------- relógio
 void A5200::tick() {
   clk++;

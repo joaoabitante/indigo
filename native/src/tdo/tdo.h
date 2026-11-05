@@ -62,7 +62,7 @@
 //
 // Controle (PBUS): dois bytes por controle; byte 0 = 1 0 0 baixo cima direita esquerda A, byte 1 = B C P X R L 0 0.
 // Teclas do Índigo: Y = A, A = B, B = C (a fileira esquerda/baixo/direita do controle), L/R, Start = P (play),
-// Select = X (stop).
+// Select = X (stop). O controle do jogador 2 vem logo depois do 1 na corrente.
 #pragma once
 #include <cstdint>
 #include <memory>
@@ -109,6 +109,7 @@ public:
   void reset();
   void runFrame();
   void setPad(uint16_t bits) { pad_ = bits; }
+  void setPad2(uint16_t bits) { pad2_ = bits; pad2On_ = true; }  // 2º controle da corrente (jogador 2)
   void sync(StateIO& io);
 
   // ArmBus
@@ -176,6 +177,8 @@ private:
   int32_t stall_ = 0;
   uint64_t audioAcc_ = 0;
   uint16_t pad_ = 0;
+  uint16_t pad2_ = 0;    // não vai no estado: o app manda a cada quadro
+  bool pad2On_ = false;
 };
 
 class TdoCore : public Core {
@@ -188,6 +191,8 @@ public:
   void runFrame() override { sys_->runFrame(); }
   void reset() override { sys_->reset(); }
   void setKeys(uint32_t mask) override;
+  void setKeys2(uint32_t mask) override;
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return sys_->fb; }
   int width() const override { return 320; }
   int height() const override { return 240; }

@@ -282,7 +282,9 @@ const char* LICENSE = "Produced By or Under License From SEGA ENTERPRISES,LTD.";
 // um quadro para o aparelho (porta, unidade 0 = principal ou 1 = encaixe 1); devolve as palavras da resposta
 uint32_t Maple::device(int port, int unit, uint32_t* req, int words, uint32_t* resp, uint32_t& hdr) {
   const uint32_t cmd = req[0] & 0xFF, sender = (req[0] >> 16) & 0xFF;
-  const uint32_t me = uint32_t(port << 6) | (unit == 0 ? 0x21u : 0x01u);  // principal avisa do VMU no encaixe 1
+  // principal avisa do VMU no encaixe 1 (só a porta A tem VMU)
+  const uint32_t me = uint32_t(port << 6) | (unit == 0 ? (port == 0 ? 0x21u : 0x20u) : 0x01u);
+  const uint32_t pk = port == 0 ? keys : keys2;
   auto header = [&](uint32_t code, uint32_t len) { hdr = code | sender << 8 | me << 16 | len << 24; };
   const uint32_t fn = words > 1 ? req[1] : 0;
   if (unit == 0) {  // controle
@@ -301,11 +303,11 @@ uint32_t Maple::device(int port, int unit, uint32_t* req, int words, uint32_t* r
       case 9: {
         if (fn != 0x01000000) { header(0xFC, 0); return 0; }
         uint16_t bt = 0xFFFF;
-        auto k = [&](uint32_t key, uint16_t bit) { if (keys & key) bt &= uint16_t(~bit); };
+        auto k = [&](uint32_t key, uint16_t bit) { if (pk & key) bt &= uint16_t(~bit); };
         k(KEY_A, 0x0004); k(KEY_B, 0x0002); k(KEY_X, 0x0400); k(KEY_Y, 0x0200); k(KEY_START, 0x0008);
         k(KEY_UP, 0x0010); k(KEY_DOWN, 0x0020); k(KEY_LEFT, 0x0040); k(KEY_RIGHT, 0x0080);
         k(KEY_SELECT, 0x0800);  // D (o Select do Índigo; quase nenhum jogo usa)
-        const uint32_t rt = (keys & KEY_R) ? 0xFF : 0, lt = (keys & KEY_L) ? 0xFF : 0;
+        const uint32_t rt = (pk & KEY_R) ? 0xFF : 0, lt = (pk & KEY_L) ? 0xFF : 0;
         resp[0] = 0x01000000;
         resp[1] = bt | rt << 16 | lt << 24;
         resp[2] = 0x80808080;
@@ -388,7 +390,7 @@ void Maple::dma(uint32_t list) {
       const int unit = (to & 0x20) ? 0 : (to & 0x01) ? 1 : -1;
       uint32_t hdr = 0;
       uint32_t n = 0;
-      if (port == 0 && unit >= 0) n = device(port, unit, req, words, resp, hdr);
+      if (unit >= 0 && (port == 0 || (port == 1 && unit == 0 && pad2On))) n = device(port, unit, req, words, resp, hdr);
       else hdr = 0xFFFFFFFF;
       sys.write32(dest, hdr);
       for (uint32_t i = 0; i < n; i++) sys.write32(dest + 4 + 4 * i, resp[i]);

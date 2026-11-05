@@ -142,7 +142,8 @@ uint32_t Arm::fetch16(uint32_t a) {
     const uint8_t* p = cp_ + ((a - cpLo_) & cpMask_);
     return p[0] | (p[1] << 8);
   }
-  return bus.read16(a);
+  // só 16 bits: o índice da tabela Thumb (ins >> 6) não pode passar de 1023
+  return bus.read16(a) & 0xFFFF;
 }
 
 int Arm::run(int budget, uint32_t gen) {
@@ -152,6 +153,8 @@ int Arm::run(int budget, uint32_t gen) {
     if (irqLine && (!i || forceIrq)) irq();
     if (halted) return used > budget ? used : budget;
     used += step() << costShift;
+    // a espera conta dentro desta fatia: sem isso a CPU seguia até o fim da fatia antes de "esperar"
+    if (stall) { used += stall; stall = 0; }
   }
   return used;
 }

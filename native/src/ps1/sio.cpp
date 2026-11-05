@@ -109,7 +109,16 @@ void Sio0::sync() {
 
 uint8_t Sio0::transfer(uint8_t b, bool& ack) {
   ack = false;
-  if (!(ctrl_ & 2) || (ctrl_ & 0x2000)) return 0xFF;  // sem seleção, ou porta 2 (vazia)
+  if (!(ctrl_ & 2)) return 0xFF;  // sem seleção
+  if (ctrl_ & 0x2000) {  // porta 2: só o controle digital do jogador 2
+    if (!pad2On) return 0xFF;
+    if (device_ == 0) {
+      if (b != 0x01) return 0xFF;
+      device_ = 3; step_ = 0;
+    }
+    return device_ == 3 ? pad2Byte(ack) : 0xFF;
+  }
+  if (device_ == 3) return 0xFF;
   if (device_ == 0) {
     if (b == 0x01) { device_ = 1; step_ = 0; }
     else if (b == 0x81 && cardPresent) { device_ = 2; step_ = 0; }
@@ -187,6 +196,19 @@ uint8_t Sio0::padByte(uint8_t b, bool& ack) {
   return out;
 }
 
+// controle digital (SCPH-1080) da porta 2: responde 41h 5Ah e os dois bytes dos botões a qualquer comando
+uint8_t Sio0::pad2Byte(bool& ack) {
+  const int s = step_++;
+  ack = true;
+  switch (s) {
+    case 0: return 0xFF;
+    case 1: return 0x41;
+    case 2: return 0x5A;
+    case 3: return uint8_t(pad[1].buttons);
+    default: ack = false; device_ = 0; return uint8_t(pad[1].buttons >> 8);
+  }
+}
+
 uint8_t Sio0::cardByte(uint8_t b, bool& ack) {
   const int s = step_++;
   ack = true;
@@ -259,7 +281,7 @@ void Sio0::sync(StateIO& io) {
   io.sync(analogMode); io.sync(analogLocked); io.sync(motorSmall); io.sync(motorLarge);
   io.bytes(card);
   if (io.reading()) {
-    if (device_ > 2) device_ = 0;
+    if (device_ > 3) device_ = 0;
     step_ = std::clamp(step_, 0, 200);
     const uint64_t lim = sys_.now + 0x1000000;
     if (doneAt_ > lim) doneAt_ = lim;

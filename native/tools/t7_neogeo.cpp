@@ -7,6 +7,7 @@
 //     salvar dá os mesmos bytes; estados truncados/danificados são recusados sem travar;
 //  4. robustez: pacotes e .neo aleatórios/danificados não travam;
 //  5. som: o volume (RMS) de cada trecho comparado com o do Geolith nos exemplos de som.
+//  6. dois jogadores: o controle 2 chega ao REG_P2CNT e aos botões do jogador 2.
 // Uso: indigo-t7_neogeo pasta            (todos os testes)
 //      indigo-t7_neogeo pasta rodar arquivo quadros saida.ppm [teclas]   (depuração: grava o último quadro)
 #include <algorithm>
@@ -413,6 +414,17 @@ int main(int argc, char** argv) {
     sv[0x10000 + 0x7F0] ^= 0x5A;
     NeoGeo ng2(neo, "02_sprite.neo", &sv);
     check(ng2.exportSave() == sv, "save importado volta igual");
+    // dois jogadores: REG_P2CNT, start do jogador 2 (REG_STATUS_B) e moeda 2 (REG_STATUS_A) sem mexer no 1
+    indigo::neogeo::NeoGeoCore core(neo, "02_sprite.neo", nullptr);
+    NeoGeo& m = core.ng();
+    check(core.players() == 2, "2 jogadores: players() == 2");
+    core.setKeys(indigo::KEY_UP);
+    core.setKeys2(indigo::KEY_B | indigo::KEY_DOWN | indigo::KEY_START | indigo::KEY_SELECT);
+    check(m.read8(0x300000) == 0xFE && m.read8(0x340000) == 0xED && (m.read16(0x340000) >> 8) == 0xED,
+          "2 jogadores: REG_P1CNT e REG_P2CNT");
+    check((m.read8(0x380000) & 0x0F) == 0x0B && (m.read8(0x320001) & 0x03) == 0x01, "2 jogadores: start e moeda do jogador 2");
+    core.setKeys2(0);
+    check(m.read8(0x340000) == 0xFF && (m.read8(0x380000) & 0x0F) == 0x0F, "2 jogadores: jogador 2 solto");
   }
   testFrames(dir, "lista.txt", "");
   testAudio(dir);

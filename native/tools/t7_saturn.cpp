@@ -354,6 +354,16 @@ static void testSmpc() {
   CHECK((r.r8(0x00100061) & 0x20) && r.r8(0x00100021) == 0x80, "INTBACK avisa que há mais dados");
   r.w8(0x00100001, 0x80);
   CHECK(r.r8(0x00100021) == 0xF1, "continue entrega o controle");
+  // dois jogadores: a porta 2 fica vazia até setPad2; depois, controle padrão na porta 2 sem mexer na 1
+  r.w8(0x00100001, 0x00); r.w8(0x00100003, 0x0A);
+  smpcCmd(r, 0x10);
+  CHECK(r.r8(0x00100029) == 0xF0, "porta 2 vazia sem o jogador 2");
+  r.s.setPad2(0x8000 | 0x0008);  // direita e L
+  smpcCmd(r, 0x10);
+  CHECK(r.r8(0x00100029) == 0xF1 && r.r8(0x0010002B) == 0x02, "2 jogadores: controle padrão na porta 2");
+  CHECK(r.r8(0x0010002D) == 0x7F && r.r8(0x0010002F) == 0xF7, "2 jogadores: botões do controle 2 (0x%02X 0x%02X)",
+        r.r8(0x0010002D), r.r8(0x0010002F));
+  CHECK(r.r8(0x00100025) == 0xF6, "2 jogadores: porta 1 continua com o controle 1");
   smpcCmd(r, 0x02);
   CHECK(r.s.smpc.slaveOn && r.s.slave.pc == 0x400, "SSHON liga o escravo no vetor de reset");
   smpcCmd(r, 0x03);

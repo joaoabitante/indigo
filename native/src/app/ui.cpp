@@ -887,4 +887,32 @@ void Library::draw(SDL_Renderer* r, int ow, int oh) {
   }
 }
 
+// ------------------------------------------------------------ dois jogadores
+const char* player2Label(Player2 mode) {
+  switch (mode) {
+    case Player2::Off: return "Jogador 2: desligado (tudo no jogador 1)";
+    case Player2::Keyboard: return "Jogador 2: o teclado";
+    default: return "Jogador 2: o 2º controle";
+  }
+}
+
+int padPlayer(Player2 mode, int corePlayers, size_t index) {
+  return corePlayers >= 2 && mode != Player2::Off && index == 1 ? 1 : 0;
+}
+
+bool player2Present(Player2 mode, int corePlayers, size_t pads) {
+  if (corePlayers < 2) return false;
+  return (mode == Player2::SecondPad && pads >= 2) || (mode == Player2::Keyboard && pads >= 1);
+}
+
+PlayerKeys routeKeys(Player2 mode, int corePlayers, uint32_t keyboard, uint32_t touch, const std::vector<uint32_t>& pads) {
+  PlayerKeys k;
+  k.p1 = touch;
+  for (size_t i = 0; i < pads.size(); i++) (padPlayer(mode, corePlayers, i) ? k.p2 : k.p1) |= pads[i];
+  // teclado no jogador 2 só com um controle ligado para o jogador 1
+  const bool kb2 = corePlayers >= 2 && mode == Player2::Keyboard && !pads.empty();
+  (kb2 ? k.p2 : k.p1) |= keyboard;
+  return k;
+}
+
 }  // namespace indigo::ui

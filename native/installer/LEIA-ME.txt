@@ -16,6 +16,15 @@ Licença
 - O Índigo é software livre (GNU GPL versão 3). Ele não traz jogos nem BIOS: use cópias dos seus.
   Créditos de terceiros: veja TERCEIROS.md no código-fonte (github.com/joaoabitante, em breve público).
 
+Novo na 2.7
+- Modo de 2 jogadores: o 2º controle ligado comanda o jogador 2 (controles Bluetooth também). No menu Controles dá
+  para escolher "Jogador 2: o 2º controle", "o teclado" ou "desligado". Se um controle cair e voltar, ele continua
+  no mesmo jogador. Funciona na maioria dos consoles (ainda não no PC Engine, Jaguar, Game Gear, Vectrex e PC-FX).
+- Dreamcast: com a BIOS do seu console, ele agora liga e chega ao menu (ainda sem som).
+- Nintendo DS: Pokémon HeartGold e Black 2 passam da tela branca e chegam ao começo do jogo. O save dos cartuchos
+  Pokémon com infravermelho funciona, o toque cai no lugar certo e o relógio dá a hora certa. O DS continua
+  experimental.
+
 Novo na 2.6
 - Três consoles novos, todos experimentais: Nintendo 64 (.z64, .n64, .v64), Nintendo DS (.nds, com a tela de
   baixo como tela de toque) e Dreamcast (.gdi, .chd ou .cue; no celular, use .chd).

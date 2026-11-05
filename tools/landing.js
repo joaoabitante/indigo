@@ -69,7 +69,7 @@ const BIOS_SET = new Set([...BIOS_LIST, 'Neo Geo MVS/AES']);
 const BIOS_TEXT = BIOS_LIST.slice(0, -1).join(', ') + ' e ' + BIOS_LIST[BIOS_LIST.length - 1];
 export const SYSTEM_COUNT = CONSOLE_GROUPS.reduce((s, g) => s + g.items.reduce((t, i) => t + (i.n || 1), 0), 0);
 // comparações automáticas feitas a cada versão (suítes de teste públicas e emuladores de referência)
-const COMPARISONS = '1046';
+const COMPARISONS = '1047';
 
 // ---------------------------------------------------------------- "nexus": consoles ligados ao Índigo (atrás do desenho do topo)
 const inner = (k) => ICON[k].replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');

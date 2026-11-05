@@ -1,5 +1,6 @@
 // Funções SWI da BIOS do DS em alto nível (o DS não pede BIOS). Comportamento conforme o GBATEK; o código é
 // próprio. As versões "por callback" da descompressão chamam as rotinas do jogo (abrir, ler byte, fechar).
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -137,8 +138,9 @@ bool NDS::hleSwi(int c, int n, uint32_t addr) {
       break;
     }
     case 0x03: {  // WaitByLoop: cerca de 4 ciclos por volta
+      // a espera para a CPU na hora (o aperto de mão do IPCSYNC dos jogos depende disso)
       const int64_t loops = static_cast<int32_t>(r[0]) > 0 ? r[0] : 0;
-      if (c == 0) cyc9 -= loops * 4; else cyc7 -= loops * 4;
+      cpu.stall += static_cast<int>(std::min<int64_t>(loops * 4, 1 << 28));
       r[0] = 0;
       break;
     }

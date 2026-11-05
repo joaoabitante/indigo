@@ -1,7 +1,7 @@
 // Testes do Dreamcast: CPU SH-4 (o mesmo C no SH-4 emulado e no PC, saídas iguais), BIOS de teste do Índigo dando
 // a partida pelo GD-ROM (.gdi, .iso e .chd), jogo de teste (TA/PVR conferidos pixel a pixel na VRAM, controle pelo
 // Maple, VMU, AICA com ARM7 e som, TMU, TRAPA, DMA do GD-ROM e do canal 2), save state determinístico e recusa de
-// estados adulterados, reconhecimento de BIOS/flash/disco e a velocidade.
+// estados adulterados, reconhecimento de BIOS/flash/disco, o controle do jogador 2 na porta B e a velocidade.
 //   indigo-t7_dc pasta   (pasta = /root/indigo-env/roms/dc, montada pelo t7_dc.sh)
 #include <chrono>
 #include <cmath>
@@ -96,6 +96,32 @@ static void testBasics(const std::vector<uint8_t>& boot, const std::vector<uint8
 }
 
 // ------------------------------------------------------------------------------------------------ CPU
+// dois jogadores: o controle 2 responde na porta B do Maple (sem VMU) só depois de setKeys2
+static void testPlayer2(const std::vector<uint8_t>& boot, const std::vector<uint8_t>& flash) {
+  std::printf("== dois jogadores (Maple)\n");
+  System s(boot, flash, nullptr);
+  // um quadro "pegar condição" (9) para o aparelho to; a resposta vai para 0x0C100100
+  auto ask = [&](uint32_t to) {
+    s.write32(0x0C100000, 0x80000001); s.write32(0x0C100004, 0x0C100100);
+    s.write32(0x0C100008, 0x01000009u | (to << 8)); s.write32(0x0C10000C, 0x01000000);
+    s.write32(0x0C100100, 0); s.write32(0x0C100108, 0);
+    s.maple.dma(0x0C100000);
+  };
+  s.maple.keys = KEY_A;
+  ask(0x60);
+  CHECK(s.read32(0x0C100100) == 0xFFFFFFFFu, "porta B vazia sem o jogador 2");
+  s.maple.keys2 = KEY_RIGHT | KEY_R;
+  s.maple.pad2On = true;
+  ask(0x60);
+  CHECK(s.read32(0x0C100100) == 0x03600008u && s.read32(0x0C100108) == 0x00FFFF7Fu,
+        "2 jogadores: controle na porta B (%08X %08X)", s.read32(0x0C100100), s.read32(0x0C100108));
+  ask(0x20);
+  CHECK(s.read32(0x0C100100) == 0x03210008u && s.read32(0x0C100108) == 0x0000FFFBu,
+        "2 jogadores: porta A continua com o controle 1 (%08X %08X)", s.read32(0x0C100100), s.read32(0x0C100108));
+  ask(0x41);
+  CHECK(s.read32(0x0C100100) == 0xFFFFFFFFu, "2 jogadores: porta B sem VMU");
+}
+
 static void testCpu(const std::vector<uint8_t>& boot, const std::vector<uint8_t>& flash) {
   std::printf("== CPU SH-4 (mesmo C no SH-4 e no PC)\n");
   const auto prog = readAll(dir + "/cpu.bin");
@@ -417,6 +443,42 @@ static void testRevisao(const std::vector<uint8_t>& boot, const std::vector<uint
         "BIOS chamada boot.bin é reconhecida");
 }
 
+// casos achados com a BIOS do console (sem a BIOS no repositório): pinos 0 e 1 da porta A ligados um ao outro e o
+// REQ_ERROR do GD-ROM devolvendo o erro do comando anterior (sem disco a BIOS repetia TEST UNIT READY para sempre)
+static void testBiosReal(const std::vector<uint8_t>& boot, const std::vector<uint8_t>& flash) {
+  std::printf("== casos da BIOS do console\n");
+  {
+    System s(boot, flash, nullptr);
+    auto pa = [&](uint32_t ctrl, uint16_t dado) {
+      s.cpu.wr32(0xFF80002C, ctrl); s.cpu.wr16(0xFF800030, dado); return s.cpu.rd16(0xFF800030) & 3;
+    };
+    CHECK(pa(8, 3) == 3, "porta A: pinos 0 e 1 como entrada leem 1 (pull-up)");
+    CHECK(pa(3, 3) == 3, "porta A: pino 0 saída em 1, o pino 1 lê 1");
+    CHECK(pa(3, 2) == 0, "porta A: pino 0 saída em 0, os dois leem 0");
+    CHECK(pa(0, 2) == 3, "porta A: os dois como entrada de novo leem 1");
+    CHECK(pa(4, 2) == 3, "porta A: pino 1 saída em 1, o pino 0 lê 1");
+    CHECK(pa(4, 0) == 0, "porta A: pino 1 saída em 0, os dois leem 0");
+    CHECK((s.cpu.rd16(0xFF800030) >> 8 & 3) == 3, "porta A: cabo composto nos bits 8-9");
+  }
+  {
+    System s(boot, flash, nullptr);  // sem disco
+    Gdrom& g = s.gdrom;
+    auto pacote = [&](std::initializer_list<uint8_t> b) {
+      uint8_t p[12] = {}; int i = 0; for (uint8_t v : b) p[i++] = v;
+      g.write(0x9C, 0xA0, 1);
+      for (int k = 0; k < 12; k += 2) g.write(0x80, uint32_t(p[k] | p[k + 1] << 8), 2);
+      g.event();
+    };
+    pacote({0x00});
+    CHECK(g.read(0x18, 1) & 1, "sem disco: TEST UNIT READY termina com erro");
+    CHECK((g.read(0x84, 1) >> 4) == 2, "sem disco: erro 2 (não pronta) no registrador de erro");
+    pacote({0x13, 0, 0, 0, 10});
+    uint8_t r[10] = {};
+    for (int k = 0; k < 10; k += 2) { const uint32_t v = g.read(0x80, 2); r[k] = uint8_t(v); r[k + 1] = uint8_t(v >> 8); }
+    CHECK(r[2] == 2 && r[8] == 0x3A, "REQ_ERROR devolve o erro do comando anterior (chave %d, código %02X)", r[2], r[8]);
+  }
+}
+
 static void testSpeed(const std::vector<uint8_t>& boot, const std::vector<uint8_t>& flash) {
   std::printf("== velocidade\n");
   std::string err;
@@ -451,11 +513,13 @@ int main(int argc, char** argv) {
     return 1;
   }
   testBasics(boot, flash);
+  testPlayer2(boot, flash);
   testCpu(boot, flash);
   testGame(boot, flash);
   testIso(boot, flash);
   testFuzz(flash);
   testRevisao(boot, flash);
+  testBiosReal(boot, flash);
   testSpeed(boot, flash);
   std::printf("RESULTADO dc: %d verificações, %d falhas\n", checks, fails);
   return fails ? 1 : 0;

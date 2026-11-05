@@ -142,6 +142,8 @@ public:
   void runFrame() override;
   void reset() override { m_->reset(); }
   void setKeys(uint32_t mask) override { keys_ = mask; applyKeys(); }
+  void setKeys2(uint32_t mask) override { keys2_ = mask; applyKeys(); }  // controle da direita (o outro, se trocados)
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return fb_.data(); }
   int width() const override { return Stic::OUT_W * 2; }
   int height() const override { return Stic::OUT_H; }
@@ -167,7 +169,7 @@ private:
   std::unique_ptr<Intv> m_;
   std::vector<uint32_t> fb_;
   std::string title_, note_;
-  uint32_t keys_ = 0;
+  uint32_t keys_ = 0, keys2_ = 0;
   int keypad_ = -1;
   bool swap_ = false;
 };

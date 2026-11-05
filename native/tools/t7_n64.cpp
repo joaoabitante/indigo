@@ -327,6 +327,19 @@ static void testeIo(const std::string& dir) {
   c->runFrame(); c->runFrame();
   std::snprintf(d, sizeof d, "%02X %02X %02X %02X", ram8(s, 0x228003), ram8(s, 0x228004), ram8(s, 0x228005), ram8(s, 0x228006));
   check(ram8(s, 0x228003) == 0x60 && ram8(s, 0x228004) == 0x00 && ram8(s, 0x228005) == 0xB0, "controle: B + Z + esquerda", d);
+  // dois jogadores: com setKeys2 o canal 1 responde (controle sem Controller Pak) e o canal 0 não muda
+  {
+    auto c2 = abre(dir + "/io.z64");
+    check(c2->players() == 2, "2 jogadores: players() == 2");
+    c2->setKeys(KEY_A | KEY_START | KEY_RIGHT);
+    c2->setKeys2(KEY_B);
+    check(roda(*c2, 30), "2 jogadores: io.z64 chega ao fim");
+    N64& s2 = c2->sys();
+    std::snprintf(d, sizeof d, "%02X %02X %02X %02X", ram8(s2, 0x220008), ram8(s2, 0x22000A), ram8(s2, 0x22000B), ram8(s2, 0x22000C));
+    check(ram8(s2, 0x220008) == 0x03 && ram8(s2, 0x22000A) == 0x05 && ram8(s2, 0x22000B) == 0x00 && ram8(s2, 0x22000C) == 0x02,
+          "2 jogadores: canal 1 com controle, sem Controller Pak", d);
+    check(ram8(s2, 0x220003) == 0x90 && ram8(s2, 0x220005) == 0x50, "2 jogadores: canal 0 continua com o controle 1");
+  }
   // som: esquerda +-8000 (período de 100 amostras a 44100 Hz), direita 0x1000
   std::vector<float> l, r;
   for (int i = 0; i < 20; i++) {

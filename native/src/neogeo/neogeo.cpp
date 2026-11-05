@@ -434,8 +434,7 @@ void NeoGeo::bankWrite(uint32_t a, uint16_t v, bool byte) {
 }
 
 // ------------------------------------------------------------------ 68000: registradores
-uint8_t NeoGeo::p1() {
-  const uint32_t k = keys_;
+uint8_t NeoGeo::pad(uint32_t k) {
   uint8_t v = 0xFF;
   if (k & KEY_UP) v &= ~0x01;
   if (k & KEY_DOWN) v &= ~0x02;
@@ -453,6 +452,7 @@ uint8_t NeoGeo::statusA() {
   // bits 6-7 = relógio
   uint8_t v = mvs ? 0x1F : 0x07;
   if (mvs && (keys_ & KEY_SELECT)) v &= ~0x01;
+  if (mvs && (keys2_ & KEY_SELECT)) v &= ~0x02;  // moeda 2
   if (mvs) v = static_cast<uint8_t>(v | (rtcRead() << 6));
   return v;
 }
@@ -461,6 +461,8 @@ uint8_t NeoGeo::statusB() {
   uint8_t v = 0x0F;  // start/select dos 2 jogadores soltos; cartão de memória presente e sem proteção
   if (keys_ & KEY_START) v &= ~0x01;
   if (!mvs && (keys_ & KEY_SELECT)) v &= ~0x02;
+  if (keys2_ & KEY_START) v &= ~0x04;
+  if (!mvs && (keys2_ & KEY_SELECT)) v &= ~0x08;
   if (mvs) v |= 0x80;
   return v;
 }
@@ -475,7 +477,7 @@ uint16_t NeoGeo::ioRead16(uint32_t a) {
     case 0x320000:
       syncZ80(now());
       return static_cast<uint16_t>((soundReply_ << 8) | statusA());
-    case 0x340000: return 0xFFFF;
+    case 0x340000: return static_cast<uint16_t>((pad(keys2_) << 8) | 0xFF);  // P2
     case 0x380000: { const uint8_t b = statusB(); return static_cast<uint16_t>((b << 8) | b); }
     case 0x3C0000:
       switch (a & 0xE) {
@@ -496,7 +498,7 @@ uint8_t NeoGeo::ioRead8(uint32_t a) {
     case 0x320000:
       if (!(a & 1)) { syncZ80(now()); return soundReply_; }
       return statusA();
-    case 0x340000: return 0xFF;
+    case 0x340000: return (a & 1) ? 0xFF : pad(keys2_);
     case 0x380000: return statusB();
     default: {
       const uint16_t w = ioRead16(a & ~1u);

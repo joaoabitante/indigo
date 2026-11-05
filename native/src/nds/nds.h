@@ -183,6 +183,7 @@ public:
   void writeCmd(int cmd, uint32_t param);     // 0x04000440..0x040005FF
   uint32_t readReg(uint32_t a);               // GXSTAT, resultados
   void writeGxstat(uint32_t v);
+  void gxIrq();                                // IRQ por nível da FIFO (também depois que o jogo limpa o IF)
   void vblank();                               // troca as listas e desenha
   void render();
   void sync(StateIO& io);
@@ -192,7 +193,6 @@ private:
   void fifoWord(uint32_t v);
   void portCmd(int cmd, uint32_t param);
   void exec(int cmd, const uint32_t* p);
-  void gxIrq();
   void mtxLoad(int32_t* dst, const int32_t* m);
   void mtxMult(int32_t* dst, const int32_t* m);  // dst = m * dst
   void curMtxMult(const int32_t* m, bool scale = false);
@@ -318,6 +318,10 @@ public:
   uint32_t spiAddr = 0;
   uint8_t status = 0;     // bit 1 = escrita permitida
   std::vector<uint8_t> probe;  // bytes do primeiro comando enquanto o tipo não é conhecido
+  // chip de infravermelho na frente da FLASH (Pokémon HeartGold/SoulSilver, Black/White, Black 2/White 2):
+  // o primeiro byte de cada conversa é do IR; 0x00 repassa o resto para a FLASH
+  bool ir = false;
+  int irPos = 0, irCmd = 0;
 
   void load(const std::vector<uint8_t>& data);
   void setSave(const std::vector<uint8_t>& data);

@@ -797,7 +797,13 @@ int main(int argc, char** argv) {
       }
       if (!core) { std::printf("ROM de %s não reconhecida\n", NAMES[kind]); problems++; continue; }
       roms++;
-      for (int f = 0; f < 120; f++) { core->setKeys(rnd() & 0x3FF); core->runFrame(); }
+      // teclas dos dois jogadores do mesmo sorteio (a 2ª metade dos quadros com o controle 2 ligado)
+      for (int f = 0; f < 120; f++) {
+        const uint32_t k = rnd();
+        core->setKeys(k & 0x3FF);
+        if (f >= 60) core->setKeys2((k >> 10) & 0x3FF);
+        core->runFrame();
+      }
       // PlayStation: troca a resolução interna no meio do jogo (a VRAM ampliada é refeita da de verdade)
       if (auto* p = dynamic_cast<ps1::Ps1Core*>(core.get())) { p->setResolution(p->resolution() == 4 ? 2 : p->resolution() * 2); core->runFrame(); }
       const size_t n = core->audioAvailable();

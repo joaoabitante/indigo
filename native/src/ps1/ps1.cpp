@@ -110,29 +110,37 @@ void Ps1Core::reset() {
   start();
 }
 
-void Ps1Core::updatePad() {
+namespace {
+// botões no formato do PS1 (1 = apertado)
+uint16_t padBits(uint32_t k, bool l2, bool r2, bool l3, bool r3) {
   uint16_t b = 0;
-  const uint32_t k = keys_;
   if (k & KEY_SELECT) b |= 1 << 0;
-  if (l3_) b |= 1 << 1;
-  if (r3_) b |= 1 << 2;
+  if (l3) b |= 1 << 1;
+  if (r3) b |= 1 << 2;
   if (k & KEY_START) b |= 1 << 3;
   if (k & KEY_UP) b |= 1 << 4;
   if (k & KEY_RIGHT) b |= 1 << 5;
   if (k & KEY_DOWN) b |= 1 << 6;
   if (k & KEY_LEFT) b |= 1 << 7;
-  if (l2_) b |= 1 << 8;
-  if (r2_) b |= 1 << 9;
+  if (l2) b |= 1 << 8;
+  if (r2) b |= 1 << 9;
   if (k & KEY_L) b |= 1 << 10;
   if (k & KEY_R) b |= 1 << 11;
   if (k & KEY_X) b |= 1 << 12;
   if (k & KEY_A) b |= 1 << 13;
   if (k & KEY_B) b |= 1 << 14;
   if (k & KEY_Y) b |= 1 << 15;
-  sys_->sio.pad[0].buttons = uint16_t(~b);
+  return b;
 }
+}  // namespace
+
+void Ps1Core::updatePad() { sys_->sio.pad[0].buttons = uint16_t(~padBits(keys_, l2_, r2_, l3_, r3_)); }
 
 void Ps1Core::setKeys(uint32_t mask) { keys_ = mask; updatePad(); }
+void Ps1Core::setKeys2(uint32_t mask) {
+  sys_->sio.pad2On = true;
+  sys_->sio.pad[1].buttons = uint16_t(~padBits(mask, false, false, false, false));
+}
 void Ps1Core::setExtraButtons(bool l2, bool r2, bool l3, bool r3) { l2_ = l2; r2_ = r2; l3_ = l3; r3_ = r3; updatePad(); }
 void Ps1Core::setAnalog(uint8_t lx, uint8_t ly, uint8_t rx, uint8_t ry) {
   PadState& p = sys_->sio.pad[0];

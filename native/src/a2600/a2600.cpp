@@ -107,7 +107,7 @@ void Machine::setKeys(uint32_t k) {
   if (k & KEY_UP) j &= ~0x10;
   if ((j & 0xC0) == 0) j |= 0xC0;  // o joystick de verdade não aperta os dois lados juntos
   if ((j & 0x30) == 0) j |= 0x30;
-  joy_ = j;
+  joy_ = static_cast<uint8_t>((joy_ & 0x0F) | (j & 0xF0));
   tia.fire[0] = k & KEY_A;
   const uint32_t pressed = k & ~prevKeys_;
   prevKeys_ = k;
@@ -115,6 +115,18 @@ void Machine::setKeys(uint32_t k) {
   if (pressed & KEY_R) switches_ ^= 0x80;
   if (pressed & KEY_X) switches_ ^= 0x08;
   switches_ = static_cast<uint8_t>((switches_ & ~0x03) | ((k & KEY_START) ? 0 : 1) | ((k & KEY_SELECT) ? 0 : 2));
+}
+
+void Machine::setKeys2(uint32_t k) {
+  uint8_t j = 0x0F;
+  if (k & KEY_RIGHT) j &= ~0x08;
+  if (k & KEY_LEFT) j &= ~0x04;
+  if (k & KEY_DOWN) j &= ~0x02;
+  if (k & KEY_UP) j &= ~0x01;
+  if ((j & 0x0C) == 0) j |= 0x0C;
+  if ((j & 0x03) == 0) j |= 0x03;
+  joy_ = static_cast<uint8_t>((joy_ & 0xF0) | j);
+  tia.fire[1] = k & KEY_A;
 }
 
 void Machine::runFrame() {

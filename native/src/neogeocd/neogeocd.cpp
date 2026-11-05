@@ -200,25 +200,27 @@ uint8_t NeoGeoCd::inputRead(uint32_t a) {
   const bool normal = selector_ == 0x00 || selector_ == 0x12 || selector_ == 0x1B;
   const uint32_t k = keys_;
   switch (a & 0xFE0000) {
-    case 0x300000: {
+    case 0x300000: case 0x340000: {  // jogador 1 / jogador 2
       if (!normal) return 0xFF;
+      const uint32_t p = (a & 0xFE0000) == 0x340000 ? keys2_ : keys_;
       uint8_t v = 0xFF;
-      if (k & KEY_UP) v &= ~0x01;
-      if (k & KEY_DOWN) v &= ~0x02;
-      if (k & KEY_LEFT) v &= ~0x04;
-      if (k & KEY_RIGHT) v &= ~0x08;
-      if (k & KEY_B) v &= ~0x10;  // A
-      if (k & KEY_A) v &= ~0x20;  // B
-      if (k & KEY_Y) v &= ~0x40;  // C
-      if (k & KEY_X) v &= ~0x80;  // D
+      if (p & KEY_UP) v &= ~0x01;
+      if (p & KEY_DOWN) v &= ~0x02;
+      if (p & KEY_LEFT) v &= ~0x04;
+      if (p & KEY_RIGHT) v &= ~0x08;
+      if (p & KEY_B) v &= ~0x10;  // A
+      if (p & KEY_A) v &= ~0x20;  // B
+      if (p & KEY_Y) v &= ~0x40;  // C
+      if (p & KEY_X) v &= ~0x80;  // D
       return v;
     }
-    case 0x340000: return 0xFF;  // jogador 2 sem nada apertado
     default: {  // 0x380000: start/select dos dois jogadores (bits 0-3, 1 = solto)
       if (!normal) return 0x0F;
       uint8_t v = 0x0F;
       if (k & KEY_START) v &= ~0x01;
       if (k & KEY_SELECT) v &= ~0x02;
+      if (keys2_ & KEY_START) v &= ~0x04;
+      if (keys2_ & KEY_SELECT) v &= ~0x08;
       return v;
     }
   }

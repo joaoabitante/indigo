@@ -226,8 +226,12 @@ echo "== Intellivision: CP1610 (instruções, flags, SDBD, ciclos), STIC (fundo,
 if "$B/indigo-t7_intv" "$R" > "$TMP/intv"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/intv" | head -5; fi
 grep "RESULTADO" "$TMP/intv" | sed 's/^/  /'
 
+echo "== Dois jogadores: o controle 2 chega à porta 2 do NES, do SNES e do Master System (os outros consoles, nos próprios testes)"
+if "$B/indigo-t7_jogadores" > "$TMP/jog"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/jog" | head -5; fi
+grep "RESULTADO" "$TMP/jog" | sed 's/^/  /'
+
 if [ -x "$B/indigo-t_app_uso" ]; then  # só existe com o app (SDL3) no Linux
-  echo "== Uso no app: botão do disco (FDS), teclado numérico na tela (5200, Intellivision), abas da estante, Abrir com do Android"
+  echo "== Uso no app: botão do disco (FDS), teclado numérico na tela (5200, Intellivision), abas da estante, Abrir com do Android, jogador 2"
   if "$B/indigo-t_app_uso" "$HERE/../android/app/src/main/AndroidManifest.xml" > "$TMP/appuso"; then ok=$((ok + 1)); else bad=$((bad + 1)); grep -i "falh" "$TMP/appuso" | head -5; fi
   grep "RESULTADO" "$TMP/appuso" | sed 's/^/  /'
 fi

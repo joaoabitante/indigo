@@ -4,6 +4,7 @@
 //    grande, exposta para o app;
 //  - cartão de memória de 128 KB (1024 setores de 128 bytes): comandos de leitura (52h), escrita (57h) e
 //    identificação (53h). O cartão da porta 1 é o save do jogo.
+//  - porta 2: vazia, ou um controle digital (ID 41h) quando o app liga o jogador 2 (pad2On).
 // Cada byte leva o tempo da taxa de transmissão (JOY_BAUD * 8 ciclos) e o /ACK do aparelho chega pouco depois,
 // pedindo a interrupção 7 se o JOY_CTRL deixar; o /ACK é um pulso curto (JOY_STAT.7 volta a 0 sozinho).
 #pragma once
@@ -32,6 +33,7 @@ public:
   uint64_t nextEvent() const { return busy_ ? doneAt_ : ackAt_ ? ackAt_ : ~0ull; }
 
   PadState pad[2];
+  bool pad2On = false;           // controle digital na porta 2 (ligado pelo app; não vai no estado)
   bool analogMode = false;       // DualShock no modo analógico (luz vermelha)
   bool analogLocked = false;
   uint8_t motorSmall = 0, motorLarge = 0;  // vibração atual
@@ -52,7 +54,7 @@ private:
   uint8_t txByte_ = 0;
   bool pendingAck_ = false;
 
-  // aparelho selecionado: 0 nenhum, 1 controle, 2 cartão
+  // aparelho selecionado: 0 nenhum, 1 controle, 2 cartão, 3 controle da porta 2
   uint8_t device_ = 0;
   int step_ = 0;
   // controle
@@ -68,6 +70,7 @@ private:
 
   uint8_t transfer(uint8_t b, bool& ack);
   uint8_t padByte(uint8_t b, bool& ack);
+  uint8_t pad2Byte(bool& ack);
   uint8_t cardByte(uint8_t b, bool& ack);
   void deselect() { device_ = 0; step_ = 0; }
 };

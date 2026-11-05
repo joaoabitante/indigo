@@ -4,7 +4,7 @@
 //  (2) console com a EXEC e a GROM livres do Índigo e um cartucho de teste próprio (cabeçalho padrão da EXEC,
 //      código depois do título): texto da GROM, pilha de cores, quadrados coloridos, GRAM, MOBs (tamanho,
 //      espelho, prioridade), colisões MOB-MOB/fundo/borda, janela de acesso ao STIC, pedidos de barramento,
-//      controle, som (frequência do tom), save state determinístico e estados danificados;
+//      controles 1 e 2 (dois jogadores), som (frequência do tom), save state determinístico e estados danificados;
 //  (3) formatos: o mesmo cartucho em .rom (Intellicart, com página de RAM), .int e .bin de 10 bits; a EXEC
 //      livre como "BIOS do usuário"; detecção sem roubar as ROMs de teste dos outros consoles.
 //  (4) .bin + .cfg do jzIntv (mapa, [memattr] de 8/16 bits, [vars]), páginas do ECS, troca de bancos do
@@ -686,6 +686,17 @@ void consoleTest(const std::string& pngDir) {
   check((m.sysram[PAD - 0x200] & 0xFF) == static_cast<uint8_t>(~0x82), "setKeypad() tem prioridade sobre os bits KEY_KP* (" + hex(m.sysram[PAD - 0x200]) + ")");
   ic->setKeypad(-1);
   core->setKeys(0);
+  // dois jogadores: o controle 2 é o da direita (o da esquerda com os controles trocados)
+  check(core->players() == 2, "2 jogadores: players() == 2");
+  core->setKeys(KEY_A);
+  core->setKeys2(KEY_UP | KEY_B);
+  check(m.padL == 0xC0 && m.padR == 0x64, "2 jogadores: controle 1 à esquerda e 2 à direita");
+  ic->setSwapControllers(true);
+  check(m.padL == 0x64 && m.padR == 0xC0, "2 jogadores: controles trocados");
+  ic->setSwapControllers(false);
+  core->setKeys(0);
+  core->setKeys2(0);
+  check(m.padL == 0 && m.padR == 0, "2 jogadores: os dois soltos");
 
   // som: período $100 → 111860,8 / 256 = 437 Hz
   {

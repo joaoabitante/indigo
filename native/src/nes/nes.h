@@ -209,7 +209,7 @@ public:
 
   void reset(bool power);
   void runFrame();
-  void setKeys(uint32_t mask);
+  void setKeys(uint32_t mask, int player = 0);  // player 1 = controle 2 ($4017)
   std::vector<uint8_t> saveState();
   void loadState(const std::vector<uint8_t>& s);
 
@@ -247,6 +247,8 @@ public:
   void runFrame() override { m_->runFrame(); }
   void reset() override { m_->reset(false); }
   void setKeys(uint32_t mask) override { m_->setKeys(mask); }
+  void setKeys2(uint32_t mask) override { m_->setKeys(mask, 1); }
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return m_->ppu.fb; }
   int width() const override { return 256; }
   int height() const override { return 240; }

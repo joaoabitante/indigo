@@ -1,7 +1,7 @@
 // Teste do uso no app (sem janela): botão do disco do Famicom Disk System e teclado numérico do 5200 e do
 // Intellivision nos controles de toque (src/app/ui.cpp), e a lista de consoles da estante/biblioteca e do
-// diálogo de abrir (src/app/consoles.h). Com o caminho do AndroidManifest.xml como argumento, confere também os
-// tipos de arquivo do "Abrir com" do Android.
+// diálogo de abrir (src/app/consoles.h), e quem comanda o jogador 2 (src/app/ui.cpp). Com o caminho do
+// AndroidManifest.xml como argumento, confere também os tipos de arquivo do "Abrir com" do Android.
 // uso: indigo-t_app_uso [native/android/app/src/main/AndroidManifest.xml]
 #include <cstdio>
 #include <fstream>
@@ -11,6 +11,7 @@
 
 #include "consoles.h"
 #include "core/core.h"
+#include "nes/nes.h"
 #include "ui.h"
 
 using namespace indigo;
@@ -177,6 +178,137 @@ void testarConsoles() {
   check(ok, "diálogo de abrir aceita as extensões dos consoles novos (o Jaguar tinha ficado de fora)" + (ruim.empty() ? "" : ": falta " + ruim));
 }
 
+// dois jogadores: quem vai para cada jogador (src/app/ui.cpp, routeKeys) e o caminho até a porta 2 de um NES
+void testarJogadores() {
+  using ui::Player2;
+  const uint32_t A = KEY_A, B = KEY_B, S = KEY_START, X = KEY_X, U = KEY_UP;
+  auto ok = [](ui::PlayerKeys k, uint32_t p1, uint32_t p2) { return k.p1 == p1 && k.p2 == p2; };
+  check(ok(ui::routeKeys(Player2::SecondPad, 2, A, 0, {B, S}), A | B, S), "2 jogadores: 2º controle no jogador 2, teclado e 1º controle no 1");
+  check(ok(ui::routeKeys(Player2::SecondPad, 2, A, 0, {B}), A | B, 0), "2 jogadores: um controle + teclado: os dois no jogador 1 (como antes)");
+  check(ok(ui::routeKeys(Player2::SecondPad, 2, 0, 0, {B, S, X}), B | X, S), "2 jogadores: 3º controle volta para o jogador 1");
+  check(ok(ui::routeKeys(Player2::Keyboard, 2, A, U, {B}), B | U, A), "2 jogadores (opção teclado): controle e toque no 1, teclado no 2");
+  check(ok(ui::routeKeys(Player2::Keyboard, 2, A, 0, {}), A, 0), "2 jogadores (opção teclado): sem controle, o teclado é o jogador 1");
+  check(ok(ui::routeKeys(Player2::Off, 2, A, 0, {B, S}), A | B | S, 0), "2 jogadores desligado: tudo no jogador 1");
+  check(ok(ui::routeKeys(Player2::SecondPad, 1, A, 0, {B, S}), A | B | S, 0), "console de 1 jogador: tudo no jogador 1");
+  check(ok(ui::routeKeys(Player2::SecondPad, 2, 0, U, {B, S}), U | B, S), "2 jogadores: a tela de toque é sempre o jogador 1");
+  check(ui::padPlayer(Player2::SecondPad, 2, 1) == 1 && ui::padPlayer(Player2::SecondPad, 2, 0) == 0 &&
+            ui::padPlayer(Player2::Off, 2, 1) == 0 && ui::padPlayer(Player2::SecondPad, 1, 1) == 0,
+        "2 jogadores: padPlayer");
+  check(!ui::player2Present(Player2::SecondPad, 2, 1) && ui::player2Present(Player2::SecondPad, 2, 2) &&
+            ui::player2Present(Player2::Keyboard, 2, 1) && !ui::player2Present(Player2::Keyboard, 2, 0) &&
+            !ui::player2Present(Player2::Off, 2, 3) && !ui::player2Present(Player2::SecondPad, 1, 2),
+        "2 jogadores: o controle 2 do console só liga quando alguém comanda o jogador 2");
+  const std::string l0 = ui::player2Label(Player2::Off), l1 = ui::player2Label(Player2::SecondPad), l2 = ui::player2Label(Player2::Keyboard);
+  check(l0 != l1 && l1 != l2 && l0 != l2 && l1.find("Jogador 2") == 0, "2 jogadores: texto da opção no menu Controles");
+  // de ponta a ponta num NES: 2 controles, o 2º aperta Start e chega só ao $4017
+  std::vector<uint8_t> rom = {'N', 'E', 'S', 0x1A, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  rom.resize(16 + 0x4000 + 0x2000, 0xEA);
+  auto core = createCore(rom, "t.nes", nullptr);
+  auto* n = dynamic_cast<nes::NESCore*>(core.get());
+  check(n && core->players() == 2, "2 jogadores: NES aceita 2 jogadores");
+  if (!n) return;
+  const auto k = ui::routeKeys(Player2::SecondPad, core->players(), 0, 0, {A, S});
+  core->setKeys(k.p1);
+  core->setKeys2(k.p2);
+  auto port = [&](uint16_t a) {
+    n->nes().write(0x4016, 1);
+    n->nes().write(0x4016, 0);
+    int v = 0;
+    for (int i = 0; i < 8; i++) v |= (n->nes().read(a) & 1) << i;
+    return v;
+  };
+  check(port(0x4016) == 0x01 && port(0x4017) == 0x08, "2 jogadores: NES recebe A no controle 1 e Start no controle 2");
+}
+
+// dois controles de verdade pelo SDL (controles virtuais: o SDL os trata como qualquer controle, Bluetooth ou
+// cabo, cada um com seu número). Mesmo caminho do app: SDL_EVENT_GAMEPAD_ADDED/REMOVED, lista com lugar fixo
+// (ui::padSlotAdd/padSlotRemove) e as teclas de cada um em routeKeys.
+void testarDoisControles() {
+  using ui::Player2;
+  // a lista com lugar fixo, sem SDL
+  {
+    int a = 1, b = 2, c = 3;
+    std::vector<int*> v;
+    const size_t sa = ui::padSlotAdd(v, &a), sb = ui::padSlotAdd(v, &b);
+    ui::padSlotRemove(v, &a);
+    const bool vaga = v.size() == 2 && !v[0] && v[1] == &b;
+    const size_t sc = ui::padSlotAdd(v, &c);
+    ui::padSlotRemove(v, &b);
+    check(sa == 0 && sb == 1 && vaga && sc == 0 && v.size() == 1 && v[0] == &c,
+          "2 controles: quem cai deixa a vaga e quem volta ocupa a mesma posição");
+  }
+  SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+  if (!SDL_Init(SDL_INIT_GAMEPAD)) { check(false, std::string("2 controles: SDL_Init: ") + SDL_GetError()); return; }
+  std::vector<SDL_Gamepad*> pads;
+  auto eventos = [&] {
+    SDL_UpdateJoysticks();
+    SDL_Event ev;
+    while (SDL_PollEvent(&ev)) {
+      if (ev.type == SDL_EVENT_GAMEPAD_ADDED) {
+        if (SDL_Gamepad* p = SDL_OpenGamepad(ev.gdevice.which)) ui::padSlotAdd(pads, p);
+      } else if (ev.type == SDL_EVENT_GAMEPAD_REMOVED) {
+        for (auto* p : pads)
+          if (p && SDL_GetGamepadID(p) == ev.gdevice.which) { SDL_CloseGamepad(p); ui::padSlotRemove(pads, p); break; }
+      }
+    }
+  };
+  auto liga = [](const char* nome) {
+    SDL_VirtualJoystickDesc d;
+    SDL_INIT_INTERFACE(&d);
+    d.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+    d.naxes = SDL_GAMEPAD_AXIS_COUNT;
+    d.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+    d.name = nome;
+    return SDL_AttachVirtualJoystick(&d);
+  };
+  // aperta um botão no controle virtual id
+  auto aperta = [](SDL_JoystickID id, SDL_GamepadButton b, bool down) {
+    if (SDL_Joystick* j = SDL_GetJoystickFromID(id)) SDL_SetJoystickVirtualButton(j, b, down);
+  };
+  // teclas de cada posição (como gamepadKeys do app: A = botão de baixo, Start = Start)
+  auto teclas = [&] {
+    std::vector<uint32_t> k(pads.size(), 0);
+    for (size_t i = 0; i < pads.size(); i++) {
+      if (!pads[i]) continue;
+      if (SDL_GetGamepadButton(pads[i], SDL_GAMEPAD_BUTTON_SOUTH)) k[i] |= KEY_A;
+      if (SDL_GetGamepadButton(pads[i], SDL_GAMEPAD_BUTTON_START)) k[i] |= KEY_START;
+    }
+    return k;
+  };
+  const SDL_JoystickID c1 = liga("Controle Bluetooth 1");
+  eventos();
+  const SDL_JoystickID c2 = liga("Controle Bluetooth 2");
+  eventos();
+  check(c1 && c2 && c1 != c2 && pads.size() == 2 && pads[0] && pads[1] && SDL_GetGamepadID(pads[0]) == c1 &&
+            SDL_GetGamepadID(pads[1]) == c2,
+        "2 controles: o SDL mostra dois controles separados, na ordem em que conectaram");
+  aperta(c1, SDL_GAMEPAD_BUTTON_SOUTH, true);
+  aperta(c2, SDL_GAMEPAD_BUTTON_START, true);
+  eventos();
+  auto k = ui::routeKeys(Player2::SecondPad, 2, 0, 0, teclas());
+  check(k.p1 == KEY_A && k.p2 == KEY_START, "2 controles: o A do 1º vai ao jogador 1 e o Start do 2º ao jogador 2");
+  // o controle 1 cai (bateria, distância): o 2º continua no jogador 2 e o teclado fica com o jogador 1
+  SDL_DetachVirtualJoystick(c1);
+  eventos();
+  k = ui::routeKeys(Player2::SecondPad, 2, KEY_B, 0, teclas());
+  check(pads.size() == 2 && !pads[0] && k.p1 == KEY_B && k.p2 == KEY_START,
+        "2 controles: o 1º desconecta e o 2º continua no jogador 2");
+  const SDL_JoystickID c1b = liga("Controle Bluetooth 1");
+  eventos();
+  aperta(c1b, SDL_GAMEPAD_BUTTON_SOUTH, true);
+  eventos();
+  k = ui::routeKeys(Player2::SecondPad, 2, 0, 0, teclas());
+  check(pads.size() == 2 && pads[0] && SDL_GetGamepadID(pads[0]) == c1b && k.p1 == KEY_A && k.p2 == KEY_START,
+        "2 controles: o 1º reconecta e volta ao jogador 1");
+  SDL_DetachVirtualJoystick(c2);
+  eventos();
+  check(pads.size() == 1 && pads[0], "2 controles: o 2º desconecta e a lista fica só com o 1º");
+  for (auto* p : pads)
+    if (p) SDL_CloseGamepad(p);
+  SDL_DetachVirtualJoystick(c1b);
+  SDL_Quit();
+}
+
 void testarManifesto(const char* caminho) {
   std::ifstream f(caminho);
   std::stringstream ss;
@@ -200,6 +332,8 @@ int main(int argc, char** argv) {
   testarTeclado(1);
   testarTeclado(2);
   testarConsoles();
+  testarJogadores();
+  testarDoisControles();
   if (argc > 1) testarManifesto(argv[1]);
   std::printf("RESULTADO app_uso: %d verificações, %d falhas\n", checks, fails);
   return fails ? 1 : 0;

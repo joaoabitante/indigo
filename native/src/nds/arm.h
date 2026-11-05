@@ -48,6 +48,7 @@ public:
   bool irqLine = false;      // IME && (IE & IF)
   bool forceIrq = false;     // IntrWait em alto nível: aceita a IRQ mesmo com o bit I ligado (a BIOS real liga)
   int costShift = 1;         // ciclos por instrução << costShift (aproxima esperas de memória)
+  int stall = 0;             // ciclos de espera pedidos pela HLE (WaitByLoop): o run os gasta logo depois da instrução
   uint32_t excBase = 0;      // 0 ou 0xFFFF0000 (vetores altos do ARM9)
   uint32_t undefCount = 0;   // instruções indefinidas executadas (depuração)
   int shC = 0;

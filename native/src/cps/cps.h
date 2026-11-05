@@ -58,6 +58,7 @@ public:
 
   void reset();
   void setKeys(uint32_t mask) { keys_ = mask; }
+  void setKeys2(uint32_t mask) { keys2_ = mask; }
   void runFrame();
   double fps() const { return 8000000.0 / (512.0 * 262.0); }
   std::string title() const { return game.title; }
@@ -144,7 +145,7 @@ private:
   std::vector<uint16_t> objBuf_;      // lista de objetos guardada no fim do quadro anterior
   int priCtrl_ = 0, objBank_ = 0;
   // E/S
-  uint32_t keys_ = 0;
+  uint32_t keys_ = 0, keys2_ = 0;
   uint8_t latch_[2] = {}, sndBank_ = 0;
   int dial_ = 0;
   Eeprom93C46 eeprom_;
@@ -192,6 +193,8 @@ public:
   void runFrame() override { m_->runFrame(); }
   void reset() override { m_->reset(); }
   void setKeys(uint32_t mask) override { m_->setKeys(mask); }
+  void setKeys2(uint32_t mask) override { m_->setKeys2(mask); }
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return m_->framebuffer(); }
   int width() const override { return m_->width(); }
   int height() const override { return m_->height(); }

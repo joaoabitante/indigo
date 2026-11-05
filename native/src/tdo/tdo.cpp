@@ -462,11 +462,12 @@ void System::xbusDma() {
 
 // DMA do controle (canal 23 do MADAM, 0x570): começa com o bit 15 do MCTL. O que os controles devolvem entra a
 // partir da 2ª palavra da origem (0x578) e a origem inteira vai para o destino (0x570); contagem em bytes menos 4.
-// Palavra dos controles: controle 1 nos bytes 0-1; depois dele o barramento fica em 1 (fim da corrente).
+// Palavra dos controles: controle 1 nos bytes 0-1 e o 2 (se ligado) nos bytes 2-3; depois o barramento fica em 1
+// (fim da corrente).
 void System::pbusDma() {
   if (!(madam.regs[0x008 >> 2] & 0x8000)) return;
   uint32_t* r = &madam.regs[0x570 >> 2];
-  const uint32_t words[3] = {uint32_t(pad_) << 16 | 0xFFFF, 0xFFFFFFFFu, 0xFFFFFFFFu};
+  const uint32_t words[3] = {uint32_t(pad_) << 16 | (pad2On_ ? pad2_ : 0xFFFFu), 0xFFFFFFFFu, 0xFFFFFFFFu};
   for (int i = 0; i < 3; i++) {
     const uint32_t a = r[2] + uint32_t(i + 1) * 4;
     if (a + 4 <= MEM_SIZE) for (int k = 0; k < 4; k++) mem[a + uint32_t(k)] = uint8_t(words[i] >> (24 - 8 * k));
@@ -596,7 +597,8 @@ TdoCore::TdoCore(std::unique_ptr<cdrom::Disc> disc, const std::vector<uint8_t>* 
   note_ = contains(b, "Indigo 3DO") ? " · BIOS de teste do Índigo" : " · 3DO experimental: se algo der errado, avise";
 }
 
-void TdoCore::setKeys(uint32_t k) {
+namespace {
+uint16_t padBits(uint32_t k) {
   uint16_t p = 0x8000;  // identificação do controle
   if (k & KEY_DOWN) p |= 0x1000;
   if (k & KEY_UP) p |= 0x0800;
@@ -610,8 +612,12 @@ void TdoCore::setKeys(uint32_t k) {
   if (k & KEY_SELECT) p |= 0x0010; // X (stop)
   if (k & KEY_R) p |= 0x0008;
   if (k & KEY_L) p |= 0x0004;
-  sys_->setPad(p);
+  return p;
 }
+}  // namespace
+
+void TdoCore::setKeys(uint32_t k) { sys_->setPad(padBits(k)); }
+void TdoCore::setKeys2(uint32_t k) { sys_->setPad2(padBits(k)); }
 
 size_t TdoCore::audioAvailable() const {
   const double frames = double(sys_->audio.size() / 2);

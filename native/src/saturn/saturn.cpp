@@ -385,17 +385,17 @@ uint8_t Smpc::read(uint32_t reg) {
     case 0x30: return sr_;
     case 0x31: return sf_;
     case 0x3A: case 0x3B: {
-      // modo direto (IOSEL): só o controle padrão na porta 1, sem o protocolo TH/TR completo
+      // modo direto (IOSEL): controle padrão nas portas 1 e 2 (a 2 só com o jogador 2), sem o protocolo TH/TR completo
       const int p = reg - 0x3A;
-      if (p == 1) return 0x7F;
-      const uint8_t th = pdr_[0] & 0x40, tr = pdr_[0] & 0x20;
-      const uint16_t b = uint16_t(~pad_);
+      if (p == 1 && !pad2On_) return 0x7F;
+      const uint8_t th = pdr_[p] & 0x40, tr = pdr_[p] & 0x20;
+      const uint16_t b = uint16_t(~(p ? pad2_ : pad_));
       uint8_t v;
       if (th && tr) v = uint8_t(0x70 | ((b >> 3) & 0x08) | 0x04);              // L em bit 3
       else if (!th && tr) v = uint8_t(0x30 | ((b >> 8) & 0x0F));            // B C A Start? (D3..D0 = Start A C B)
       else if (th && !tr) v = uint8_t(0x50 | ((b >> 12) & 0x0F));           // direita esquerda baixo cima
       else v = uint8_t(0x10 | ((b >> 4) & 0x0F));                           // R X Y Z
-      return uint8_t((v & ~ddr_[0]) | (pdr_[0] & ddr_[0]));
+      return uint8_t((v & ~ddr_[p]) | (pdr_[p] & ddr_[p]));
     }
     default: return 0xFF;
   }
@@ -461,7 +461,7 @@ void Smpc::command(uint8_t c) {
 }
 
 void Smpc::peripheral() {
-  // porta 1: controle padrão ligado direto; porta 2: vazia
+  // porta 1: controle padrão ligado direto; porta 2: vazia ou o controle do jogador 2
   std::memset(oreg_, 0xFF, 31);
   const uint16_t b = uint16_t(~pad_);
   oreg_[0] = 0xF1;
@@ -469,6 +469,13 @@ void Smpc::peripheral() {
   oreg_[2] = uint8_t(b >> 8);
   oreg_[3] = uint8_t(b | 0x07);
   oreg_[4] = 0xF0;
+  if (pad2On_) {
+    const uint16_t b2 = uint16_t(~pad2_);
+    oreg_[4] = 0xF1;
+    oreg_[5] = 0x02;
+    oreg_[6] = uint8_t(b2 >> 8);
+    oreg_[7] = uint8_t(b2 | 0x07);
+  }
   sr_ = 0xC0 | 0x01;   // dados de periférico, primeiro bloco, sem mais dados
   pendingPad_ = false;
   sf_ = 0;
@@ -519,7 +526,8 @@ SaturnCore::SaturnCore(std::unique_ptr<cdrom::Disc> disc, const std::vector<uint
   note_ = contains(b, "Indigo Saturn") ? " · BIOS de teste do Índigo" : " · Saturn experimental: muitos jogos ainda não rodam";
 }
 
-void SaturnCore::setKeys(uint32_t k) {
+namespace {
+uint16_t padBits(uint32_t k) {
   // byte de cima: direita esquerda baixo cima Start A C B; de baixo: R X Y Z L
   uint16_t p = 0;
   if (k & KEY_RIGHT) p |= 0x8000;
@@ -534,8 +542,12 @@ void SaturnCore::setKeys(uint32_t k) {
   if (k & KEY_X) p |= 0x0040;      // X
   if (k & KEY_SELECT) p |= 0x0020; // Y
   if (k & KEY_L) p |= 0x0008;
-  sys_->setPad(p);
+  return p;
 }
+}  // namespace
+
+void SaturnCore::setKeys(uint32_t k) { sys_->setPad(padBits(k)); }
+void SaturnCore::setKeys2(uint32_t k) { sys_->setPad2(padBits(k)); }
 
 size_t SaturnCore::audioAvailable() const {
   const double frames = double(sys_->audio.size() / 2);

@@ -136,8 +136,10 @@ int SMS::in(int port) {
     case 0x41: return vdp.hcount;
     case 0x80: return vdp.readData();
     case 0x81: { const int v = vdp.readStatus(); cpu.irqLine = vdp.irq(); return v; }
-    case 0xC0: {  // controle 1
+    case 0xC0: {  // controle 1 + cima/baixo do controle 2
       int v = 0xFF;
+      if (keys2 & (1 << K_UP)) v &= ~0x40;
+      if (keys2 & (1 << K_DOWN)) v &= ~0x80;
       if (keys & (1 << K_UP)) v &= ~0x01;
       if (keys & (1 << K_DOWN)) v &= ~0x02;
       if (keys & (1 << K_LEFT)) v &= ~0x04;
@@ -151,7 +153,12 @@ int SMS::in(int port) {
       const int io = ioCtl;
       const int thA = (io & 0x02) ? 1 : (io >> 5) & 1;
       const int thB = (io & 0x08) ? 1 : (io >> 7) & 1;
-      return 0x3F | (thA << 6) | (thB << 7);
+      int v = 0x3F | (thA << 6) | (thB << 7);
+      if (keys2 & (1 << K_LEFT)) v &= ~0x01;
+      if (keys2 & (1 << K_RIGHT)) v &= ~0x02;
+      if (keys2 & (1 << K_B)) v &= ~0x04;  // botão 1
+      if (keys2 & (1 << K_A)) v &= ~0x08;  // botão 2
+      return v;
     }
   }
 }

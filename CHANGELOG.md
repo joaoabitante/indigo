@@ -2,6 +2,15 @@
 
 Gerado de `web/changelog.js` (o mesmo texto aparece no cartão “Registro” da página).
 
+## 05/11/2026 · App 2.7: 2 jogadores, Dreamcast e Pokémon no DS
+
+- Modo de 2 jogadores: o 2º controle ligado comanda o jogador 2, inclusive controles Bluetooth. No menu Controles dá para escolher o 2º controle, o teclado ou desligar. Se um controle cair e voltar, ele continua no mesmo jogador.
+- Funciona na maioria dos consoles de mesa; ainda não no PC Engine, Jaguar, Game Gear, Vectrex e PC-FX.
+- Dreamcast: com a BIOS do seu console, agora liga e chega ao menu (ainda sem som).
+- Nintendo DS: Pokémon HeartGold e Black 2 passam da tela branca e chegam ao começo do jogo. O save dos cartuchos com infravermelho funciona, o toque cai no lugar certo e o relógio dá a hora certa. Continua experimental.
+
+**Testes:** Testes novos de 2 jogadores e de dois controles conectados com 0 falhas; teste do DS com 119 verificações e 0 falhas; revalidação de 1047 comparações iguais e robustez com 0 problemas.
+
 ## 04/11/2026 · App 2.6: Nintendo 64, Nintendo DS e Dreamcast
 
 - Nintendo 64 (.z64, .n64 e .v64): não precisa de BIOS. Saves em EEPROM, SRAM, FlashRAM e Controller Pak.

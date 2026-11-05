@@ -114,7 +114,7 @@ enum MenuId {
   M_CLOUD_PAGE, M_CLOUD_SYNC, M_CLOUD_TOGGLE, M_CLOUD_PIN, M_PIN_DEL, M_PIN_OK, M_PIN_SHOW,
   M_FILTER, M_CONTROLS_PAGE, M_MAP_PAD, M_MAP_KEYS, M_MAP_DEFAULT, M_CAPTURE_SKIP, M_CAPTURE_CANCEL, M_CAPTURE_INFO,
   M_SHELF_PAGE, M_SHELF_CONSOLE, M_SHELF_NEXT, M_SHELF_PREV, M_FAV, M_COVER, M_FOLDERS_PAGE, M_FOLDER_ADD, M_ABOUT_PAGE, M_ABOUT_NEWER, M_ABOUT_OLDER, M_ASSOCIATE, M_START_FULL, M_VB_3D, M_INFO, M_SETTINGS_PAGE, M_TEST_SOUND,
-  M_INTEGER, M_UI_SIZE, M_PS1_RES, M_DISK_SIDE, M_SGB,
+  M_INTEGER, M_UI_SIZE, M_PS1_RES, M_DISK_SIDE, M_SGB, M_PLAYER2,
   M_PIN_DIGIT = 80, M_SLOT = 100, M_FOLDER_DEL = 900, M_SHELF_ITEM = 1000, M_RECENT = 200, M_VERSION = 300
 };
 
@@ -879,6 +879,7 @@ public:
     paused_ = false;
     menuOpen_ = false;
     frameCount_ = 0;
+    p2On_ = false;
     std::string note;
     if (resume) {
       std::vector<uint8_t> st;
@@ -911,9 +912,16 @@ public:
       if (menuVisible() || libraryMode()) stickNavigate();
       const double frameNs = core_ ? 1e9 / core_->fps() : 1e9 / 60;
 
-      const uint32_t padKeys = gamepadKeys();
+      std::vector<uint32_t> padKeys = gamepadKeys();
       if (core_ && !paused_ && !menuOpen_) {
-        core_->setKeys(adaptKeys(keyboard_ | touch_.keys(), false) | adaptKeys(padKeys, true));
+        // dois jogadores: o 2º controle (ou o teclado, pela opção) vai para o jogador 2
+        for (auto& k : padKeys) k = adaptKeys(k, true);
+        const int players = core_->players();
+        const auto pk = indigo::ui::routeKeys(player2_, players, adaptKeys(keyboard_, false), adaptKeys(touch_.keys(), false), padKeys);
+        core_->setKeys(pk.p1);
+        // o controle 2 só é ligado no console quando alguém comanda o jogador 2; depois fica ligado até fechar o jogo
+        if (indigo::ui::player2Present(player2_, players, pads_.size())) p2On_ = true;
+        if (p2On_) core_->setKeys2(pk.p2);
         if (auto* p = dynamic_cast<indigo::ps1::Ps1Core*>(core_.get())) ps1Input(*p, touch_.keys());
         if (core_->system() == "gamecom" || core_->system() == "nds") penInput();
         if (core_->system() == "pcfx") mouseInput();
@@ -946,7 +954,7 @@ public:
     for (auto& [k, t] : covers_) if (t) SDL_DestroyTexture(t);
     screen_.reset();
     if (audio_) SDL_DestroyAudioStream(audio_);
-    for (auto* p : pads_) SDL_CloseGamepad(p);
+    for (auto* p : pads_) if (p) SDL_CloseGamepad(p);
     indigo::text::shutdown();
     if (ren_) SDL_DestroyRenderer(ren_);
     if (win_) SDL_DestroyWindow(win_);
@@ -973,7 +981,7 @@ private:
   // fecha o jogo atual: grava o save e o estado automático ("continuar de onde parou")
   void closeGame() {
     if (!core_) return;
-    if (rumbleLo_ | rumbleHi_) { for (auto* p : pads_) SDL_RumbleGamepad(p, 0, 0, 0); rumbleLo_ = rumbleHi_ = 0; }
+    if (rumbleLo_ | rumbleHi_) { for (auto* p : pads_) if (p) SDL_RumbleGamepad(p, 0, 0, 0); rumbleLo_ = rumbleHi_ = 0; }
     flushSave();
     if (uploadAt_) { uploadAt_ = 0; uploadOpenSave(); }
     writeFile(autoStatePath(), core_->saveState());
@@ -1042,12 +1050,16 @@ private:
         break;
       case SDL_EVENT_DROP_FILE: if (ev.drop.data) openFile(ev.drop.data); break;
       case SDL_EVENT_GAMEPAD_ADDED: {
-        if (SDL_Gamepad* p = SDL_OpenGamepad(ev.gdevice.which)) { pads_.push_back(p); status("Controle conectado"); }
+        if (SDL_Gamepad* p = SDL_OpenGamepad(ev.gdevice.which)) {
+          const size_t slot = indigo::ui::padSlotAdd(pads_, p);
+          const bool p2 = slot == 1 && player2_ != indigo::ui::Player2::Off && (!core_ || core_->players() >= 2);
+          status(p2 ? "Controle 2 conectado (jogador 2)" : "Controle conectado");
+        }
         break;
       }
       case SDL_EVENT_GAMEPAD_REMOVED: {
-        for (auto it = pads_.begin(); it != pads_.end(); ++it)
-          if (SDL_GetGamepadID(*it) == ev.gdevice.which) { SDL_CloseGamepad(*it); pads_.erase(it); break; }
+        for (auto* p : pads_)
+          if (p && SDL_GetGamepadID(p) == ev.gdevice.which) { SDL_CloseGamepad(p); indigo::ui::padSlotRemove(pads_, p); break; }
         break;
       }
       case SDL_EVENT_GAMEPAD_BUTTON_DOWN: onPadButton(ev.gbutton); break;
@@ -1205,12 +1217,16 @@ private:
     }
   }
 
-  uint32_t gamepadKeys() {
+  // teclas de cada controle (na ordem de pads_)
+  std::vector<uint32_t> gamepadKeys() {
     // padrão = layout "letters" da versão web (A do Xbox é o A do Game Boy; X também faz B); remapeável no menu
-    uint32_t m = 0;
+    std::vector<uint32_t> keys(pads_.size(), 0);
     padTurbo_ = false;
     bool selectHeld = false;
-    for (auto* p : pads_) {
+    for (size_t i = 0; i < pads_.size(); i++) {
+      SDL_Gamepad* p = pads_[i];
+      if (!p) continue;  // vaga de um controle desconectado
+      uint32_t& m = keys[i];
       auto btn = [p](SDL_GamepadButton b) { return b != SDL_GAMEPAD_BUTTON_INVALID && SDL_GetGamepadButton(p, b); };
       if (btn(SDL_GAMEPAD_BUTTON_DPAD_UP)) m |= indigo::KEY_UP;
       if (btn(SDL_GAMEPAD_BUTTON_DPAD_DOWN)) m |= indigo::KEY_DOWN;
@@ -1222,7 +1238,8 @@ private:
       for (SDL_GamepadButton b : padMap_[ACT_SELECT]) if (btn(b)) selectHeld = true;
       const float dz = 0.45f * 32767;
       const float x = SDL_GetGamepadAxis(p, SDL_GAMEPAD_AXIS_LEFTX), y = SDL_GetGamepadAxis(p, SDL_GAMEPAD_AXIS_LEFTY);
-      if (auto* c = dynamic_cast<indigo::ps1::Ps1Core*>(core_.get()); c && c->analogMode()) continue;
+      // DualShock analógico do jogador 1: o analógico esquerdo vai para o núcleo, não para o direcional
+      if (auto* c = dynamic_cast<indigo::ps1::Ps1Core*>(core_.get()); c && c->analogMode() && !padP2(i)) continue;
       if (x < -dz) m |= indigo::KEY_LEFT;
       if (x > dz) m |= indigo::KEY_RIGHT;
       if (y < -dz) m |= indigo::KEY_UP;
@@ -1232,10 +1249,12 @@ private:
     // depois de um atalho (Select + botão), o Select e o botão não chegam ao jogo até serem soltos
     if (hotkeyLatched_) {
       if (!selectHeld) hotkeyLatched_ = false;
-      else m &= ~(indigo::KEY_SELECT | indigo::KEY_L | indigo::KEY_R | indigo::KEY_LEFT | indigo::KEY_RIGHT | indigo::KEY_START);
+      else for (auto& m : keys) m &= ~(indigo::KEY_SELECT | indigo::KEY_L | indigo::KEY_R | indigo::KEY_LEFT | indigo::KEY_RIGHT | indigo::KEY_START);
     }
-    return m;
+    return keys;
   }
+  // o controle i comanda o jogador 2?
+  bool padP2(size_t i) const { return core_ && indigo::ui::padPlayer(player2_, core_->players(), i) == 1; }
 
   // PlayStation: L2/R2 (gatilhos), L3/R3 (apertar os analógicos), os dois analógicos e o botão ANALOG (L3 + R3
   // juntos, ou L2 + R2 + Select). No toque, L2 e R2 vêm dos botões da tela.
@@ -1243,7 +1262,9 @@ private:
     bool l2 = (touchKeys & indigo::ui::TOUCH_L2) != 0, r2 = (touchKeys & indigo::ui::TOUCH_R2) != 0, l3 = false, r3 = false;
     int lx = 128, ly = 128, rx = 128, ry = 128;
     auto axis = [](int v) { return std::clamp((v + 32768) >> 8, 0, 255); };
-    for (auto* p : pads_) {
+    for (size_t i = 0; i < pads_.size(); i++) {
+      SDL_Gamepad* p = pads_[i];
+      if (!p || padP2(i)) continue;  // o jogador 2 tem controle digital
       l2 = l2 || SDL_GetGamepadAxis(p, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 12000;
       r2 = r2 || (!padTriggerTurbo_ && SDL_GetGamepadAxis(p, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 12000);
       l3 = l3 || SDL_GetGamepadButton(p, SDL_GAMEPAD_BUTTON_LEFT_STICK);
@@ -1270,7 +1291,8 @@ private:
     if (lo == rumbleLo_ && hi == rumbleHi_ && (!(lo | hi) || frameCount_ % 6)) return;
     rumbleLo_ = lo;
     rumbleHi_ = hi;
-    for (auto* p : pads_) SDL_RumbleGamepad(p, lo, hi, (lo | hi) ? 200 : 0);
+    for (size_t i = 0; i < pads_.size(); i++)
+      if (pads_[i] && !padP2(i)) SDL_RumbleGamepad(pads_[i], lo, hi, (lo | hi) ? 200 : 0);
   }
 
   // X e Y só existem no SNES: nos outros consoles, X vale A e Y vale B (como antes, o botão da esquerda do
@@ -1412,10 +1434,10 @@ private:
 
   // atalhos do controle, como num portátil Anbernic: Select + R salva estado, Select + L carrega,
   // Select + direita/esquerda troca o espaço de estado
-  bool padHotkey(SDL_GamepadButton b) {
-    if (!core_ || menuOpen_) return false;
-    bool select = false;
-    for (auto* p : pads_) for (SDL_GamepadButton s : padMap_[ACT_SELECT]) if (SDL_GetGamepadButton(p, s)) select = true;
+  bool padHotkey(SDL_GamepadButton b, SDL_Gamepad* pad) {
+    if (!core_ || menuOpen_ || !pad) return false;
+    bool select = false;  // o Select do mesmo controle (com dois jogadores, um não dispara o atalho do outro)
+    for (SDL_GamepadButton s : padMap_[ACT_SELECT]) if (SDL_GetGamepadButton(pad, s)) select = true;
     if (!select) return false;
     auto is = [&](int act) { for (SDL_GamepadButton x : padMap_[act]) if (x == b) return true; return false; };
     if (is(ACT_R)) saveState(slot_);
@@ -1635,6 +1657,8 @@ private:
         } else if (ln.rfind("ps1res=", 0) == 0) {
           const int r = std::atoi(ln.c_str() + 7);
           ps1Res_ = (r == 1 || r == 2 || r == 4) ? r : 0;
+        } else if (ln.rfind("jogador2=", 0) == 0) {
+          player2_ = static_cast<indigo::ui::Player2>(std::clamp(std::atoi(ln.c_str() + 9), 0, 2));
         }
       }
     }
@@ -1647,6 +1671,7 @@ private:
     s += std::string("inteira=") + (integerScale_ ? "1" : "0") + "\ninterface=" + std::to_string(uiSize_) + "\n";
     if (!sgb_) s += "sgb=0\n";
     if (ps1Res_) s += "ps1res=" + std::to_string(ps1Res_) + "\n";
+    if (player2_ != indigo::ui::Player2::SecondPad) s += "jogador2=" + std::to_string(static_cast<int>(player2_)) + "\n";
     if (winW_ > 0) s += "janela=" + std::to_string(winX_) + "," + std::to_string(winY_) + "," + std::to_string(winW_) + "," +
                         std::to_string(winH_) + "," + (winMax_ ? "1" : "0") + "\n";
     writeFile(configDir_ + "opcoes.txt", std::vector<uint8_t>(s.begin(), s.end()));
@@ -2148,6 +2173,7 @@ private:
     } else if (page_ == P_CONTROLS) {
       menu_.title = "Controles";
       menu_.items = {{"Configurar o controle", M_MAP_PAD}, {"Configurar o teclado", M_MAP_KEYS},
+                     {indigo::ui::player2Label(player2_), M_PLAYER2},
                      {"Voltar ao padrão (controle e teclado)", M_MAP_DEFAULT}, {"Voltar", M_BACK}};
       menu_.hint = "Atalhos no controle: Select+R salva estado, Select+L carrega, Select+setas troca o espaço";
     } else if (page_ == P_CAPTURE) {
@@ -2552,6 +2578,13 @@ private:
         startCapture(false);
         break;
       case M_MAP_KEYS: startCapture(true); break;
+      case M_PLAYER2:
+        // 2º controle -> teclado -> desligado -> 2º controle
+        player2_ = player2_ == indigo::ui::Player2::SecondPad ? indigo::ui::Player2::Keyboard
+                 : player2_ == indigo::ui::Player2::Keyboard ? indigo::ui::Player2::Off : indigo::ui::Player2::SecondPad;
+        saveSettings();
+        rebuildMenu();
+        break;
       case M_MAP_DEFAULT: defaultPadMap(); defaultKeyMap(); saveMaps(); status("Controle e teclado no padrão"); break;
       case M_CAPTURE_SKIP:
         // mantém o que já estava para esta ação
@@ -2835,6 +2868,7 @@ private:
   void stickNavigate() {
     int dx = 0, dy = 0;
     for (auto* p : pads_) {
+      if (!p) continue;
       const int x = SDL_GetGamepadAxis(p, SDL_GAMEPAD_AXIS_LEFTX), y = SDL_GetGamepadAxis(p, SDL_GAMEPAD_AXIS_LEFTY);
       if (std::abs(y) > 22000 && std::abs(y) >= std::abs(x)) dy = y > 0 ? 1 : -1;
       else if (std::abs(x) > 22000) dx = x > 0 ? 1 : -1;
@@ -2847,7 +2881,7 @@ private:
     stickDir_ = dir;
     SDL_GamepadButtonEvent b{};
     b.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN;
-    b.which = pads_.empty() ? 0 : SDL_GetGamepadID(pads_[0]);
+    b.which = pads_.empty() || !pads_[0] ? 0 : SDL_GetGamepadID(pads_[0]);
     b.button = static_cast<Uint8>(dir == 1 ? SDL_GAMEPAD_BUTTON_DPAD_UP : dir == 2 ? SDL_GAMEPAD_BUTTON_DPAD_DOWN
                                   : dir == 3 ? SDL_GAMEPAD_BUTTON_DPAD_LEFT : SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
     b.down = true;
@@ -2867,7 +2901,7 @@ private:
       else if (b.button != SDL_GAMEPAD_BUTTON_DPAD_LEFT && b.button != SDL_GAMEPAD_BUTTON_DPAD_RIGHT) captureAssign(b.button, -1);
       return;
     }
-    if (padHotkey(static_cast<SDL_GamepadButton>(b.button))) return;
+    if (padHotkey(static_cast<SDL_GamepadButton>(b.button), SDL_GetGamepadFromID(b.which))) return;
     SDL_Gamepad* pad = SDL_GetGamepadFromID(b.which);
     const bool start = pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_START);
     const bool back = pad && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_BACK);
@@ -3008,6 +3042,8 @@ private:
   bool sgb_ = true;  // Super Game Boy nos jogos que têm a marca (padrão: ligado)  // resolução do PlayStation escolhida (0 = a padrão do aparelho)
   std::array<std::vector<SDL_GamepadButton>, NUM_ACTIONS> padMap_, captureNewPad_;
   std::array<std::vector<SDL_Scancode>, NUM_ACTIONS> keyMap_, captureNewKeys_;
+  indigo::ui::Player2 player2_ = indigo::ui::Player2::SecondPad;  // quem é o jogador 2 (menu Controles)
+  bool p2On_ = false;  // o controle 2 já foi ligado no jogo aberto
   bool padTriggerTurbo_ = true, hotkeyLatched_ = false, captureKeys_ = false, captureTrigger_ = false;
   int captureStep_ = 0;
   // estante

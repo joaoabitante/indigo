@@ -168,7 +168,7 @@ void NDS::reset() {
   spi.cnt = 0; spi.data = 0; spi.fwCmd = 0; spi.tscCmd = 0; spi.pmPos = 0;
   rtc = Rtc{};
   cart.romctrl = 0; cart.auxspicnt = 0; cart.xferLeft = 0; cart.xferKind = 0;
-  cart.spiCmd = 0; cart.spiPos = 0; cart.csHold = false; cart.status = 0;
+  cart.spiCmd = 0; cart.spiPos = 0; cart.csHold = false; cart.status = 0; cart.irPos = cart.irCmd = 0;
   remapVram();
   updateTcm();
   arm9.reset();

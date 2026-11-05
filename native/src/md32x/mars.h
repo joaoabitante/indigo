@@ -172,6 +172,8 @@ public:
   void runFrame() override;
   void reset() override;
   void setKeys(uint32_t mask) override { md_->setKeys(mask); }
+  void setKeys2(uint32_t mask) override { md_->setKeys2(mask); }
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return md_->vdp.fb; }
   int width() const override { return md_->vdp.outW; }
   int height() const override { return md_->vdp.outH; }

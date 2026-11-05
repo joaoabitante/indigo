@@ -3,6 +3,7 @@
 //   indigo-t7_msx --png rom quadros saida.png [1|2] [tecla@quadro...]   grava a tela para conferir
 //     (tecla: start, select, a, b, x, y, l, r, up, down, left, right; ex.: start@120 aperta START
 //      do quadro 120 ao 129)
+// As verificações incluem os dois jogadores (joystick 2 na porta 2).
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -440,6 +441,21 @@ void testScreens(const std::string& dir, bool list) {
 
 }  // namespace
 
+// dois jogadores: o joystick 2 aparece quando o bit 6 do registrador 15 do PSG escolhe a porta 2
+void testPlayer2() {
+  Code k;
+  msx::MSXCore c(makeRom(0x8000, k), nullptr, 1);
+  msx::MSX& m = c.msx();
+  check(c.players() == 2, "2 jogadores: players() == 2");
+  auto port = [&](int sel) { m.out(0xA0, 15); m.out(0xA1, sel); m.out(0xA0, 14); return m.in(0xA2) & 0x3F; };
+  c.setKeys(KEY_LEFT);
+  c.setKeys2(KEY_UP | KEY_B);
+  check(port(0x00) == 0x3B, "2 jogadores: porta 1 só com o jogador 1 (" + hex({port(0x00)}) + ")");
+  check(port(0x40) == 0x1E, "2 jogadores: porta 2 com o jogador 2 (" + hex({port(0x40)}) + ")");
+  c.setKeys2(0);
+  check(port(0x40) == 0x3F, "2 jogadores: porta 2 solta");
+}
+
 int main(int argc, char** argv) {
   if (argc >= 5 && std::string(argv[1]) == "--png") {
     const auto rom = readAll(argv[2]);
@@ -487,6 +503,7 @@ int main(int argc, char** argv) {
   testScreens(dir, argc >= 3 && std::string(argv[2]) == "--lista");
   testStates(dir);
   testGarbage();
+  testPlayer2();
   std::printf("RESULTADO msx: %d verificações, %d falhas\n", checks, fails);
   return fails ? 1 : 0;
 }

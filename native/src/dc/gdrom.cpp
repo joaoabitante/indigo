@@ -106,6 +106,8 @@ void Gdrom::spi() {
   const uint8_t cmd = p[0];
   uint8_t r[512];
   std::memset(r, 0, sizeof r);
+  // REQ_ERROR devolve o erro do comando anterior; os outros comandos começam sem erro
+  const uint8_t prevSense = sense, prevAsc = asc;
   sense = 0; asc = 0;
   auto checkFail = [&](uint8_t key, uint8_t code) { sense = key; asc = code; complete(true); };
   if (!disc && cmd != 0x11 && cmd != 0x12 && cmd != 0x13 && cmd != 0x10) { checkFail(2, 0x3A); return; }
@@ -143,7 +145,7 @@ void Gdrom::spi() {
       return;
     }
     case 0x13:  // REQ_ERROR
-      r[0] = 0xF0; r[2] = sense; r[8] = asc;
+      r[0] = 0xF0; r[2] = prevSense; r[8] = prevAsc;
       sendData(r, 10, p[4]);
       return;
     case 0x14: {  // GET_TOC

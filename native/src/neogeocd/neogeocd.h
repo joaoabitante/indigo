@@ -57,6 +57,7 @@ public:
 
   void reset();
   void setKeys(uint32_t k) { keys_ = k; }
+  void setKeys2(uint32_t k) { keys2_ = k; }
   void runFrame();
   static double masterClock() { return 24167829.0; }
   double fps() const { return masterClock() / (2.0 * neogeo::LSPC::CYC_PER_LINE * neogeo::LSPC::LINES); }
@@ -152,7 +153,7 @@ private:
   int32_t cdCounter_ = 0;
 
   int64_t cyc_ = 0, frameEnd_ = 0, z80Cyc_ = 0;
-  uint32_t keys_ = 0;
+  uint32_t keys_ = 0, keys2_ = 0;
   bool dirty_ = false;
   int outRate_ = 48000;
   std::vector<float> cdL_, cdR_;  // CD-DA já na taxa de saída, alinhado com a fila do YM2610
@@ -170,6 +171,8 @@ public:
   void runFrame() override { m_->runFrame(); }
   void reset() override { m_->reset(); }
   void setKeys(uint32_t mask) override { m_->setKeys(mask); }
+  void setKeys2(uint32_t mask) override { m_->setKeys2(mask); }
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return m_->lspc.fb; }
   int width() const override { return neogeo::LSPC::OUT_W; }
   int height() const override { return neogeo::LSPC::OUT_H; }

@@ -105,6 +105,7 @@ public:
   void write(uint32_t reg, uint8_t v);
   void vblankIn();
   void setPad(uint16_t buttons) { pad_ = buttons; }   // bits ativos em 1, formato do controle padrão
+  void setPad2(uint16_t buttons) { pad2_ = buttons; pad2On_ = true; }  // liga o controle da porta 2
   void setRtc(const uint8_t bcd[7]);
   void sync(StateIO& io);
   bool slaveOn = false, soundOn = false;
@@ -118,6 +119,8 @@ private:
   uint8_t smem_[4] = {};
   uint8_t rtc_[7] = {0x20, 0x26, 0x11, 0x02, 0x12, 0x00, 0x00};  // ano (2 bytes BCD), dia da semana/mês, dia, h, m, s
   uint16_t pad_ = 0;
+  uint16_t pad2_ = 0;     // porta 2 (não vai no estado: o app manda a cada quadro)
+  bool pad2On_ = false;
   bool pendingPad_ = false;  // INTBACK: os dados do controle vêm depois do "continue"
 };
 
@@ -416,6 +419,7 @@ public:
   void runFrame();
   size_t audioCut = 0;  // quadros de som descartados no último runFrame
   void setPad(uint16_t b) { smpc.setPad(b); }
+  void setPad2(uint16_t b) { smpc.setPad2(b); }
   void slavePower(bool on);
   void soundPower(bool on);
   void slaveIrl();                  // nível da IRL do escravo pelo V-blank/H-blank
@@ -457,6 +461,8 @@ public:
   }
   void reset() override { sys_->reset(); }
   void setKeys(uint32_t mask) override;
+  void setKeys2(uint32_t mask) override;
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return sys_->vdp2.out; }
   int width() const override { return sys_->vdp2.outW; }
   int height() const override { return sys_->vdp2.outH; }

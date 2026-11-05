@@ -185,4 +185,34 @@ private:
   int W_ = 0, H_ = 0;
 };
 
+// ------------------------------------------------------------ dois jogadores
+// Opção "Jogador 2" do menu Controles: desligado (tudo no jogador 1, como antes), o 2º controle (padrão) ou o
+// teclado (com um controle ligado, o controle fica no jogador 1 e o teclado no 2).
+enum class Player2 { Off = 0, SecondPad = 1, Keyboard = 2 };
+const char* player2Label(Player2 mode);
+struct PlayerKeys { uint32_t p1 = 0, p2 = 0; };
+// junta as entradas nos dois jogadores. pads[i] = teclas do controle i, na ordem em que foram ligados (o 2º vai
+// para o jogador 2, os outros para o 1). corePlayers = Core::players(): com 1, tudo vai para o jogador 1. A tela de
+// toque é sempre o jogador 1.
+PlayerKeys routeKeys(Player2 mode, int corePlayers, uint32_t keyboard, uint32_t touch, const std::vector<uint32_t>& pads);
+// jogador (0 ou 1) do controle na posição index da lista
+int padPlayer(Player2 mode, int corePlayers, size_t index);
+// há quem comande o jogador 2 (o 2º controle, ou o teclado com a opção "teclado")? Só então o app liga o
+// controle 2 no console.
+bool player2Present(Player2 mode, int corePlayers, size_t pads);
+// lista de controles com lugar fixo: quem desconecta deixa a vaga, e quem conecta ocupa a primeira vaga livre.
+// Assim um controle Bluetooth que cai (bateria, distância) e volta continua no mesmo jogador. Devolve a posição.
+template <class T> size_t padSlotAdd(std::vector<T*>& pads, T* p) {
+  for (size_t i = 0; i < pads.size(); i++)
+    if (!pads[i]) { pads[i] = p; return i; }
+  pads.push_back(p);
+  return pads.size() - 1;
+}
+// tira o controle e as vagas vazias do fim da lista
+template <class T> void padSlotRemove(std::vector<T*>& pads, T* p) {
+  for (auto& x : pads)
+    if (x == p) x = nullptr;
+  while (!pads.empty() && !pads.back()) pads.pop_back();
+}
+
 }  // namespace indigo::ui

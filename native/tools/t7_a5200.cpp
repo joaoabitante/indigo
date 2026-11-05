@@ -8,6 +8,7 @@
 //   - mapeamento dos cartuchos (4, 8, 16 KB de um e de dois chips, 32 KB, Bounty Bob, super cartucho)
 //   - partida pela BIOS de teste, NMI de VBI e de DLI pelos vetores de RAM, WSYNC, VCOUNT, troca de cor no meio
 //     da linha, potenciômetro, gatilho, teclado e botão de baixo com IRQ do POKEY, som (frequência do tom)
+//   - dois jogadores: joystick e botão do controle 2
 //   - ANTIC: centenas de telas sorteadas (modos 2 a F, larguras, LMS, linhas em branco, rolagem fina horizontal
 //     e vertical, CHACTL) comparadas ponto a ponto com um desenhista de referência escrito à parte aqui
 //   - ciclos roubados pelo ANTIC por linha (refresh, lista, jogadores/mísseis, modos de texto e de bitmap)
@@ -481,6 +482,26 @@ void testBoot(const std::string& root) {
   m->loadState(st);
   m->runFrame();
   check(m->peek(0x3000) == 0xA5, "50 estados com bytes trocados carregados e rodados sem quebrar");
+}
+
+// dois jogadores: o joystick 2 vai para os potenciômetros 2 e 3 e o botão de cima para o TRIG1
+void testPlayer2(const std::string& root) {
+  std::printf("== dois jogadores\n");
+  auto m = machine(readAll(root + "/a5200/cart.a52"));
+  m->setKeys(KEY_LEFT);
+  m->setKeys2(KEY_RIGHT | KEY_UP | KEY_A);
+  auto pots = [&] {  // POTGO e espera a contagem terminar
+    m->write(0xE80B, 0);
+    m->runCycles(114 * 240);
+    return std::to_string(m->read(0xE800)) + " " + std::to_string(m->read(0xE801)) + " " + std::to_string(m->read(0xE802)) +
+           " " + std::to_string(m->read(0xE803));
+  };
+  std::string p = pots();
+  check(p == "6 114 220 6", "2 jogadores: POT0-1 do controle 1 e POT2-3 do controle 2 (" + p + ")");
+  check(m->read(0xC010) == 1 && m->read(0xC011) == 0, "2 jogadores: botão do controle 2 só no TRIG1");
+  m->setKeys2(0);
+  p = pots();
+  check(p == "6 114 114 114" && m->read(0xC011) == 1, "2 jogadores: controle 2 solto (" + p + ")");
 }
 
 void testPokeyIrq() {
@@ -1114,6 +1135,7 @@ int main(int argc, char** argv) {
   testDetect(root);
   testCarts();
   testBoot(root);
+  testPlayer2(root);
   testPokeyIrq();
   testFuzz();
   testAntic();

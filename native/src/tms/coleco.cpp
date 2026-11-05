@@ -87,8 +87,7 @@ void Coleco::write(int a, int v) {
 // controle: no modo joystick, bits 0–3 = cima, direita, baixo, esquerda e bit 6 = botão esquerdo; no modo
 // teclado, bits 0–3 = código da tecla e bit 6 = botão direito (tudo ativo em 0)
 int Coleco::pad(int which) const {
-  if (which != 0) return 0x7F;
-  const uint32_t k = keys;
+  const uint32_t k = which ? keys2 : keys;
   int v = 0x7F;
   if (joyMode) {
     if (k & KEY_UP) v &= ~0x01;

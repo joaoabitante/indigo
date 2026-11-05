@@ -95,10 +95,17 @@ uint32_t Sh4::p4Read(uint32_t a, int size) {
     case 0xFF800028: rfcr = uint16_t((rfcr + 1) & 0x3FF); return rfcr;
     case 0xFF80002C: return pctra;
     case 0xFF800030: {
-      // porta A: bits 8-9 = tipo de cabo de vídeo (3 = composto); os bits 0-3 de saída voltam como escritos
+      // porta A: bits 8-9 = tipo de cabo de vídeo (3 = composto); os bits 0-3 de saída voltam como escritos.
+      // Os pinos 0 e 1 são ligados um ao outro no console (a BIOS confere isso e para se não for assim): se um
+      // deles é saída, os dois leem o valor dele; se nenhum é, o pull-up deixa os dois em 1.
       uint32_t out = 0;
       for (int b = 0; b < 4; b++)
-        if (((pctra >> (2 * b)) & 3) == 1) out |= pdtra & (1u << b);
+        if (pctra >> (2 * b) & 1) out |= pdtra & (1u << b);
+      const bool o0 = pctra & 1, o1 = pctra >> 2 & 1;
+      uint32_t lig = 1;
+      if (o0) lig &= pdtra & 1;
+      if (o1) lig &= pdtra >> 1 & 1;
+      out = (out & ~3u) | (lig ? 3u : 0u);
       return out | (3u << 8);
     }
     case 0xFF800040: return pctrb;

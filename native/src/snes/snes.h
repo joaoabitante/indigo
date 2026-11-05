@@ -197,7 +197,7 @@ public:
 
   void reset(bool power);
   void runFrame();
-  void setKeys(uint32_t mask);
+  void setKeys(uint32_t mask, int player = 0);  // player 1 = controle 2 (liga a porta 2)
   std::vector<uint8_t> saveState();
   void loadState(const std::vector<uint8_t>& s);
   uint8_t peek(uint32_t addr);  // sem efeito colateral (testes)
@@ -244,7 +244,8 @@ private:
   bool nmiFlag = false, irqFlag = false, nmiLine = false, autoJoyBusy = false;
   int autoJoyTimer = 0;
   uint16_t joy[4] = {};
-  uint16_t pad = 0;
+  uint16_t pad = 0, pad2 = 0;
+  bool pad2On = false;  // controle 2 ligado (só pelo app; não vai no estado)
   uint8_t joyLatch = 0;
   uint32_t joyShift[2] = {};
   // DMA / HDMA
@@ -271,6 +272,8 @@ public:
   void runFrame() override { m_->runFrame(); }
   void reset() override { m_->reset(false); }
   void setKeys(uint32_t mask) override { m_->setKeys(mask); }
+  void setKeys2(uint32_t mask) override { m_->setKeys(mask, 1); }
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return m_->ppu.fb; }
   int width() const override { return 256; }
   int height() const override { return 224; }

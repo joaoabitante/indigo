@@ -2,8 +2,9 @@
 // Pasta de testes como argumento (normalmente /root/indigo-env/roms/ps1, montada pelo t9_ps1.sh). Réguas:
 //  1. Testes de CPU do PeterLemon (PASS/FAIL na tela), carregados direto sem BIOS e pela BIOS de teste própria.
 //  2. BIOS de teste do Índigo (t9_ps1_bios.s): partida, TTY, interrupções, carga do .exe depois do "menu".
-//  3. SIO0 pelos registradores: controle digital/analógico (DualShock), vibração e cartão de memória (comandos de
-//     leitura, escrita e identificação, flag de cartão novo, o cartão como save do jogo).
+//  3. SIO0 pelos registradores: controle digital/analógico (DualShock), controle 2 (digital, na porta 2), vibração
+//     e cartão de memória (comandos de leitura, escrita e identificação, flag de cartão novo, o cartão como save do
+//     jogo).
 //  4. Save state: ida e volta igual, determinismo, estados danificados recusados sem mexer no jogo.
 //  5. Com a BIOS do usuário (pulado se não existir: <pasta>/../../bios-joao/scph1001.bin ou PS1_BIOS):
 //     - partida até o menu (logo da Sony e menu), comparada com o Beetle PSX (ref/menu.ppm);
@@ -207,6 +208,25 @@ void testSio(const std::vector<uint8_t>& testBios, const std::vector<uint8_t>& a
   io.ctrl(0x3003);
   check(io.xfer(0x01) == 0xFF, "porta 2 sem controle");
   io.ctrl(0);
+  // dois jogadores: controle digital na porta 2 depois de setKeys2, sem mexer na porta 1
+  check(core.players() == 2, "2 jogadores: players() == 2");
+  core.setKeys(0);
+  core.setKeys2(KEY_B | KEY_LEFT);  // B = Xis (bit 14), Esquerda = bit 7
+  {
+    io.ctrl(0x3003);
+    std::vector<uint8_t> r2;
+    std::vector<bool> a2;
+    for (uint8_t b : {0x01, 0x42, 0x00, 0x00, 0x00}) { bool a; r2.push_back(io.xfer(b, &a)); a2.push_back(a); }
+    io.ctrl(0);
+    check(r2 == std::vector<uint8_t>({0xFF, 0x41, 0x5A, 0x7F, 0xBF}), "2 jogadores: controle digital na porta 2: " + hex(r2));
+    check(a2 == std::vector<bool>({true, true, true, true, false}), "2 jogadores: /ACK da porta 2 em todos menos o último");
+    io.ctrl(0x3003);
+    check(io.xfer(0x81) == 0xFF, "2 jogadores: porta 2 sem cartão de memória");
+    io.ctrl(0);
+  }
+  r = io.cmd({0x01, 0x42, 0x00, 0x00, 0x00});
+  check(r.size() == 5 && r[3] == 0xFF && r[4] == 0xFF, "2 jogadores: porta 1 não vê o controle 2: " + hex(r));
+  core.setKeys2(0);
 
   // cartão de memória: identificação, escrita, leitura
   r = io.cmd({0x81, 0x53, 0, 0, 0, 0, 0, 0, 0, 0});

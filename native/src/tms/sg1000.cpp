@@ -81,9 +81,11 @@ int SG1000::in(int port) {
       if (p & 1) { const int v = vdp.readStatus(); updateIrq(); return v; }
       return vdp.readData(now());
     case 0xC0: {
-      const uint32_t k = keys;
-      if (!(p & 1)) {  // DCh: controle 1 (+ cima/baixo do controle 2, solto)
+      const uint32_t k = keys, k2 = keys2;
+      if (!(p & 1)) {  // DCh: controle 1 + cima/baixo do controle 2
         int v = 0xFF;
+        if (k2 & KEY_UP) v &= ~0x40;
+        if (k2 & KEY_DOWN) v &= ~0x80;
         if (k & KEY_UP) v &= ~0x01;
         if (k & KEY_DOWN) v &= ~0x02;
         if (k & KEY_LEFT) v &= ~0x04;
@@ -92,7 +94,12 @@ int SG1000::in(int port) {
         if (k & KEY_A) v &= ~0x20;
         return v;
       }
-      return 0xFF;  // DDh: resto do controle 2 (solto)
+      int v = 0xFF;  // DDh: resto do controle 2
+      if (k2 & KEY_LEFT) v &= ~0x01;
+      if (k2 & KEY_RIGHT) v &= ~0x02;
+      if (k2 & KEY_B) v &= ~0x04;
+      if (k2 & KEY_A) v &= ~0x08;
+      return v;
     }
     default: return 0xFF;
   }

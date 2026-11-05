@@ -310,6 +310,8 @@ public:
   explicit Maple(System& s);
   System& sys;
   uint32_t keys = 0;  // teclas do Índigo
+  uint32_t keys2 = 0;  // controle da porta B (jogador 2, sem VMU); só responde com pad2On
+  bool pad2On = false;
   std::vector<uint8_t> vmu;
   bool vmuDirty = false;
   uint32_t dmas = 0;
@@ -410,6 +412,8 @@ public:
   void runFrame() override;
   void reset() override;
   void setKeys(uint32_t mask) override { sys_->maple.keys = mask; }
+  void setKeys2(uint32_t mask) override { sys_->maple.keys2 = mask; sys_->maple.pad2On = true; }
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return sys_->fb; }
   int width() const override { return sys_->fbW; }
   int height() const override { return sys_->fbH; }

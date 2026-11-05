@@ -5,6 +5,7 @@
 //     mesma sequência de botões usada para gerar a referência no Stella (t7_a2600.sh); cada quadro do Índigo
 //     precisa ter o mesmo hash (160 pontos x linhas, cores da paleta do Stella) que o quadro do Stella.
 //  3. Save state determinístico, estados danificados e ROMs aleatórias (sem travar, sem laço infinito).
+//  4. Dois jogadores: o joystick 2 chega à porta 2 sem mexer na 1.
 // Uso: indigo-t7_a2600 pasta [--dump rom quadro saida.ppm]
 #include <chrono>
 #include <cmath>
@@ -307,6 +308,24 @@ void speed(const std::string& dir) {
 
 }  // namespace
 
+// ---------------------------------------------------------------- dois jogadores
+// o joystick 2 chega aos bits baixos do SWCHA e ao INPT5, sem mexer no joystick 1 (bits altos e INPT4)
+void player2Test() {
+  std::vector<uint8_t> rom(4096, 0xEA);  // só NOPs, começando em $F000
+  rom[0xFFC] = 0x00; rom[0xFFD] = 0xF0;
+  A2600Core c(rom, nullptr);
+  auto& m = c.machine();
+  check(c.players() == 2, "2 jogadores: players() == 2");
+  c.setKeys(0); c.setKeys2(indigo::KEY_UP | indigo::KEY_RIGHT | indigo::KEY_A);
+  check(m.read(0x280) == 0xF6, "2 jogadores: SWCHA com o jogador 2 em cima+direita (lido " + std::to_string(m.read(0x280)) + ")");
+  check((m.read(0x0D) & 0x80) == 0 && (m.read(0x0C) & 0x80) != 0, "2 jogadores: botão do jogador 2 só no INPT5");
+  c.setKeys(indigo::KEY_LEFT); c.setKeys2(0);
+  check(m.read(0x280) == 0xBF, "2 jogadores: jogador 1 sozinho não mexe nos bits do jogador 2");
+  check((m.read(0x0D) & 0x80) != 0, "2 jogadores: INPT5 solto");
+  c.setKeys2(indigo::KEY_DOWN);
+  check(m.read(0x280) == 0xBD, "2 jogadores: os dois juntos");
+}
+
 int main(int argc, char** argv) {
   if (argc < 2) { std::fprintf(stderr, "uso: %s pasta [--dump rom quadro saida.ppm]\n", argv[0]); return 2; }
   const std::string dir = argv[1];
@@ -327,6 +346,7 @@ int main(int argc, char** argv) {
                 c.machine().tia.lastFrameLines);
     return 0;
   }
+  player2Test();
   cpuTests(dir);
   screenTests(dir);
   bankTests(dir);

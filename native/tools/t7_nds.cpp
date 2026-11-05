@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -472,8 +473,155 @@ static void testCallbackTravado(const std::string& dir) {
   CHECK(true, "quadro depois da SWI travada");
 }
 
+// ------------------------------------------------------------------ defeitos achados com jogos (sem os jogos)
+namespace indigo::nds { uint16_t crc16(uint16_t crc, const uint8_t* p, size_t n); }
+// cartucho mínimo montado aqui: ARM9 e ARM7 na RAM principal, código ARM dado palavra a palavra
+static std::vector<uint8_t> miniRom(const char* code4, const std::vector<uint32_t>& arm9, const std::vector<uint32_t>& arm7) {
+  std::vector<uint8_t> rom(0x1000, 0);
+  std::memcpy(&rom[0], "INDIGO CASOS", 12);
+  std::memcpy(&rom[0x0C], code4, 4);
+  auto w32 = [&](size_t o, uint32_t v) { for (int k = 0; k < 4; k++) rom[o + k] = uint8_t(v >> (8 * k)); };
+  w32(0x20, 0x200); w32(0x24, 0x02000000); w32(0x28, 0x02000000); w32(0x2C, uint32_t(arm9.size() * 4));
+  w32(0x30, 0x800); w32(0x34, 0x02380000); w32(0x38, 0x02380000); w32(0x3C, uint32_t(arm7.size() * 4));
+  for (size_t i = 0; i < arm9.size(); i++) w32(0x200 + i * 4, arm9[i]);
+  for (size_t i = 0; i < arm7.size(); i++) w32(0x800 + i * 4, arm7[i]);
+  return rom;
+}
+
+static void testCasosJogos() {
+  std::printf("== defeitos achados com jogos (Pokémon HeartGold e Black 2)\n");
+  const std::vector<uint32_t> LOOP = {0xEAFFFFFE};  // b .
+
+  // 1) WaitByLoop (SWI 3) para a CPU na hora. Antes a CPU seguia até o fim da fatia e o aperto de mão do IPCSYNC
+  //    do SDK (o ARM7 espera e confere a resposta do ARM9) nunca fechava: os dois jogos ficavam na tela branca.
+  {
+    const std::vector<uint32_t> a7 = {
+        0xE59F0010,  // ldr r0, =200000   (800.000 ciclos: mais que um quadro)
+        0xEF030000,  // swi 3             (WaitByLoop)
+        0xE59F100C,  // ldr r1, =0x02300000
+        0xE3A02001,  // mov r2, #1
+        0xE5812000,  // str r2, [r1]
+        0xEAFFFFFE,  // b .
+        200000, 0x02300000};
+    NDSCore core(miniRom("CSO1", LOOP, a7), nullptr);
+    NDS& s = core.nds();
+    core.runFrame();
+    CHECK(s.bus9.read32(0x02300000) == 0, "WaitByLoop: o ARM7 não esperou (marca já gravada no 1º quadro)");
+    core.runFrame(); core.runFrame();
+    CHECK(s.bus9.read32(0x02300000) == 1, "WaitByLoop: o ARM7 não voltou da espera (PC7 %08X)", s.arm7.nextPC);
+  }
+
+  // 2) Chip de infravermelho na frente da FLASH (HG/SS, B/W, B2/W2): 0x00 repassa a conversa para a FLASH.
+  //    Antes o primeiro byte era lido como comando e a FLASH respondia "ocupada" (Black 2: "save data could not be
+  //    accessed"); o HeartGold caía num save de 64 KB.
+  {
+    NDSCore core(miniRom("IREO", LOOP, LOOP), nullptr);
+    Cart& c = core.nds().cart;
+    CHECK(c.ir && c.addrBytes == 3 && c.save.size() == 0x80000, "IR: cartucho não reconhecido (ir %d, %d bytes de endereço, %zu bytes)",
+          c.ir, c.addrBytes, c.save.size());
+    auto talk = [&](std::vector<uint8_t> b) {
+      uint8_t last = 0xFF;
+      for (size_t i = 0; i < b.size(); i++) {
+        c.writeAuxSpiCnt(i + 1 < b.size() ? 0xA040 : 0xA000);
+        c.writeAuxSpiData(b[i]);
+        last = c.spiOut;
+      }
+      return last;
+    };
+    CHECK(talk({0x08, 0x00}) == 0xAA, "IR: identificação do chip de IR");
+    CHECK((talk({0x00, 0x05, 0x00}) & 1) == 0, "IR: FLASH ocupada no status");
+    talk({0x00, 0x06});
+    talk({0x00, 0x0A, 0x07, 0x65, 0x43, 'P', 'K'});
+    const bool cabe = c.save.size() > 0x76544;
+    CHECK(cabe && c.save[0x76543] == 'P' && c.save[0x76544] == 'K', "IR: escrita não chegou à FLASH (%02X %02X)",
+          cabe ? c.save[0x76543] : 0, cabe ? c.save[0x76544] : 0);
+    CHECK(talk({0x00, 0x03, 0x07, 0x65, 0x44, 0x00}) == 'K', "IR: leitura pela FLASH");
+    CHECK(talk({0x00, 0x9F, 0x00, 0x00, 0x00}) == 0x13, "IR: identificação da FLASH de 512 KB");
+    NDSCore outro(miniRom("INDT", LOOP, LOOP), nullptr);
+    CHECK(!outro.nds().cart.ir && outro.nds().cart.addrBytes == 0, "IR: cartucho comum tratado como IR");
+  }
+
+  // 3) Leitura de 16 bits do GXSTAT: a metade certa (0x602 = metade de cima). Antes voltavam os 32 bits, e a busca
+  //    de uma instrução Thumb nessa área passava do fim da tabela de instruções (o teste de robustez caía).
+  {
+    NDSCore core(miniRom("CSO3", LOOP, LOOP), nullptr);
+    NDS& s = core.nds();
+    const uint32_t lo = s.bus9.read16(0x04000600), hi = s.bus9.read16(0x04000602), w = s.bus9.read32(0x04000600);
+    CHECK(lo <= 0xFFFF && hi <= 0xFFFF && (lo | (hi << 16)) == w, "GXSTAT em 16 bits: %X %X (32 bits %08X)", lo, hi, w);
+    s.arm9.t = 1; s.arm9.nextPC = 0x04000600;
+    s.arm9.step();
+    CHECK(s.arm9.nextPC == 0x04000602, "Thumb na E/S: PC %08X", s.arm9.nextPC);
+  }
+
+  // 4) A IRQ da FIFO de geometria é por nível: limpar o IF com a condição valendo faz ela voltar na hora. Antes o
+  //    SDK limpava o pedido antigo antes de ligar a IRQ e esperava para sempre (HeartGold depois da abertura).
+  {
+    NDSCore core(miniRom("CSO4", LOOP, LOOP), nullptr);
+    NDS& s = core.nds();
+    s.bus9.write32(0x04000600, 1u << 30);  // IRQ com a FIFO abaixo da metade
+    CHECK(s.io9.ifr & (1u << 21), "FIFO de geometria: IRQ não pedida");
+    s.bus9.write32(0x04000214, 1u << 21);
+    CHECK(s.io9.ifr & (1u << 21), "FIFO de geometria: IRQ não voltou depois de limpar o IF");
+    s.bus9.write32(0x04000600, 0);
+    s.bus9.write32(0x04000214, 1u << 21);
+    CHECK(!(s.io9.ifr & (1u << 21)), "FIFO de geometria: IRQ continuou com a condição desligada");
+  }
+
+  // 5) Configurações do usuário no firmware: contador em 0x70 e CRC16 (início 0xFFFF) de 0x00..0x6F em 0x72, nas
+  //    duas cópias. Com o CRC em 0x70 o SDK descartava as duas e zerava a calibração do toque: o HeartGold via a
+  //    caneta, mas todo toque caía fora dos botões.
+  {
+    NDSCore core(miniRom("CSO5", LOOP, LOOP), nullptr);
+    const std::vector<uint8_t>& fw = core.nds().spi.firmware;
+    for (int copy = 0; copy < 2; copy++) {
+      const uint8_t* u = fw.data() + 0x3FE00 + copy * 0x100;
+      // o CRC16 da BIOS (o mesmo que o SDK confere e que o HeartGold aceitou)
+      const uint16_t crc = indigo::nds::crc16(0xFFFF, u, 0x70);
+      const uint16_t got = uint16_t(u[0x72] | (u[0x73] << 8)), count = uint16_t(u[0x70] | (u[0x71] << 8));
+      CHECK(got == crc, "firmware: CRC da cópia %d em 0x72 é %04X, esperado %04X", copy, got, crc);
+      CHECK(count == (copy == 0 ? 1 : 0), "firmware: contador da cópia %d em 0x70 é %u", copy, count);
+      CHECK(u[0x58] | u[0x59] | u[0x5E] | u[0x5F], "firmware: calibração do toque vazia na cópia %d", copy);
+    }
+  }
+
+  // 6) Relógio lido como o SDK lê: o bit com o SCK ainda baixo, antes da subida. Antes o bit só saía na subida e
+  //    o jogo recebia tudo deslocado de um bit (hora errada no HeartGold).
+  {
+    NDSCore core(miniRom("CSO6", LOOP, LOOP), nullptr);
+    Rtc& rtc = core.nds().rtc;
+    auto ler = [&](uint8_t cmd, int n, std::vector<uint8_t>& out) {
+      rtc.write(0x72); rtc.write(0x76);  // seleção
+      for (int b = 7; b >= 0; b--) { const int d = (cmd >> b) & 1; rtc.write(0x74 | d); rtc.write(0x76 | d); }
+      out.assign(n, 0);
+      for (int i = 0; i < n; i++)
+        for (int b = 0; b < 8; b++) {
+          rtc.write(0x64);                                   // SCK baixo, dado como entrada
+          out[i] = uint8_t(out[i] | ((rtc.read() & 1) << b));  // lê antes de subir
+          rtc.write(0x66);
+        }
+      rtc.write(0x62);
+    };
+    std::vector<uint8_t> d;
+    const std::time_t antes = std::time(nullptr);
+    ler(0x65, 7, d);
+    std::tm tmv{};
+#ifdef _WIN32
+    localtime_s(&tmv, &antes);
+#else
+    localtime_r(&antes, &tmv);
+#endif
+    auto bcd = [](int v) { return ((v / 10) << 4) | (v % 10); };
+    CHECK(d[0] == bcd(tmv.tm_year % 100) && d[1] == bcd(tmv.tm_mon + 1) && d[2] == bcd(tmv.tm_mday) && d[3] == tmv.tm_wday,
+          "relógio: data lida %02X-%02X-%02X dia %X, esperado %02X-%02X-%02X dia %X", d[0], d[1], d[2], d[3],
+          bcd(tmv.tm_year % 100), bcd(tmv.tm_mon + 1), bcd(tmv.tm_mday), tmv.tm_wday);
+    CHECK((d[4] & 0x3F) == bcd(tmv.tm_hour) && d[5] == bcd(tmv.tm_min), "relógio: hora lida %02X:%02X, esperado %02X:%02X",
+          d[4] & 0x3F, d[5], bcd(tmv.tm_hour), bcd(tmv.tm_min));
+  }
+}
+
 int main(int argc, char** argv) {
   const std::string dir = argc > 1 ? argv[1] : "/root/indigo-env/roms/nds";
+  testCasosJogos();
   testCpuRuler(dir);
   testCpu5(dir);
   testHomebrew(dir);

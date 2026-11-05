@@ -15,6 +15,7 @@
 //   A = gatilho A do joystick + barra de espaço    B = gatilho B do joystick + tecla M
 //   START = barra de espaço    SELECT = F5    X = Enter (RETURN)    Y = Esc
 //   L = F1 (pausa na maioria dos jogos Konami)    R = F2
+// Jogador 2 (setKeys2): só o joystick da porta 2 (direcional, A e B).
 #pragma once
 #include <cstdint>
 #include <memory>
@@ -50,6 +51,7 @@ public:
   void reset();
   void runFrame();
   void setKeys(uint32_t mask);
+  void setKeys2(uint32_t mask) { keys2 = mask; }
   std::vector<uint8_t> saveState();
   void loadState(const std::vector<uint8_t>& s);
 
@@ -75,7 +77,7 @@ private:
   uint8_t matrix[11] = {};
   uint8_t rtcReg[4][13] = {};
   int rtcAddr = 0, rtcMode = 0;
-  uint32_t keys = 0;
+  uint32_t keys = 0, keys2 = 0;
   int64_t cycles = 0, audioCycle = 0;
   int lineCycle = 0, over = 0;
 };
@@ -91,6 +93,8 @@ public:
   void runFrame() override { m_->runFrame(); }
   void reset() override { m_->reset(); }
   void setKeys(uint32_t mask) override { m_->setKeys(mask); }
+  void setKeys2(uint32_t mask) override { m_->setKeys2(mask); }
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return m_->vdp.fb; }
   int width() const override { return m_->vdp.outW; }
   int height() const override { return m_->vdp.outH; }

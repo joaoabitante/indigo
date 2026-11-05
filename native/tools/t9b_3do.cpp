@@ -876,6 +876,13 @@ static void testClio() {
     CHECK(s.madam.m32(0x3000) == 0x12345678 && s.mem[0x3004] == 0x81 && s.mem[0x3005] == 0x20 && s.mem[0x3006] == 0xFF &&
           s.madam.m32(0x3008) == 0xFFFFFFFF, "controle pelo PBUS: %02X %02X", s.mem[0x3004], s.mem[0x3005]);
     CHECK((s.clioRead(0x0060) & 1) && !(s.read32(0x03300008) & 0x8000), "fim do DMA do controle (palavra 1, bit 0) e MCTL limpo");
+    // dois jogadores: o controle 2 vem logo depois do 1 na corrente
+    w32(s, 0x03300570, 0x3000); w32(s, 0x03300574, 8); w32(s, 0x03300578, 0x3100);
+    s.setPad2(0x8000 | 0x1000 | 0x0004);  // baixo e L
+    w32(s, 0x03300008, 0x8000);
+    s.tickHardware(10);
+    CHECK(s.mem[0x3004] == 0x81 && s.mem[0x3005] == 0x20 && s.mem[0x3006] == 0x90 && s.mem[0x3007] == 0x04 &&
+          s.madam.m32(0x3008) == 0xFFFFFFFF, "2 jogadores: controle 2 depois do 1 no PBUS: %02X %02X", s.mem[0x3006], s.mem[0x3007]);
   }
   // XBUS: só o CD (0) e o 0x8F respondem; troca de disco na partida (DIPIR)
   {

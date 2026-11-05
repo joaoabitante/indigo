@@ -49,6 +49,8 @@ public:
   void runFrame() override { m_->runFrame(); }
   void reset() override { m_->reset(false); }
   void setKeys(uint32_t mask) override { m_->setKeys(mask); }
+  void setKeys2(uint32_t mask) override { m_->setKeys(mask, 1); }
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return m_->ppu.fb; }
   int width() const override { return 256; }
   int height() const override { return 240; }

@@ -606,7 +606,7 @@ void N64::joybus(int ch, uint8_t* tx, int txn, uint8_t* rx, int rxn, uint8_t& rx
     if (!padOn[ch]) { semResposta(); return; }
     switch (cmd) {
       case 0x00: case 0xFF:
-        if (rxn >= 3) { rx[0] = 0x05; rx[1] = 0x00; rx[2] = 0x01; }
+        if (rxn >= 3) { rx[0] = 0x05; rx[1] = 0x00; rx[2] = ch == 0 ? 0x01 : 0x02; }  // Controller Pak só no 1
         break;
       case 0x01:
         if (rxn >= 4) {
@@ -865,7 +865,7 @@ N64Core::N64Core(const std::vector<uint8_t>& rom, const std::string& nome, const
   if (save && !save->empty()) importSave(*save);
 }
 
-void N64Core::setKeys(uint32_t k) {
+void N64Core::keys(uint32_t k, int n) {
   uint16_t p = 0;
   if (k & KEY_A) p |= P_A;
   if (k & KEY_B) p |= P_B;
@@ -885,15 +885,15 @@ void N64Core::setKeys(uint32_t k) {
   if (k & (KEY_KP0 << 1)) p |= P_DD;
   if (k & (KEY_KP0 << 9)) p |= P_DR;
   if (k & (KEY_KP0 << 3)) p |= P_DL;
-  m_->pad[0] = p;
+  m_->pad[n] = p;
   // direcional = analógico no máximo (±80, como um controle de verdade)
   int x = 0, y = 0;
   if (k & KEY_LEFT) x -= 80;
   if (k & KEY_RIGHT) x += 80;
   if (k & KEY_UP) y += 80;
   if (k & KEY_DOWN) y -= 80;
-  m_->stickX[0] = int8_t(x);
-  m_->stickY[0] = int8_t(y);
+  m_->stickX[n] = int8_t(x);
+  m_->stickY[n] = int8_t(y);
 }
 
 std::vector<uint8_t> N64Core::exportSave() {

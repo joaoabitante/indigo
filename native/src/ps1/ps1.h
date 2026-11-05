@@ -44,6 +44,8 @@ public:
   void runFrame() override;
   void reset() override;
   void setKeys(uint32_t mask) override;
+  void setKeys2(uint32_t mask) override;  // controle digital na porta 2
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override;
   int width() const override;
   int height() const override;

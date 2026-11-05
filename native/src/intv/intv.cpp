@@ -762,8 +762,9 @@ int IntvCore::keypadFromKeys(uint32_t k) {
 
 void IntvCore::applyKeys() {
   const uint8_t p = padBits(keys_, keypad_ >= 0 ? keypad_ : keypadFromKeys(keys_));
-  m_->padL = swap_ ? 0 : p;
-  m_->padR = swap_ ? p : 0;
+  const uint8_t p2 = padBits(keys2_, keypadFromKeys(keys2_));
+  m_->padL = swap_ ? p2 : p;
+  m_->padR = swap_ ? p : p2;
 }
 
 void IntvCore::runFrame() {

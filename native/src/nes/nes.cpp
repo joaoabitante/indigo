@@ -36,7 +36,7 @@ void NES::reset(bool power) {
   cpu.reset();
 }
 
-void NES::setKeys(uint32_t m) {
+void NES::setKeys(uint32_t m, int player) {
   // A, B, Select, Start, Cima, Baixo, Esquerda, Direita
   uint8_t b = 0;
   if (m & KEY_A) b |= 0x01;
@@ -50,7 +50,7 @@ void NES::setKeys(uint32_t m) {
   // cima+baixo ou esquerda+direita juntos travam alguns jogos (o controle de verdade não deixa)
   if ((b & 0x30) == 0x30) b &= ~0x30;
   if ((b & 0xC0) == 0xC0) b &= ~0xC0;
-  pad[0] = b;
+  pad[player & 1] = b;
 }
 
 void NES::runFrame() {

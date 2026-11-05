@@ -116,8 +116,21 @@ void A7800::setKeys(uint32_t m) {
   prevKeys = m;
 }
 
+void A7800::setKeys2(uint32_t m) {
+  if (cart.saveKey) return;  // a porta 2 é do SaveKey
+  uint8_t j = 0x0F;
+  if (m & KEY_RIGHT) j &= ~0x08;
+  if (m & KEY_LEFT) j &= ~0x04;
+  if (m & KEY_DOWN) j &= ~0x02;
+  if (m & KEY_UP) j &= ~0x01;
+  if ((j & 0x0C) == 0) j |= 0x0C;
+  if ((j & 0x03) == 0) j |= 0x03;
+  joy2 = j;
+  buttons2 = static_cast<uint8_t>(((m & KEY_A) ? 1 : 0) | ((m & KEY_B) ? 2 : 0));
+}
+
 uint8_t A7800::swcha() const {
-  const uint8_t pins = static_cast<uint8_t>((joy & 0xF0) | 0x0F);
+  const uint8_t pins = static_cast<uint8_t>((joy & 0xF0) | (joy2 & 0x0F));
   uint8_t v = static_cast<uint8_t>((pins & ~ddra) | (ora & ddra));
   if (cart.saveKey && !saveKeySda()) v &= ~0x04;  // a EEPROM puxa a linha SDA para baixo
   return v;
@@ -128,7 +141,10 @@ uint8_t A7800::tiaRead(int r) const {
     case 0x8: return (buttons & 2) ? 0x80 : 0;  // INPT0: botão direito (nível alto = apertado)
     case 0x9: return (buttons & 1) ? 0x80 : 0;  // INPT1: botão esquerdo
     case 0xC: return (oneButton && buttons) ? 0 : 0x80;  // INPT4: botão do modo de um botão (nível baixo)
-    case 0xD: return 0x80;
+    // jogador 2: INPT2/INPT3 e INPT5; o modo de dois botões vem do pino 6 da porta 2 (SWCHB bit 4) em saída baixa
+    case 0xA: return (buttons2 & 2) ? 0x80 : 0;
+    case 0xB: return (buttons2 & 1) ? 0x80 : 0;
+    case 0xD: return ((!(ddrb & 0x10) || (orb & 0x10)) && buttons2) ? 0 : 0x80;
     default: return 0;
   }
 }

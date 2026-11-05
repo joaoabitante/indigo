@@ -34,6 +34,7 @@ public:
   void loadRom(const std::vector<uint8_t>& data);
   void reset();
   void setKeys(int mask);
+  void setKeys2(int mask) { if (!gg) keys2 = mask; }  // controle 2 (o Game Gear não tem)
   void runFrame();
 
   bool hasSave() const { return cartRamUsed; }
@@ -62,7 +63,7 @@ private:
   int64_t cycles = 0;
   int over = 0, cpuCyclesInLine = 0;
   bool pausePrev = false;
-  int keys = 0;
+  int keys = 0, keys2 = 0;
 };
 
 class SMSCore : public Core {
@@ -75,6 +76,8 @@ public:
   void runFrame() override { m_->runFrame(); }
   void reset() override { m_->reset(); }
   void setKeys(uint32_t mask) override { m_->setKeys(static_cast<int>(mask)); }
+  void setKeys2(uint32_t mask) override { m_->setKeys2(static_cast<int>(mask)); }
+  int players() const override { return m_->gg ? 1 : 2; }
   const uint32_t* framebuffer() const override { return m_->vdp.fb; }
   int width() const override { return m_->vdp.w; }
   int height() const override { return m_->vdp.h; }

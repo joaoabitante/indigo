@@ -2,6 +2,7 @@
 //  1. CPU 68000 contra os SingleStepTests (680x0/68000/v1): registradores, SR, PC, fila de pré-busca, memória
 //     e o número total de ciclos de cada instrução (inclusive exceções de erro de endereço).
 //  2. (mais abaixo) ROMs de teste e comparação de quadros com o Genesis Plus GX.
+//  3. Dois jogadores: o controle 2 chega à porta 2.
 // Uso: indigo-t7_md pasta [cpu [arquivo]]
 #include <algorithm>
 #include <chrono>
@@ -383,6 +384,24 @@ uint64_t fnv(const void* p, size_t n, uint64_t h = 1469598103934665603ull) {
   return h;
 }
 
+// dois jogadores: o controle 2 (6 botões com setKeys2) chega à porta 2 sem mexer na 1
+void player2Tests() {
+  indigo::md::MDCore c(makeRom(0x10000, {0x60FE}), nullptr);
+  auto& m = c.md();
+  check(c.players() == 2, "2 jogadores: players() == 2");
+  c.setKeys(indigo::KEY_LEFT);
+  m.write8(0xA1000B, 0x40);  // TH da porta 2 como saída
+  m.write8(0xA10005, 0x40);
+  check((m.read8(0xA10005) & 0x7F) == 0x7F, "2 jogadores: sem setKeys2 o controle 2 fica solto");
+  c.setKeys2(indigo::KEY_UP | indigo::KEY_A | indigo::KEY_X);
+  check((m.read8(0xA10005) & 0x7F) == 0x6E, "2 jogadores: porta 2 com cima e B do controle 2");
+  check((m.read8(0xA10003) & 0x7F) == 0x7B, "2 jogadores: porta 1 só com o controle 1");
+  for (int k = 0; k < 5; k++) m.write8(0xA10005, (k & 1) ? 0x40 : 0x00);
+  check((m.read8(0xA10005) & 0x7F) == 0x30, "2 jogadores: controle 2 se identifica como de 6 botões");
+  m.write8(0xA10005, 0x40);
+  check((m.read8(0xA10005) & 0x7F) == 0x6D, "2 jogadores: botão Y do controle 2 (6 botões)");
+}
+
 void cartTests() {
   {  // SRAM do cabeçalho em 0x200001
     auto rom = makeRom(0x10000, {0x13FC, 0x005A, 0x0020, 0x0001, 0x13FC, 0x00A5, 0x0020, 0x0003, 0x1039, 0x0020, 0x0001,
@@ -558,7 +577,7 @@ int main(int argc, char** argv) {
     return 0;
   }
   if (part.empty() || part == "cpu") cpuTests(dir, argc > 3 ? argv[3] : "");
-  if (part.empty() || part == "cart") cartTests();
+  if (part.empty() || part == "cart") { cartTests(); player2Tests(); }
   if (part.empty() || part == "estado") stateTests(dir);
   if (part.empty() || part == "som") audioTests(dir);
   if (part.empty() || part == "ref") refTests(dir, argc > 3 ? argv[3] : "", argc > 4 ? argv[4] : "");

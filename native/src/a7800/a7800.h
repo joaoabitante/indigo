@@ -17,7 +17,8 @@
 //
 // Teclas: direcional = joystick ProLine; A = botão esquerdo (o principal, INPT1); B = botão direito (INPT0);
 // START = Reset do console; SELECT = Select; X = Pause; L e R trocam a posição das chaves de dificuldade
-// esquerda e direita (cada toque alterna entre B e A; começam em B).
+// esquerda e direita (cada toque alterna entre B e A; começam em B). setKeys2: joystick da porta 2 (direcional,
+// A e B), menos nos cartuchos com SaveKey, que ocupa a porta 2.
 #pragma once
 #include <cstdint>
 #include <memory>
@@ -104,6 +105,7 @@ public:
   void reset(bool power);
   void runFrame();
   void setKeys(uint32_t mask);
+  void setKeys2(uint32_t mask);
   void setSampleRate(int rate);
   size_t audioAvailable() const { return (wpos + kBuf - rpos) % kBuf; }
   void pullAudio(float* l, float* r, size_t n);
@@ -186,6 +188,8 @@ private:
   // controles
   uint8_t joy = 0xFF;     // SWCHA (direções do jogador 1 em 7–4; 1 = solto)
   uint8_t buttons = 0;    // bit 0 = botão esquerdo, bit 1 = direito
+  uint8_t joy2 = 0x0F;    // direções do jogador 2 (bits 3–0 do SWCHA; 1 = solto)
+  uint8_t buttons2 = 0;   // botões do jogador 2, como buttons
   uint8_t sw = 0;         // bit 0 reset, 1 select, 3 pause (1 = apertado)
   uint8_t diff = 0;       // bit 0 = dificuldade esquerda em A, bit 1 = direita em A
   uint32_t prevKeys = 0;
@@ -222,6 +226,8 @@ public:
   void runFrame() override { m_->runFrame(); }
   void reset() override { m_->reset(false); }
   void setKeys(uint32_t mask) override { m_->setKeys(mask); }
+  void setKeys2(uint32_t mask) override { m_->setKeys2(mask); }
+  int players() const override { return m_->cart.saveKey ? 1 : 2; }
   const uint32_t* framebuffer() const override { return m_->fb.data(); }
   int width() const override { return 320; }
   int height() const override { return m_->outHeight; }

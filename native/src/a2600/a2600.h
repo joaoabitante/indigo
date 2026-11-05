@@ -241,6 +241,7 @@ public:
   void powerOn();
   void runFrame();
   void setKeys(uint32_t mask);
+  void setKeys2(uint32_t mask);  // joystick da porta 2 (só direções e botão)
   uint8_t read(uint16_t a) override;
   void write(uint16_t a, uint8_t v) override;
   uint8_t peek(uint16_t a);  // sem efeito colateral (testes)
@@ -260,7 +261,7 @@ private:
   uint16_t divider_ = 1024, sub_ = 0;
   bool wrapped_ = false, edgePositive_ = false;
   // controles
-  uint8_t joy_ = 0xFF;       // SWCHA (jogador 1 nos 4 bits altos, 1 = solto)
+  uint8_t joy_ = 0xFF;       // SWCHA (jogador 1 nos 4 bits altos, jogador 2 nos baixos; 1 = solto)
   uint8_t switches_ = 0x3F;  // SWCHB: reset, select, cor, dificuldades
   uint32_t prevKeys_ = 0;
 };
@@ -275,6 +276,8 @@ public:
   void runFrame() override;
   void reset() override;
   void setKeys(uint32_t mask) override { m_->setKeys(mask); }
+  void setKeys2(uint32_t mask) override { m_->setKeys2(mask); }
+  int players() const override { return 2; }
   const uint32_t* framebuffer() const override { return fb_.data(); }
   int width() const override { return 320; }
   int height() const override { return m_->tia.frameHeight; }
