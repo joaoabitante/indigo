@@ -11,6 +11,15 @@ struct Versão {
 };
 
 inline constexpr Versão VERSOES[] = {
+    {"2.8", "09/11/2026",
+     {"Saturn: com a BIOS do seu",
+      "console, os discos dão a partida",
+      "Nintendo 64: jogos feitos com o",
+      "libdragon novo saem da tela preta",
+      "NES: mapeador 28 (Action 53)",
+      "ColecoVision e Atari 2600 com .rom",
+      "Correções no save state do",
+      "Nintendo 64 e do Vectrex", nullptr}},
     {"2.7", "05/11/2026",
      {"Modo de 2 jogadores: o 2º",
       "controle é o jogador 2 (menu",

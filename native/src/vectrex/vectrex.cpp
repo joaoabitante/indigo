@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "vectrex.h"
 
 #include <cmath>
@@ -407,8 +408,10 @@ void VectrexCore::tick() {
   } else if (!(pins & 0x80)) {  // RAMP ativo: os integradores andam
     dx = dac_ - ref_;
     dy = ySH_ - ref_;
-    bx_ += dx;
-    by_ += dy;
+    // os integradores saturam (como no console, que tem limite de tensão): o mesmo limite que o carregar do
+    // estado impõe, senão um estado salvo com o feixe muito longe não voltaria igual
+    bx_ = std::clamp(bx_ + dx, -(1 << 24), 1 << 24);
+    by_ = std::clamp(by_ + dy, -(1 << 24), 1 << 24);
   }
   const bool vis = via_.cb2High() && zSH_ > 0 && !zero;
   if (vis) {
@@ -416,7 +419,7 @@ void VectrexCore::tick() {
       flushSegment();
       segOn_ = true; segX_ = px; segY_ = py; segDX_ = dx; segDY_ = dy; segZ_ = zSH_; segCycles_ = 0;
     }
-    segCycles_++;
+    if (segCycles_ < (1 << 24)) segCycles_++;
   } else if (segOn_) {
     flushSegment();
   }

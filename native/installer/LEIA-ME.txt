@@ -16,6 +16,17 @@ Licença
 - O Índigo é software livre (GNU GPL versão 3). Ele não traz jogos nem BIOS: use cópias dos seus.
   Créditos de terceiros: veja TERCEIROS.md no código-fonte (github.com/joaoabitante, em breve público).
 
+Novo na 2.8
+- Saturn: com a BIOS do seu console, a BIOS agora dá a partida nos discos (antes ficava no tocador de CD).
+- Nintendo 64: os jogos feitos com a versão nova do libdragon (o kit livre de jogos caseiros) saíam com a tela
+  preta; agora rodam.
+- NES: cartuchos com o mapeador 28 (Action 53, comum em coletâneas de jogos caseiros).
+- ColecoVision abre jogos .rom; Atari 2600 abre .rom pequenos.
+- Save state: no Nintendo 64, o estado carregado agora volta igual ao salvo (o som e o ruído da imagem
+  ficavam diferentes); no Vectrex, um caso raro em que o estado não voltava igual.
+- Por dentro: um teste em massa com mais de 200 jogos caseiros e ROMs de teste de licença livre roda a cada
+  mudança, e achou esses problemas.
+
 Novo na 2.7
 - Modo de 2 jogadores: o 2º controle ligado comanda o jogador 2 (controles Bluetooth também). No menu Controles dá
   para escolher "Jogador 2: o 2º controle", "o teclado" ou "desligado". Se um controle cair e voltar, ele continua

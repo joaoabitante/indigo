@@ -61,8 +61,10 @@ bool endsWith(const std::string& s, const char* suf) {
 bool isA2600Rom(const std::vector<uint8_t>& rom, const std::string& nome) {
   if (rom.empty() || rom.size() > 512 * 1024) return false;
   if (endsWith(nome, ".a26")) return true;
-  if (!endsWith(nome, ".bin")) return false;
-  // .bin: último recurso. Tamanho de cartucho comum e vetor de reset dentro do cartucho (A12 = 1)
+  if (!endsWith(nome, ".bin") && !endsWith(nome, ".rom")) return false;
+  // .rom só até 4 KB (os cartuchos maiores de .rom costumam ser de 5200 ou de outros consoles)
+  if (endsWith(nome, ".rom") && rom.size() > 4096) return false;
+  // .bin e .rom (os outros consoles de .rom, como MSX e Intellivision, são reconhecidos antes): último recurso. Tamanho de cartucho comum e vetor de reset dentro do cartucho (A12 = 1)
   const size_t s = rom.size();
   const bool sizeOk = s <= 4096 || s == 8192 || (s >= 10240 && s <= 10496) || s == 12288 || s == 16384 ||
                       s == 32768 || s == 65536;

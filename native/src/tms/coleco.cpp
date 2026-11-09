@@ -16,8 +16,11 @@ bool endsWith(const std::string& s, const char* suf) {
 }  // namespace
 
 bool isColecoRom(const std::vector<uint8_t>& rom, const std::string& n) {
-  (void)rom;
-  return endsWith(n, ".col") || endsWith(n, ".cv");
+  if (endsWith(n, ".col") || endsWith(n, ".cv")) return true;
+  // .rom com o cabeçalho de cartucho do ColecoVision (AA 55 mostra a tela do título, 55 AA pula): muitos jogos
+  // caseiros saem assim. O MSX usa "AB" no início, então não confunde.
+  return endsWith(n, ".rom") && rom.size() >= 0x2000 && rom.size() <= MAX_ROM &&
+         ((rom[0] == 0xAA && rom[1] == 0x55) || (rom[0] == 0x55 && rom[1] == 0xAA));
 }
 
 Coleco::Coleco(const std::vector<uint8_t>& b, const std::vector<uint8_t>& data)

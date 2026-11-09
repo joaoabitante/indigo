@@ -90,6 +90,7 @@ public:
   std::string title, gameId;
   uint8_t cicSeed = 0x3F;
   int cic = 6102;
+  bool libdragonIpl3_ = false;  // o cartucho traz o IPL3 aberto do libdragon (roda da DMEM)
 
   // registros
   uint32_t sp[8] = {};    // MEM_ADDR, DRAM_ADDR, RD_LEN, WR_LEN, STATUS, DMA_FULL, DMA_BUSY, SEMAPHORE

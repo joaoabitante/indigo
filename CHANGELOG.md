@@ -2,6 +2,16 @@
 
 Gerado de `web/changelog.js` (o mesmo texto aparece no cartão “Registro” da página).
 
+## 09/11/2026 · App 2.8: Saturn com a BIOS do console, Nintendo 64 com libdragon novo
+
+- Saturn: com a BIOS do seu console, a BIOS agora dá a partida nos discos (antes ficava no tocador de CD).
+- Nintendo 64: os jogos feitos com a versão nova do libdragon (o kit livre de jogos caseiros) saíam com a tela preta; agora rodam.
+- NES: cartuchos com o mapeador 28 (Action 53). ColecoVision abre jogos .rom; Atari 2600 abre .rom pequenos.
+- Save state mais confiável no Nintendo 64 e no Vectrex: o estado carregado volta igual ao salvo.
+- Por dentro: um teste em massa com mais de 200 jogos caseiros e ROMs de teste de licença livre, baixados na hora, roda a cada mudança. Foi ele que achou esses problemas.
+
+**Testes:** Teste em massa com 0 falhas; revalidação de 1047 comparações iguais e robustez com 0 problemas.
+
 ## 05/11/2026 · App 2.7: 2 jogadores, Dreamcast e Pokémon no DS
 
 - Modo de 2 jogadores: o 2º controle ligado comanda o jogador 2, inclusive controles Bluetooth. No menu Controles dá para escolher o 2º controle, o teclado ou desligar. Se um controle cair e voltar, ele continua no mesmo jogador.

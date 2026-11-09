@@ -2,6 +2,18 @@
 // A entrada mais nova fica em cima.
 export const CHANGELOG = [
   {
+    date: '2026-11-09',
+    title: 'App 2.8: Saturn com a BIOS do console, Nintendo 64 com libdragon novo',
+    items: [
+      'Saturn: com a BIOS do seu console, a BIOS agora dá a partida nos discos (antes ficava no tocador de CD).',
+      'Nintendo 64: os jogos feitos com a versão nova do libdragon (o kit livre de jogos caseiros) saíam com a tela preta; agora rodam.',
+      'NES: cartuchos com o mapeador 28 (Action 53). ColecoVision abre jogos .rom; Atari 2600 abre .rom pequenos.',
+      'Save state mais confiável no Nintendo 64 e no Vectrex: o estado carregado volta igual ao salvo.',
+      'Por dentro: um teste em massa com mais de 200 jogos caseiros e ROMs de teste de licença livre, baixados na hora, roda a cada mudança. Foi ele que achou esses problemas.',
+    ],
+    tests: 'Teste em massa com 0 falhas; revalidação de 1047 comparações iguais e robustez com 0 problemas.',
+  },
+  {
     date: '2026-11-05',
     title: 'App 2.7: 2 jogadores, Dreamcast e Pokémon no DS',
     items: [

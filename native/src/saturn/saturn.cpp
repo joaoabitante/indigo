@@ -151,6 +151,12 @@ uint32_t System::busRead(uint32_t a, int size) {
       return size == 2 ? v : (a & 1) ? (v & 0xFF) : (v >> 8);
     }
     if (o >= 0x90000) {
+      // registro 0x00 (0x25890000) é a porta de dados de 16 bits, a que a BIOS usa (o TOC, os setores)
+      if ((o & 0x3C) == 0) {
+        if (size == 4) return cd.readData32();
+        const uint16_t v = cd.readData();
+        return size == 2 ? v : (a & 1) ? (v & 0xFF) : (v >> 8);
+      }
       if (size == 4) return uint32_t(cd.read(o & 0x3C)) << 16 | cd.read(o & 0x3C);
       const uint16_t v = cd.read(o & 0x3C);
       return size == 2 ? v : (a & 1) ? (v & 0xFF) : (v >> 8);
@@ -227,6 +233,11 @@ void System::busWrite(uint32_t a, int size, uint32_t v) {
       return;
     }
     if (o >= 0x90000) {
+      if ((o & 0x3C) == 0) {  // porta de dados também aqui
+        if (size == 4) { cd.writeData(uint16_t(v >> 16)); cd.writeData(uint16_t(v)); return; }
+        cd.writeData(uint16_t(size == 1 ? (v & 0xFF) * 0x101 : v));
+        return;
+      }
       if (size == 4) { cd.write(o & 0x3C, uint16_t(v)); return; }
       cd.write(o & 0x3C, uint16_t(size == 1 ? (v & 0xFF) * 0x101 : v));
     }

@@ -1,3 +1,4 @@
+import { CHANGELOG } from '../web/changelog.js';
 // Página inicial do Índigo (landing): tudo o que fica em volta do emulador do navegador.
 // tools/build.js monta a página juntando estes blocos com web/template.html (o emulador) e web/landing.css.
 // Só nomes dos consoles em texto: nada de logotipos ou arte das marcas. Ícones e ilustrações são originais.
@@ -392,6 +393,10 @@ export function landingTop({ app, zip, apk, tgz }) {
 
 // área de downloads (mantém os passos de instalação de cada sistema)
 export function downloadsSection({ app, zip, apk, tgz }) {
+  // "Novo na X": os itens da versão atual no registro (web/changelog.js, o mesmo do CHANGELOG.md) e as 2 anteriores
+  const appVer = app.version.replace(/\.0$/, '');
+  const appLog = CHANGELOG.filter((e) => /^App \d/.test(e.title));
+  while (appLog.length && !appLog[0].title.startsWith(`App ${appVer}:`)) appLog.shift();
   return `<section class="get" id="baixar" aria-labelledby="getTitle">
  <div class="l-wrap">
   <div class="get-head">
@@ -453,8 +458,9 @@ export function downloadsSection({ app, zip, apk, tgz }) {
   <p class="get-ios" hidden>No iPhone e no iPad, o Índigo funciona aqui mesmo no navegador: <a href="#jogar">jogar agora</a>.</p>
   <div class="get-foot">
     <div class="get-news">
-      <h3>Novo na ${esc(app.version.replace(/\.0$/, ''))}</h3>
-      <ul>${app.news.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
+      <h3>Novo na ${esc(appVer)}</h3>
+      <ul>${(appLog[0] ? appLog[0].items : app.news.slice(0, 1)).map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
+      ${appLog.length > 1 ? `<p class="get-news-old">Antes: ${appLog.slice(1, 3).map((e) => esc(e.title.replace(/^App /, ''))).join(' · ')} · <a href="https://github.com/joaoabitante/indigo/blob/main/CHANGELOG.md" rel="noopener">todas as versões</a></p>` : ''}
     </div>
     <div class="get-other">
       <h3>Mac, iPhone ou Xbox?</h3>

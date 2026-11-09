@@ -102,6 +102,10 @@ N64::N64(const std::vector<uint8_t>& z64) : cpu(*this), rsp(*this), rdp(*this) {
     case 0xACC8580A: cic = 6106; cicSeed = 0x85; break;
     default: cic = 6102; cicSeed = 0x3F; break;
   }
+  {
+    static const char kLib[] = "Libdragon IPL3";
+    libdragonIpl3_ = std::search(z64.begin() + 0x40, z64.begin() + 0x1000, kLib, kLib + sizeof kLib - 1) != z64.begin() + 0x1000;
+  }
   detectSave();
   eeprom.assign(saveType == SaveType::Eeprom16k ? 2048 : 512, 0xFF);
   sram.assign(saveType == SaveType::Sram96k ? 98304 : 32768, 0xFF);
@@ -171,7 +175,8 @@ void N64::hleBoot() {
   if (cic == 6106) entry -= 0x200000;
   const uint32_t dest = entry & 0x1FFFFFFF;
   const uint32_t n = std::min<uint32_t>(0x100000, romSize > 0x1000 ? romSize - 0x1000 : 0);
-  if (dest < RDRAM_SIZE) std::memcpy(&rdram[dest & ~3u], &rom[0x1000], std::min<uint32_t>(n, RDRAM_SIZE - (dest & ~3u)));
+  // (o IPL3 do libdragon carrega o programa sozinho, e conta com a memória limpa: não copia nada)
+  if (dest < RDRAM_SIZE && !libdragonIpl3_) std::memcpy(&rdram[dest & ~3u], &rom[0x1000], std::min<uint32_t>(n, RDRAM_SIZE - (dest & ~3u)));
   // variáveis que o IPL3 deixa para o sistema (osTvType, osRomType, osRomBase, osResetType, osVersion, osMemSize)
   auto w32 = [&](uint32_t a, uint32_t v) { std::memcpy(&rdram[a], &v, 4); };
   w32(0x300, pal ? 0 : 1);
@@ -197,6 +202,13 @@ void N64::hleBoot() {
   ri[0] = 0x0E; ri[1] = 0x40; ri[3] = 0x14; ri[4] = 0x63634;
   miMode = 0x80;
   vi[6] = pal ? 625 : 525;
+  // IPL3 do libdragon (código aberto): ele não copia 1 MB a partir de 0x1000 como o da Nintendo, carrega o
+  // programa (ELF) por conta própria. Então roda o IPL3 do próprio cartucho, da DMEM, como no console.
+  if (libdragonIpl3_) {
+    cpu.gpr[31] = 0;
+    cpu.jump(0xFFFFFFFFA4000040ull);
+    return;
+  }
   cpu.jump(uint64_t(int64_t(int32_t(entry))));
 }
 
@@ -811,6 +823,14 @@ void N64::sync(StateIO& io) {
   io.sync(flashMode_); io.sync(flashOffset_); io.sync(flashEraseOffset_); io.sync(flashStatus_);
   io.raw(flashPage_, sizeof flashPage_);
   io.sync(frames);
+  // acrescentados na 2.8, no fim (os estados antigos, sem eles, continuam abrindo): ruído do dither do RDP e a
+  // fração do relógio do som, que decide quando o AI consome o buffer (e quando vem a interrupção dele)
+  if (!io.reading() || !io.atEnd()) {
+    rdp.syncNoise(io);
+    io.sync(outFrac_);
+  } else {
+    outFrac_ = 0;
+  }
   if (io.reading()) {
     clampTo(line_, 0, 400); field_ &= 1;
     piDoneAt_ = pd < 0 ? 0 : cpu.cycles + std::clamp<int64_t>(pd, 1, 1 << 26);
@@ -827,7 +847,7 @@ void N64::sync(StateIO& io) {
     // RSP: relógio perto do da CPU
     const int64_t alvo = cpu.cycles;
     if (rsp.cycles > alvo + 100000 || rsp.cycles < alvo - 100000) rsp.cycles = alvo;
-    outFrac_ = 0;
+    clampTo(outFrac_, int64_t(0), int64_t(CPU_CLOCK) - 1);
     cpu.setIp(2, (miIntr & miMask) != 0);
   }
 }

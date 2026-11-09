@@ -1,7 +1,7 @@
 // Cabeçalho iNES / NES 2.0 e os mapeadores mais comuns: 0 NROM, 1 MMC1 (SxROM, inclusive SUROM 512 KB),
 // 2 UxROM, 3 CNROM, 4 MMC3 (TxROM, IRQ por linha pelo A12), 7 AxROM, 9 MMC2 (Punch-Out!!), 11 Color Dreams,
 // 66 GxROM, 71 Camerica, 10 MMC4, 34 BNROM/NINA-001, 79 NINA-03/06, 140 Jaleco, 206 Namco 108,
-// 21/22/23/25 Konami VRC2/VRC4. Os chips com som ou vídeo próprios ficam em mappers_ext.cpp.
+// 21/22/23/25 Konami VRC2/VRC4, 28 Action 53. Os chips com som ou vídeo próprios ficam em mappers_ext.cpp.
 #include <algorithm>
 
 #include "nes.h"
@@ -463,6 +463,47 @@ private:
   int prescaler_ = 341;
 };
 
+// ---------------------------------------------------------------- 28 Action 53 (multicart de homebrew)
+// $5000-$5FFF escolhe o registrador (bits 7 e 0): $00 CHR, $01 banco interno, $80 modo, $81 banco externo; a gravação
+// em $8000-$FFFF vai para o escolhido. Modo: bits 0-1 espelhamento (0/1 uma tela, 2 vertical, 3 horizontal),
+// bits 2-3 PRG (0x 32 KB, 10 $8000 fixo, 11 $C000 fixo), bits 4-5 tamanho do jogo (32/64/128/256 KB). Os bits
+// do banco que passam do tamanho do jogo vêm do banco externo. CHR em RAM de 32 KB (4 bancos de 8 KB).
+class Action53 : public Mapper {
+public:
+  explicit Action53(Cart& c) : Mapper(c) {
+    if (cart.chrRam && cart.chr.size() < 0x8000) cart.chr.assign(0x8000, 0);
+  }
+  void reset() override { sel_ = 0; chr_ = 0; inner_ = 0; mode_ = 0; outer_ = 0xFF; update(); }
+  void update() override {
+    const int mask = (2 << ((mode_ >> 4) & 3)) - 1;  // em bancos de 16 KB
+    for (int a14 = 0; a14 < 2; a14++) {
+      int in;
+      if (!(mode_ & 8)) in = (inner_ << 1) | a14;                       // 32 KB
+      else if ((mode_ & 4) ? a14 == 1 : a14 == 0) in = (outer_ << 1) | a14;  // metade fixa
+      else in = inner_;
+      prg16(a14, ((outer_ << 1) & ~mask) | (in & mask));
+    }
+    chr8(chr_ & 3);
+    static const int M[4] = {SINGLE0, SINGLE1, VERTICAL, HORIZONTAL};
+    mirror(M[mode_ & 3]);
+  }
+  void writeReg(uint16_t a, uint8_t v) override {
+    if (a >= 0x5000 && a < 0x6000) { sel_ = v & 0x81; return; }
+    if (a < 0x8000) return;
+    switch (sel_) {
+      case 0x00: chr_ = v; if (!(mode_ & 2)) mode_ = uint8_t((mode_ & ~1) | ((v >> 4) & 1)); break;
+      case 0x01: inner_ = v & 15; if (!(mode_ & 2)) mode_ = uint8_t((mode_ & ~1) | ((v >> 4) & 1)); break;
+      case 0x80: mode_ = v & 0x3F; break;
+      default: outer_ = v; break;
+    }
+    update();
+  }
+  void syncRegs(StateIO& io) override { io.sync(sel_); io.sync(chr_); io.sync(inner_); io.sync(mode_); io.sync(outer_); }
+
+private:
+  uint8_t sel_ = 0, chr_ = 0, inner_ = 0, mode_ = 0, outer_ = 0xFF;
+};
+
 }  // namespace
 
 std::unique_ptr<Mapper> Mapper::create(Cart& c) {
@@ -473,6 +514,7 @@ std::unique_ptr<Mapper> Mapper::create(Cart& c) {
     case 9: return std::make_unique<MMC2>(c);
     case 10: return std::make_unique<MMC4>(c);
     case 34: case 79: case 140: return std::make_unique<Discrete>(c, c.mapper);
+    case 28: return std::make_unique<Action53>(c);
     case 206: return std::make_unique<Namco108>(c);
     case 21: case 22: case 23: case 25: return std::make_unique<VRC24>(c, c.mapper);
     default: return createExtMapper(c);  // 5, 19, 24, 26, 69 (FME-7 com o som do 5B), 85

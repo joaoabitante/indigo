@@ -256,6 +256,8 @@ a:focus-visible, button:focus-visible, summary:focus-visible, select:focus-visib
 .get-news ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 14px; color: var(--l-indigo-ink); }
 .get-news li { display: flex; gap: 8px; }
 .get-news li::before { content: "▸"; color: var(--l-amber); }
+.get-news-old { margin: 10px 0 0; font-size: 13px; color: var(--l-indigo-ink); opacity: .8; }
+.get-news-old a { color: inherit; }
 .get-other { align-self: start; padding: 16px; border-radius: 14px; background: rgba(10,10,24,.4); border: 1px solid rgba(255,255,255,.1); }
 .get-other p { margin: 0; color: var(--l-indigo-ink); font-size: 14px; }
 .get-other a, .get-ios a { color: var(--l-amber); font-weight: 600; }

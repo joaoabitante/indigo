@@ -22,6 +22,7 @@ public:
   // executa os comandos de DPC_CURRENT até DPC_END
   void run();
   void sync(StateIO& io);
+  void syncNoise(StateIO& io);  // ruído do dither (fica no fim do estado, para os estados antigos abrirem)
   uint64_t pixels = 0;  // diagnóstico
 
   struct Tile {

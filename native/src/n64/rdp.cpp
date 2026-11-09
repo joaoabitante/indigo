@@ -749,4 +749,9 @@ void Rdp::sync(StateIO& io) {
   }
 }
 
+void Rdp::syncNoise(StateIO& io) {
+  io.sync(noise_);
+  if (io.reading() && !noise_) noise_ = 1;
+}
+
 }  // namespace indigo::n64
