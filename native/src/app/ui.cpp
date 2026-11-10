@@ -915,4 +915,56 @@ PlayerKeys routeKeys(Player2 mode, int corePlayers, uint32_t keyboard, uint32_t 
   return k;
 }
 
+// ---------------------------------------------------------------- telas do DS
+namespace {
+constexpr int DSW = 256, DSH = 192;
+}
+const char* dsLayoutLabel(DsLayout mode) {
+  switch (mode) {
+    case DsLayout::Stacked: return "Telas do DS: empilhadas";
+    case DsLayout::SideBySide: return "Telas do DS: lado a lado";
+    case DsLayout::BigTop: return "Telas do DS: a de cima grande";
+    default: return "Telas do DS: automático";
+  }
+}
+DsLayout dsResolve(DsLayout mode, float areaW, float areaH) {
+  if (mode != DsLayout::Auto) return mode;
+  const float empilhadas = std::min(areaW / DSW, areaH / (2.0f * DSH));
+  const float lado = std::min(areaW / (2.0f * DSW), areaH / DSH);
+  return lado > empilhadas ? DsLayout::SideBySide : DsLayout::Stacked;
+}
+void dsCanvas(DsLayout l, int& w, int& h) {
+  switch (l) {
+    case DsLayout::SideBySide: w = 2 * DSW; h = DSH; break;
+    case DsLayout::BigTop: w = 3 * DSW; h = 2 * DSH; break;
+    default: w = DSW; h = 2 * DSH; break;
+  }
+}
+void dsCompose(DsLayout l, const uint32_t* fb, std::vector<uint32_t>& out) {
+  int w = 0, h = 0;
+  dsCanvas(l, w, h);
+  out.assign(size_t(w) * h, 0xFF000000u);
+  const uint32_t* top = fb;
+  const uint32_t* bot = fb + DSW * DSH;
+  auto copia = [&](const uint32_t* src, int x0, int y0) {
+    for (int y = 0; y < DSH; y++) std::copy(src + y * DSW, src + (y + 1) * DSW, out.begin() + (size_t(y0 + y) * w + x0));
+  };
+  if (l == DsLayout::SideBySide) { copia(top, 0, 0); copia(bot, DSW, 0); return; }
+  if (l == DsLayout::BigTop) {
+    for (int y = 0; y < 2 * DSH; y++)
+      for (int x = 0; x < 2 * DSW; x++) out[size_t(y) * w + x] = top[(y >> 1) * DSW + (x >> 1)];
+    copia(bot, 2 * DSW, DSH);
+    return;
+  }
+  copia(top, 0, 0);
+  copia(bot, 0, DSH);
+}
+bool dsToTouch(DsLayout l, int x, int y, int& tx, int& ty) {
+  int x0 = 0, y0 = DSH;
+  if (l == DsLayout::SideBySide) { x0 = DSW; y0 = 0; }
+  else if (l == DsLayout::BigTop) { x0 = 2 * DSW; y0 = DSH; }
+  tx = x - x0; ty = y - y0;
+  return tx >= 0 && ty >= 0 && tx < DSW && ty < DSH;
+}
+
 }  // namespace indigo::ui

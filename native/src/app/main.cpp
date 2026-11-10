@@ -114,7 +114,7 @@ enum MenuId {
   M_CLOUD_PAGE, M_CLOUD_SYNC, M_CLOUD_TOGGLE, M_CLOUD_PIN, M_PIN_DEL, M_PIN_OK, M_PIN_SHOW,
   M_FILTER, M_CONTROLS_PAGE, M_MAP_PAD, M_MAP_KEYS, M_MAP_DEFAULT, M_CAPTURE_SKIP, M_CAPTURE_CANCEL, M_CAPTURE_INFO,
   M_SHELF_PAGE, M_SHELF_CONSOLE, M_SHELF_NEXT, M_SHELF_PREV, M_FAV, M_COVER, M_FOLDERS_PAGE, M_FOLDER_ADD, M_ABOUT_PAGE, M_ABOUT_NEWER, M_ABOUT_OLDER, M_ASSOCIATE, M_START_FULL, M_VB_3D, M_INFO, M_SETTINGS_PAGE, M_TEST_SOUND,
-  M_INTEGER, M_UI_SIZE, M_PS1_RES, M_DISK_SIDE, M_SGB, M_PLAYER2,
+  M_INTEGER, M_UI_SIZE, M_PS1_RES, M_DISK_SIDE, M_SGB, M_PLAYER2, M_DS_LAYOUT,
   M_PIN_DIGIT = 80, M_SLOT = 100, M_FOLDER_DEL = 900, M_SHELF_ITEM = 1000, M_RECENT = 200, M_VERSION = 300
 };
 
@@ -1657,6 +1657,8 @@ private:
         } else if (ln.rfind("ps1res=", 0) == 0) {
           const int r = std::atoi(ln.c_str() + 7);
           ps1Res_ = (r == 1 || r == 2 || r == 4) ? r : 0;
+        } else if (ln.rfind("telasds=", 0) == 0) {
+          dsMode_ = static_cast<indigo::ui::DsLayout>(std::clamp(std::atoi(ln.c_str() + 8), 0, 3));
         } else if (ln.rfind("jogador2=", 0) == 0) {
           player2_ = static_cast<indigo::ui::Player2>(std::clamp(std::atoi(ln.c_str() + 9), 0, 2));
         }
@@ -1671,6 +1673,7 @@ private:
     s += std::string("inteira=") + (integerScale_ ? "1" : "0") + "\ninterface=" + std::to_string(uiSize_) + "\n";
     if (!sgb_) s += "sgb=0\n";
     if (ps1Res_) s += "ps1res=" + std::to_string(ps1Res_) + "\n";
+    if (dsMode_ != indigo::ui::DsLayout::Auto) s += "telasds=" + std::to_string(static_cast<int>(dsMode_)) + "\n";
     if (player2_ != indigo::ui::Player2::SecondPad) s += "jogador2=" + std::to_string(static_cast<int>(player2_)) + "\n";
     if (winW_ > 0) s += "janela=" + std::to_string(winX_) + "," + std::to_string(winY_) + "," + std::to_string(winW_) + "," +
                         std::to_string(winH_) + "," + (winMax_ ? "1" : "0") + "\n";
@@ -2197,6 +2200,7 @@ private:
       menu_.items.push_back({std::string("Filtro de tela: ") + indigo::video::filterName(filter_), M_FILTER});
       menu_.items.push_back({std::string("Tamanho da imagem: ") + (integerScale_ ? "pixels perfeitos" : "preencher a tela"), M_INTEGER});
       if (core_->system() == "ps1") menu_.items.push_back({ps1ResLabel(), M_PS1_RES});
+      if (core_->system() == "nds") menu_.items.push_back({indigo::ui::dsLayoutLabel(dsMode_), M_DS_LAYOUT});
       if (core_->diskSides() > 0)
         menu_.items.push_back({"Disco: " + diskSideName(core_->diskSide()) + " (trocar: F4)", M_DISK_SIDE});
       if (auto* vbc = dynamic_cast<indigo::vb::VBCore*>(core_.get())) {
@@ -2221,6 +2225,7 @@ private:
       if (!mobile_) menu_.items.push_back({std::string("Tela cheia ao abrir: ") + (startFullscreen_ ? "sim" : "não"), M_START_FULL});
       menu_.items.push_back({std::string("Tamanho da imagem: ") + (integerScale_ ? "pixels perfeitos" : "preencher a tela"), M_INTEGER});
       menu_.items.push_back({ps1ResLabel(), M_PS1_RES});
+      menu_.items.push_back({indigo::ui::dsLayoutLabel(dsMode_), M_DS_LAYOUT});
       menu_.items.push_back({std::string("Super Game Boy (cores e moldura): ") + (sgb_ ? "sim" : "não"), M_SGB});
       {
         static const char* const SIZES[] = {"automático", "pequeno", "grande", "maior"};
@@ -2578,6 +2583,12 @@ private:
         startCapture(false);
         break;
       case M_MAP_KEYS: startCapture(true); break;
+      case M_DS_LAYOUT:
+        // automático -> empilhadas -> lado a lado -> a de cima grande -> automático
+        dsMode_ = static_cast<indigo::ui::DsLayout>((static_cast<int>(dsMode_) + 1) % 4);
+        saveSettings();
+        rebuildMenu();
+        break;
       case M_PLAYER2:
         // 2º controle -> teclado -> desligado -> 2º controle
         player2_ = player2_ == indigo::ui::Player2::SecondPad ? indigo::ui::Player2::Keyboard
@@ -2715,11 +2726,12 @@ private:
     const SDL_FRect g = gameRect(ow, oh, touchUiInUse());
     int px = 0, py = 0;  // arredonda para baixo: meio pixel fora da borda não toca na tela
     if (core_->system() == "nds") {
-      // DS: as duas telas empilhadas na imagem; o núcleo só aceita o toque na de baixo
-      const float fx = std::floor((x - g.x) * float(core_->width()) / g.w), fy = std::floor((y - g.y) * float(core_->height()) / g.h);
-      const bool inside = g.w > 0 && g.h > 0 && fx >= 0 && fy >= 0 && fx < core_->width() && fy < core_->height();
-      px = inside ? int(fx) : 0;
-      py = inside ? int(fy) : 0;
+      // DS: o ponto na imagem montada vira o ponto na tela de baixo (o núcleo recebe y de 192 a 383)
+      const float fx = std::floor((x - g.x) * float(viewW()) / g.w), fy = std::floor((y - g.y) * float(viewH()) / g.h);
+      int tx = 0, ty = 0;
+      const bool inside = g.w > 0 && g.h > 0 && indigo::ui::dsToTouch(dsUsed_, int(fx), int(fy), tx, ty);
+      px = inside ? tx : 0;
+      py = inside ? ty + 192 : 0;
       down = inside && down;
     } else {
       down = indigo::gamecom::pointerToLcd(x, y, g.x, g.y, g.w, g.h, px, py) && down;
@@ -2941,11 +2953,17 @@ private:
   // onde a imagem do jogo fica: no meio, sem deformar, do maior tamanho que cabe (ou na maior escala inteira,
   // com o ajuste "pixels perfeitos"). No celular fica dentro da área segura; com os controles de toque, em pé,
   // sobe para deixar espaço embaixo e, deitado, se afasta dos lados quando dá sem encolher muito.
+  // tamanho da imagem mostrada (no DS, a das duas telas no arranjo escolhido)
+  int viewW() const { if (core_->system() == "nds") { int w, h; indigo::ui::dsCanvas(dsUsed_, w, h); return w; } return core_->width(); }
+  int viewH() const { if (core_->system() == "nds") { int w, h; indigo::ui::dsCanvas(dsUsed_, w, h); return h; } return core_->height(); }
+
   SDL_FRect gameRect(int ow, int oh, bool touchUi) const {
-    const float w = static_cast<float>(core_->width()), h = static_cast<float>(core_->height());
     const indigo::ui::Metrics m = uiMetrics(ow, oh);
     const SDL_FRect a = mobile_ ? m.area(ow, oh) : SDL_FRect{0, 0, static_cast<float>(ow), static_cast<float>(oh)};
     const bool portrait = oh > ow && touchUi;
+    // DS: o arranjo das duas telas depende da área (automático: lado a lado com a tela deitada, empilhadas em pé)
+    if (core_->system() == "nds") dsUsed_ = indigo::ui::dsResolve(dsMode_, a.w, portrait ? a.h * 0.6f : a.h);
+    const float w = static_cast<float>(viewW()), h = static_cast<float>(viewH());
     float left = a.x, top = a.y, availW = a.w, availH = a.h;
     if (portrait) {
       const float bottom = indigo::ui::TouchControls::bottomHeight(ow, oh, m);
@@ -2991,9 +3009,14 @@ private:
     applyMetrics(ow, oh);
     menu_.sheet = mobile_ && oh > ow;  // celular em pé: menus sobem de baixo
     if (core_) {
-      screen_.update(ren_, core_->framebuffer(), core_->width(), core_->height(), filter_);
       const bool touchUi = touchUiVisible();
       const SDL_FRect dst = gameRect(ow, oh, touchUiInUse());
+      if (core_->system() == "nds") {
+        indigo::ui::dsCompose(dsUsed_, core_->framebuffer(), dsBuf_);
+        screen_.update(ren_, dsBuf_.data(), viewW(), viewH(), filter_);
+      } else {
+        screen_.update(ren_, core_->framebuffer(), core_->width(), core_->height(), filter_);
+      }
       screen_.draw(ren_, dst);
       if (touchUi) { layoutTouch(ow, oh, touchUi); touch_.draw(ren_); }
       if (menuOpen_) menu_.draw(ren_, ow, oh, true);
@@ -3037,6 +3060,9 @@ private:
   bool exportWithRoms_ = true;
   // tela e controles
   indigo::video::Screen screen_;
+  indigo::ui::DsLayout dsMode_ = indigo::ui::DsLayout::Auto;      // escolha do menu ("telasds=N" nas opções)
+  mutable indigo::ui::DsLayout dsUsed_ = indigo::ui::DsLayout::Stacked;  // arranjo em uso (calculado em gameRect)
+  std::vector<uint32_t> dsBuf_;
   int filter_ = indigo::video::NITIDO;
   int ps1Res_ = 0;
   bool sgb_ = true;  // Super Game Boy nos jogos que têm a marca (padrão: ligado)  // resolução do PlayStation escolhida (0 = a padrão do aparelho)

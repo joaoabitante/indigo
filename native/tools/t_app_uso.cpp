@@ -309,6 +309,37 @@ void testarDoisControles() {
   SDL_Quit();
 }
 
+// telas do DS: arranjo automático, imagem montada e toque na tela de baixo em cada arranjo
+void testarTelasDs() {
+  using ui::DsLayout;
+  check(ui::dsResolve(DsLayout::Auto, 1920, 1080) == DsLayout::SideBySide && ui::dsResolve(DsLayout::Auto, 1080, 1920) == DsLayout::Stacked,
+        "DS: automático põe lado a lado na tela deitada e empilha na tela em pé");
+  check(ui::dsResolve(DsLayout::BigTop, 1080, 1920) == DsLayout::BigTop, "DS: a escolha do menu vale em qualquer tela");
+  std::vector<uint32_t> fb(256 * 384);
+  for (int y = 0; y < 384; y++)
+    for (int x = 0; x < 256; x++) fb[size_t(y) * 256 + x] = (y < 192 ? 0x10000000u : 0x20000000u) | uint32_t(y % 192) << 8 | uint32_t(x);
+  bool ok = true;
+  for (DsLayout l : {DsLayout::Stacked, DsLayout::SideBySide, DsLayout::BigTop}) {
+    std::vector<uint32_t> out;
+    ui::dsCompose(l, fb.data(), out);
+    int w = 0, h = 0;
+    ui::dsCanvas(l, w, h);
+    ok = ok && out.size() == size_t(w) * h;
+    // cada pixel da tela de baixo na imagem montada volta, pelo toque, ao mesmo ponto da tela de baixo
+    for (int y = 0; y < h && ok; y += 7)
+      for (int x = 0; x < w && ok; x += 5) {
+        int tx = 0, ty = 0;
+        const uint32_t p = out[size_t(y) * w + x];
+        if (ui::dsToTouch(l, x, y, tx, ty)) ok = p == (0x20000000u | uint32_t(ty) << 8 | uint32_t(tx));
+        else ok = (p >> 28) != 2;  // fora da tela de baixo não há pixel dela
+      }
+  }
+  check(ok, "DS: empilhadas, lado a lado e a de cima grande montam a imagem e o toque cai no ponto certo");
+  std::vector<uint32_t> big;
+  ui::dsCompose(DsLayout::BigTop, fb.data(), big);
+  check(big[0] == fb[0] && big[1] == fb[0] && big[768] == fb[0] && big[2] == fb[1], "DS: a de cima grande é a tela de cima em dobro");
+}
+
 void testarManifesto(const char* caminho) {
   std::ifstream f(caminho);
   std::stringstream ss;
@@ -334,6 +365,7 @@ int main(int argc, char** argv) {
   testarConsoles();
   testarJogadores();
   testarDoisControles();
+  testarTelasDs();
   if (argc > 1) testarManifesto(argv[1]);
   std::printf("RESULTADO app_uso: %d verificações, %d falhas\n", checks, fails);
   return fails ? 1 : 0;

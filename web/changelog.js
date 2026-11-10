@@ -3,6 +3,16 @@
 export const CHANGELOG = [
   {
     date: '2026-11-09',
+    title: 'App 2.8.1: telas do Nintendo DS maiores',
+    items: [
+      'Com a janela ou o celular deitado, as duas telas do DS ficam lado a lado e bem maiores (antes ficavam sempre empilhadas, pequenas no meio da tela). Em pé, continuam empilhadas.',
+      'No menu do jogo, "Telas do DS" escolhe entre automático, empilhadas, lado a lado e "a de cima grande" (a tela de cima em dobro e a de baixo pequena ao lado).',
+      'O toque (mouse ou dedo) continua na tela de baixo em qualquer arranjo.',
+    ],
+    tests: 'Testes novos do arranjo das telas e do toque com 0 falhas; revalidação de 1047 comparações iguais com 0 problemas.',
+  },
+  {
+    date: '2026-11-09',
     title: 'App 2.8: Saturn com a BIOS do console, Nintendo 64 com libdragon novo',
     items: [
       'Saturn: com a BIOS do seu console, a BIOS agora dá a partida nos discos (antes ficava no tocador de CD).',

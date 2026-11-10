@@ -11,6 +11,12 @@ struct Versão {
 };
 
 inline constexpr Versão VERSOES[] = {
+    {"2.8.1", "09/11/2026",
+     {"Nintendo DS: telas maiores.",
+      "Com a tela deitada, as duas",
+      "ficam lado a lado (automático)",
+      "Menu: empilhadas, lado a lado",
+      "ou a de cima grande", nullptr}},
     {"2.8", "09/11/2026",
      {"Saturn: com a BIOS do seu",
       "console, os discos dão a partida",

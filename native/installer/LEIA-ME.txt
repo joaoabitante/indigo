@@ -16,6 +16,12 @@ Licença
 - O Índigo é software livre (GNU GPL versão 3). Ele não traz jogos nem BIOS: use cópias dos seus.
   Créditos de terceiros: veja TERCEIROS.md no código-fonte (github.com/joaoabitante, em breve público).
 
+Novo na 2.8.1
+- Nintendo DS com as telas maiores: com a janela ou o celular deitado, as duas telas ficam lado a lado (antes
+  ficavam sempre empilhadas, pequenas no meio da tela); em pé, continuam empilhadas. No menu do jogo, "Telas do
+  DS" escolhe entre automático, empilhadas, lado a lado e "a de cima grande" (a tela de cima em dobro e a de baixo
+  pequena ao lado). O toque continua na tela de baixo em qualquer arranjo.
+
 Novo na 2.8
 - Saturn: com a BIOS do seu console, a BIOS agora dá a partida nos discos (antes ficava no tocador de CD).
 - Nintendo 64: os jogos feitos com a versão nova do libdragon (o kit livre de jogos caseiros) saíam com a tela

@@ -200,6 +200,16 @@ int padPlayer(Player2 mode, int corePlayers, size_t index);
 // há quem comande o jogador 2 (o 2º controle, ou o teclado com a opção "teclado")? Só então o app liga o
 // controle 2 no console.
 bool player2Present(Player2 mode, int corePlayers, size_t pads);
+// Telas do DS: o núcleo entrega as duas empilhadas (256x384, a de cima em cima). O app monta a imagem no arranjo
+// escolhido. Auto escolhe, para a área disponível, o arranjo em que as telas ficam maiores (empilhadas ou lado
+// a lado). Grande: a tela de cima em dobro e a de baixo, em tamanho normal, embaixo à direita.
+enum class DsLayout { Auto = 0, Stacked = 1, SideBySide = 2, BigTop = 3 };
+const char* dsLayoutLabel(DsLayout mode);
+DsLayout dsResolve(DsLayout mode, float areaW, float areaH);  // Auto vira Stacked ou SideBySide
+void dsCanvas(DsLayout l, int& w, int& h);                     // tamanho da imagem montada
+void dsCompose(DsLayout l, const uint32_t* fb, std::vector<uint32_t>& out);  // fb = 256x384 do núcleo
+// ponto da imagem montada -> ponto na tela de baixo (0..255, 0..191); false se fora dela
+bool dsToTouch(DsLayout l, int x, int y, int& tx, int& ty);
 // lista de controles com lugar fixo: quem desconecta deixa a vaga, e quem conecta ocupa a primeira vaga livre.
 // Assim um controle Bluetooth que cai (bateria, distância) e volta continua no mesmo jogador. Devolve a posição.
 template <class T> size_t padSlotAdd(std::vector<T*>& pads, T* p) {

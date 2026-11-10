@@ -53,8 +53,9 @@ Game Boy, Game Boy Color, Super Game Boy, Game Boy Advance, NES, Famicom Disk Sy
 DSP-1, S-DD1 e SPC7110), Master System, Game Gear, SG-1000, Mega Drive, 32X, Sega CD, PC Engine, SuperGrafx e PC
 Engine CD, Neo Geo (MVS/AES) e Neo Geo CD, Capcom CPS1/CPS2, Atari 2600/7800, Lynx, WonderSwan/Color, Virtual Boy,
 Neo Geo Pocket/Color, Pokémon Mini, MSX, ColecoVision, Vectrex, Mega Duck, Watara Supervision, Game & Watch e
-PlayStation. Experimentais: Panasonic 3DO, Atari 5200, Intellivision, Tiger Game.com, PC-FX, Atari Jaguar, Sega
-Saturn, Nintendo 64, Nintendo DS e Dreamcast.
+PlayStation, Panasonic 3DO, Atari 5200, PC-FX, Atari Jaguar, Sega Saturn, Nintendo 64, Nintendo DS e Dreamcast
+(estes, testados com jogos caseiros e BIOS reais; o site diz o que cada um já roda). Experimentais, ainda sem
+teste com a BIOS do console: Intellivision e Tiger Game.com.
 
 ## Jogos e BIOS
 

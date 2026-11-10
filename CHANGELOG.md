@@ -2,6 +2,14 @@
 
 Gerado de `web/changelog.js` (o mesmo texto aparece no cartão “Registro” da página).
 
+## 09/11/2026 · App 2.8.1: telas do Nintendo DS maiores
+
+- Com a janela ou o celular deitado, as duas telas do DS ficam lado a lado e bem maiores (antes ficavam sempre empilhadas, pequenas no meio da tela). Em pé, continuam empilhadas.
+- No menu do jogo, "Telas do DS" escolhe entre automático, empilhadas, lado a lado e "a de cima grande" (a tela de cima em dobro e a de baixo pequena ao lado).
+- O toque (mouse ou dedo) continua na tela de baixo em qualquer arranjo.
+
+**Testes:** Testes novos do arranjo das telas e do toque com 0 falhas; revalidação de 1047 comparações iguais com 0 problemas.
+
 ## 09/11/2026 · App 2.8: Saturn com a BIOS do console, Nintendo 64 com libdragon novo
 
 - Saturn: com a BIOS do seu console, a BIOS agora dá a partida nos discos (antes ficava no tocador de CD).
