@@ -470,10 +470,11 @@ void System::pbusDma() {
   const uint32_t words[3] = {uint32_t(pad_) << 16 | (pad2On_ ? pad2_ : 0xFFFFu), 0xFFFFFFFFu, 0xFFFFFFFFu};
   for (int i = 0; i < 3; i++) {
     const uint32_t a = r[2] + uint32_t(i + 1) * 4;
-    if (a + 4 <= MEM_SIZE) for (int k = 0; k < 4; k++) mem[a + uint32_t(k)] = uint8_t(words[i] >> (24 - 8 * k));
+    // (a + 4 em 32 bits daria a volta com a perto de 4 GB)
+    if (a <= MEM_SIZE - 4) for (int k = 0; k < 4; k++) mem[a + uint32_t(k)] = uint8_t(words[i] >> (24 - 8 * k));
   }
   for (int n = 0; n < 64 && !(r[1] & 0x80000000u); n++) {
-    if (r[0] + 4 <= MEM_SIZE && r[2] + 4 <= MEM_SIZE) std::memmove(&mem[r[0]], &mem[r[2]], 4);
+    if (r[0] <= MEM_SIZE - 4 && r[2] <= MEM_SIZE - 4) std::memmove(&mem[r[0]], &mem[r[2]], 4);
     r[0] += 4; r[2] += 4; r[1] -= 4;
   }
   r[1] |= 0x80000000u;
@@ -594,7 +595,7 @@ TdoCore::TdoCore(std::unique_ptr<cdrom::Disc> disc, const std::vector<uint8_t>* 
   sys_ = std::make_unique<System>(b, disc_.get());
   if (save) importSave(*save);
   title_ = disc_ ? volumeName(*disc_) : "3DO";
-  note_ = contains(b, "Indigo 3DO") ? " · BIOS de teste do Índigo" : " · 3DO experimental: se algo der errado, avise";
+  note_ = contains(b, "Indigo 3DO") ? " · BIOS de teste do Índigo" : " · 3DO: ainda não testado com jogos; se algo der errado, avise";
 }
 
 namespace {

@@ -77,12 +77,16 @@ BLOCOS+=("4 gba")
 bloco_5() {  # gba
   echo "== GBA: testes do jsmolka (tela final igual à de um teste que passa)"
   pass=$(find "$R/gba" -path "*jsmolka*" -name "arm.gba" | head -1)
-  if [ -n "$pass" ]; then
+  if [ -z "$pass" ]; then
+    echo "  FALTAM os testes do jsmolka em $R/gba"; bad=$((bad + 1))
+  else
     ref=$("$B/indigo-run" "$pass" 200 gba 0 | sed -n 200p | cut -d' ' -f2)
+    # sem a tela de referência (o programa caiu ou não imprimiu os 200 quadros), todos "passariam" com vazio = vazio
+    if [ -z "$ref" ]; then echo "  o teste de referência (arm.gba) não rodou"; bad=$((bad + 1)); fi
     for t in arm thumb memory bios sram flash64 flash128 none; do
       rom=$(find "$R/gba" -path "*jsmolka*" -name "$t.gba" | head -1)
       got=$("$B/indigo-run" "$rom" 200 gba 0 | sed -n 200p | cut -d' ' -f2)
-      if [ "$got" = "$ref" ]; then echo "  $t: passou"; else echo "  $t: FALHOU"; bad=$((bad + 1)); fi
+      if [ -n "$got" ] && [ "$got" = "$ref" ]; then echo "  $t: passou"; else echo "  $t: FALHOU"; bad=$((bad + 1)); fi
     done
   fi
 }
@@ -482,9 +486,12 @@ BLOCOS+=("54 n64")
 bloco_55() {  # z80
   echo "== CPU Z80: ZEXDOC e ZEXALL"
   for z in zexdoc zexall; do
-    "$B/indigo-zextest" "$R/$z.com" > "$TMP/z"
-    echo "  $z: $(grep -c ' OK' "$TMP/z") OK, $(grep -c ERROR "$TMP/z") ERROR"
-    bad=$((bad + $(grep -c ERROR "$TMP/z")))
+    "$B/indigo-zextest" "$R/$z.com" > "$TMP/z"; rc=$?
+    nok=$(grep -c ' OK' "$TMP/z"); nerr=$(grep -c ERROR "$TMP/z")
+    echo "  $z: $nok OK, $nerr ERROR"
+    bad=$((bad + nerr))
+    # os 67 grupos têm de terminar com OK: se o programa cair, travar ou faltar o $z.com, não há ERROR nenhum
+    if [ "$rc" -ne 0 ] || [ "$nok" -ne 67 ]; then echo "  $z: o teste não chegou ao fim (código $rc, $nok de 67)"; bad=$((bad + 1)); fi
   done
 }
 BLOCOS+=("55 z80")
@@ -554,6 +561,13 @@ if [ $# -gt 2 ]; then
       *) ESCOLHA+=("$a") ;;
     esac
   done
+  if [ "$TUDO" = 0 ]; then  # chave digitada errada não pode virar "0 problemas"
+    for x in "${ESCOLHA[@]}"; do
+      achou=0
+      for b in "${BLOCOS[@]}"; do [ "${b#* }" = "$x" ] && achou=1; done
+      [ "$achou" = 1 ] || { echo "chave desconhecida: $x (veja --lista)"; rm -rf "$TMPBASE"; exit 1; }
+    done
+  fi
   [ "$TUDO" = 0 ] && ESCOLHA+=(jogadores)  # teste curto que passa por quase todos os consoles
   [ "$TUDO" = 0 ] && echo "conferindo só: $(printf '%s\n' "${ESCOLHA[@]}" | sort -u | tr '\n' ' ')"
 fi
@@ -606,5 +620,12 @@ rm -rf "$TMPBASE"
 echo
 echo "tempo: $(( ($(date +%s) - inicio) / 60 )) min com $JOBS ao mesmo tempo; mais demorados: $(sort -k2 -rn "$TEMPOS" | head -3 | while read -r n s; do printf '%s %smin, ' "$(printf '%s\n' "${BLOCOS[@]}" | awk -v n="$n" '$1 == n { print $2 }')" $((s / 60)); done)"
 [ "$TUDO" = 1 ] || echo "(conferência parcial: para lançar uma versão, rode sem chaves)"
+# piso da conferência completa: com material de teste faltando (pasta errada, ambiente pela metade) os blocos são
+# pulados sem contar. Ao acrescentar testes, suba este número.
+ESPERADO=1047
+if [ "$TUDO" = 1 ] && [ "$ok" -lt "$ESPERADO" ]; then
+  echo "FALTOU TESTE: só $ok comparações (o esperado é $ESPERADO ou mais): confira a pasta das ROMs de teste"
+  bad=$((bad + 1))
+fi
 echo "RESULTADO: $ok comparações iguais, $bad problemas"
 [ "$bad" -eq 0 ]

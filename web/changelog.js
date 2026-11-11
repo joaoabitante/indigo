@@ -2,6 +2,18 @@
 // A entrada mais nova fica em cima.
 export const CHANGELOG = [
   {
+    date: '2026-11-11',
+    title: 'App 2.8.2: CPS1/CPS2 em pacote split, zip e revisão completa',
+    items: [
+      'CPS1 e CPS2: versões de jogos em pacote "split" do MAME (só com os arquivos que mudam) agora acham o .zip do jogo principal na mesma pasta; se faltar, o Índigo diz qual.',
+      'Arquivos .zip em ZIP64 e com a compressão Deflate64 agora abrem; numa compressão que o Índigo não lê, a mensagem diz qual é e como refazer o .zip.',
+      'Windows: CDs em pastas com acento agora abrem.',
+      'Uma revisão completa do código corrigiu estados salvos do Nintendo DS, do CPS e do SNES, o save do cartucho depois de carregar um estado, o "Continuar" com save mais novo na nuvem, teclas presas depois do menu e arquivos estragados que podiam travar alguns consoles.',
+      'Consoles já testados deixam de ser chamados de experimentais (só Intellivision e Game.com continuam). O instalador do Windows agora leva a licença e os créditos.',
+    ],
+    tests: 'Revisão completa por 8 revisores independentes; revalidação de 1047 comparações iguais, robustez e teste em massa com 0 problemas.',
+  },
+  {
     date: '2026-11-09',
     title: 'App 2.8.1: telas do Nintendo DS maiores',
     items: [

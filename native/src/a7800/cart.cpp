@@ -71,6 +71,8 @@ bool Cart::load(const std::vector<uint8_t>& f, const std::string&, std::string& 
     const size_t half = data.size() / 2;
     mrom.assign(data.begin() + static_cast<std::ptrdiff_t>(half), data.end());
     data.resize(half);
+    // um arquivo de 1 byte com "banksets" ficaria sem ROM (e os bancos dividem pelo tamanho)
+    if (data.empty()) { erro = "ROM de Atari 7800 vazia."; return false; }
   }
   romSize = data.size();
   // completa até múltiplo de 16 KB: o plano completa no começo (a ROM termina em $FFFF), os outros no fim
@@ -87,7 +89,8 @@ bool Cart::load(const std::vector<uint8_t>& f, const std::string&, std::string& 
 
   if (kind == SOUPER || haltRam || bankedRam) ram.assign(0x8000, 0);
   else if (ram4000 || mirrorRam) ram.assign(0x4000, 0);
-  if (kind == FLAT && ram4000 && romSize > 0x8000) ram.clear();  // ROM já ocupa $4000
+  if (kind == FLAT && ram4000 && romSize > 0x8000) { ram.clear(); mirrorRam = false; }  // ROM já ocupa $4000 (sem RAM, não há o que espelhar)
+  if (ram.empty()) mirrorRam = false;
   if (kind == FLAT && pokey4000 && romSize > 0x8000) pokey4000 = false;
   if (kind != SUPERGAME && kind != FLAT) pokey4000 = false;  // $4000 tem ROM ou RAM nesses esquemas
   reset();

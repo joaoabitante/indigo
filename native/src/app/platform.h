@@ -15,6 +15,8 @@ bool simulatedPhone(int* w, int* h);
 // nome do arquivo para mostrar e para achar o console pela extensão. No Android o seletor devolve
 // "content://...", sem nome: ele é perguntado ao sistema.
 std::string displayName(const std::string& path);
+// põe a data de modificação do arquivo em "agora", sem tocar no conteúdo (no Windows não faz nada)
+void touchFile(const std::string& path);
 
 // Android: jogo pedido por um frontend (ES-DE, Daijisho, Beacon, "Abrir com" do gerenciador de arquivos)
 // que ainda não foi aberto; vazio = nada. Cada pedido é entregue uma vez. Nas outras plataformas: sempre vazio

@@ -270,7 +270,7 @@ void DcCore::loadState(const std::vector<uint8_t>& s) {
 }
 
 std::string DcCore::note() const {
-  return "Dreamcast experimental: sem MMU, neblina nem DSP de som; volumes modificadores só como sombra simples; a velocidade depende muito do aparelho.";
+  return "Dreamcast: ainda sem som; sem MMU, neblina nem DSP de som; volumes modificadores só como sombra simples; a velocidade depende muito do aparelho.";
 }
 
 }  // namespace indigo::dc

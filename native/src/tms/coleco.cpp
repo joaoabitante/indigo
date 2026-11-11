@@ -19,8 +19,10 @@ bool isColecoRom(const std::vector<uint8_t>& rom, const std::string& n) {
   if (endsWith(n, ".col") || endsWith(n, ".cv")) return true;
   // .rom com o cabeçalho de cartucho do ColecoVision (AA 55 mostra a tela do título, 55 AA pula): muitos jogos
   // caseiros saem assim. O MSX usa "AB" no início, então não confunde.
-  return endsWith(n, ".rom") && rom.size() >= 0x2000 && rom.size() <= MAX_ROM &&
-         ((rom[0] == 0xAA && rom[1] == 0x55) || (rom[0] == 0x55 && rom[1] == 0xAA));
+  if (!endsWith(n, ".rom") || rom.size() < 0x2000 || rom.size() > MAX_ROM) return false;
+  auto cab = [&](size_t o) { return (rom[o] == 0xAA && rom[o + 1] == 0x55) || (rom[o] == 0x55 && rom[o + 1] == 0xAA); };
+  // MegaCart (mais de 32 KB): o console liga com o último banco de 16 KB em $8000, e é lá que fica o cabeçalho
+  return cab(0) || (rom.size() > 0x8000 && cab(rom.size() - 0x4000));
 }
 
 Coleco::Coleco(const std::vector<uint8_t>& b, const std::vector<uint8_t>& data)

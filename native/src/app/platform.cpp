@@ -14,6 +14,9 @@
 #include <unistd.h>
 #define INDIGO_XDG 1
 #endif
+#ifndef _WIN32
+#include <utime.h>
+#endif
 #ifdef _WIN32
 #include <windows.h>
 #include <winhttp.h>
@@ -60,6 +63,14 @@ bool simulatedPhone(int* w, int* h) {
   if (w) *w = a;
   if (h) *h = b;
   return true;
+}
+
+void touchFile(const std::string& path) {
+#ifndef _WIN32
+  ::utime(path.c_str(), nullptr);
+#else
+  (void)path;
+#endif
 }
 
 std::string displayName(const std::string& path) {

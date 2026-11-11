@@ -322,6 +322,7 @@ public:
   // o primeiro byte de cada conversa é do IR; 0x00 repassa o resto para a FLASH
   bool ir = false;
   int irPos = 0, irCmd = 0;
+  void syncIr(StateIO& io);  // infravermelho e sondagem (fica no fim do estado)
 
   void load(const std::vector<uint8_t>& data);
   void setSave(const std::vector<uint8_t>& data);
@@ -454,6 +455,7 @@ public:
   void ipcFifoUpdate();
   void dmaStart(int cpu, int mode);   // dispara canais esperando pelo modo (vblank, hblank...)
   void runDma(int cpu, int ch);
+  int dmaDepth_ = 0;  // níveis de runDma em andamento (não vai para o estado: é zero entre instruções)
   void cartDataReady();
   void cartXferDone();
   void gxFifoDma();

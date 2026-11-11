@@ -887,7 +887,7 @@ void JaguarCore::importSave(const std::vector<uint8_t>& b) {
 }
 
 std::string JaguarCore::note() const {
-  return std::string("Atari Jaguar (experimental") + (m_->pal ? ", PAL 50 Hz" : "") + "): partida sem a ROM do console; teclas C = X/Y, Option = Select, Pause = Start, "
+  return std::string("Atari Jaguar") + (m_->pal ? " (PAL 50 Hz)" : "") + ": partida sem a ROM do console; teclas C = X/Y, Option = Select, Pause = Start, "
          "* e # = L e R.";
 }
 

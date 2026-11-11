@@ -8,10 +8,23 @@
 #pragma once
 #include <cstdint>
 #include <memory>
+#include <filesystem>
 #include <string>
 #include <vector>
 
 namespace indigo::cdrom {
+
+// Caminho em UTF-8 (como o app usa) para abrir arquivo: no Windows, std::ifstream com std::string usaria a página
+// de código do sistema e não acharia pastas com acento ("C:\\Users\\João\\..."); com path, abre pelo nome largo.
+// (no Linux e no Android o nome já é UTF-8 de byte em byte; o NDK do Android não tem std::u8string)
+inline std::filesystem::path fsPath(const std::string& utf8) {
+#ifdef _WIN32
+  return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
+#else
+  return std::filesystem::path(utf8);
+#endif
+}
+
 
 constexpr int RAW_SECTOR = 2352;   // setor bruto (sincronismo + cabeçalho + dados + correção, ou áudio)
 constexpr int DATA_SECTOR = 2048;  // dados do usuário em Mode 1 / Mode 2 Form 1

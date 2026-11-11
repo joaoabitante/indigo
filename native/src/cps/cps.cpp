@@ -13,10 +13,10 @@ const GameDef& findGame(const std::vector<uint8_t>& zip, const std::string& nome
   std::string falta;
   const GameDef* g = identify(zip, nome, &falta);
   if (g) return *g;
-  if (!falta.empty())
-    throw std::runtime_error("Pacote de CPS incompleto. Faltam: " + falta.substr(0, 300) +
-                             (falta.size() > 300 ? "..." : "") +
-                             ". Se for uma versão (clone), use o pacote \"merged\" ou \"non-merged\" do MAME.");
+  if (!falta.empty()) {
+    throw std::runtime_error("Pacote de CPS incompleto. Faltam: " + falta.substr(0, 300) + (falta.size() > 300 ? "..." : "") +
+                             ". Pode ser de outra versão do MAME, ou uma versão (clone) sem o pacote do jogo principal ao lado.");
+  }
   throw std::runtime_error("Jogo de CPS1/CPS2 não reconhecido neste pacote.");
 }
 
@@ -634,8 +634,18 @@ std::vector<uint8_t> Cps::saveState() {
 }
 
 void Cps::loadState(const std::vector<uint8_t>& s) {
-  StateIO io(s);
-  sync(io);
+  // guarda o jogo em andamento: se o arquivo estiver cortado ou for de outra versão, o erro aparece só depois de
+  // parte da máquina já ter sido trocada, e aí o estado de antes volta inteiro
+  const std::vector<uint8_t> backup = saveState();
+  try {
+    StateIO io(s);
+    sync(io);
+    if (!io.atEnd()) throw std::runtime_error("Estado salvo incompatível (sobram dados).");
+  } catch (...) {
+    StateIO b(backup);
+    sync(b);
+    throw;
+  }
 }
 
 std::string CpsCore::note() const {

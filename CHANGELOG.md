@@ -2,6 +2,16 @@
 
 Gerado de `web/changelog.js` (o mesmo texto aparece no cartão “Registro” da página).
 
+## 11/11/2026 · App 2.8.2: CPS1/CPS2 em pacote split, zip e revisão completa
+
+- CPS1 e CPS2: versões de jogos em pacote "split" do MAME (só com os arquivos que mudam) agora acham o .zip do jogo principal na mesma pasta; se faltar, o Índigo diz qual.
+- Arquivos .zip em ZIP64 e com a compressão Deflate64 agora abrem; numa compressão que o Índigo não lê, a mensagem diz qual é e como refazer o .zip.
+- Windows: CDs em pastas com acento agora abrem.
+- Uma revisão completa do código corrigiu estados salvos do Nintendo DS, do CPS e do SNES, o save do cartucho depois de carregar um estado, o "Continuar" com save mais novo na nuvem, teclas presas depois do menu e arquivos estragados que podiam travar alguns consoles.
+- Consoles já testados deixam de ser chamados de experimentais (só Intellivision e Game.com continuam). O instalador do Windows agora leva a licença e os créditos.
+
+**Testes:** Revisão completa por 8 revisores independentes; revalidação de 1047 comparações iguais, robustez e teste em massa com 0 problemas.
+
 ## 09/11/2026 · App 2.8.1: telas do Nintendo DS maiores
 
 - Com a janela ou o celular deitado, as duas telas do DS ficam lado a lado e bem maiores (antes ficavam sempre empilhadas, pequenas no meio da tela). Em pé, continuam empilhadas.

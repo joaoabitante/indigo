@@ -383,6 +383,9 @@ void ScsiCd::runRead(int64_t t) {
 }
 
 void ScsiCd::runCdda(int64_t t) {
+  // mais de ~2 s de atraso só acontece com um estado salvo estragado: recomeça de agora (senão o laço abaixo
+  // rodaria bilhões de vezes enchendo a fila de som)
+  if (cddaNext_ != NONE && t - cddaNext_ > 50'000'000) cddaNext_ = t;
   while (cddaNext_ != NONE && cddaNext_ <= t) {
     if (cddaStatus_ != CD_PLAYING) {
       if (cddaStatus_ == CD_STOPPED) { cddaNext_ = NONE; break; }
@@ -394,7 +397,7 @@ void ScsiCd::runCdda(int64_t t) {
           else { cddaStatus_ = CD_STOPPED; cddaNext_ = NONE; break; }
         }
         if (readSec_ >= leadout()) { cddaStatus_ = CD_STOPPED; cddaNext_ = NONE; break; }
-        uint8_t raw[cdrom::RAW_SECTOR];
+        uint8_t raw[cdrom::RAW_SECTOR] = {};  // se a leitura falhar, toca silêncio
         disc_->readRaw(readSec_, raw);
         for (int i = 0; i < 588 * 2; i++) cddaBuf_[i] = int16_t(raw[i * 2] | raw[i * 2 + 1] << 8);
         makeSubQ(readSec_);

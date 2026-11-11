@@ -325,6 +325,10 @@ void NDS::dmaStart(int c, int mode) {
 }
 
 void NDS::runDma(int c, int ch) {
+  // um DMA que escreve no próprio registro de controle (ou no ROMCTRL, no modo cartucho) se rearma de dentro da
+  // cópia e chamaria runDma de novo sem fim: além de poucos níveis, a transferência nova fica para depois
+  if (dmaDepth_ >= 4) return;
+  struct Nivel { int& n; explicit Nivel(int& x) : n(x) { n++; } ~Nivel() { n--; } } nivel(dmaDepth_);
   CpuIo& io = cio(c);
   Dma& d = io.dma[ch];
   ArmBus& bus = c ? static_cast<ArmBus&>(bus7) : static_cast<ArmBus&>(bus9);
@@ -541,6 +545,9 @@ void NDS::sync(StateIO& io) {
   io.sync(divRem); io.sync(sqrtParam); io.sync(sqrtResult); io.sync(biosProt);
   io.sync(frameCount); io.sync(now7); io.sync(lineCycle); io.sync(cyc9); io.sync(cyc7);
   gpuA.sync(io); gpuB.sync(io); gpu3d.sync(io); spu.sync(io); cart.sync(io); spi.sync(io); rtc.sync(io);
+  // acrescentado na 2.8.2, no fim (os estados antigos, sem ele, continuam abrindo): em que ponto está a conversa
+  // com o chip de infravermelho dos cartuchos Pokémon e a sondagem do tipo de save
+  if (!io.reading() || !io.atEnd()) cart.syncIr(io);
   if (io.reading()) {
     // validação: nada pode apontar para fora das memórias nem travar o app
     for (CpuIo* c : {&io9, &io7}) {
@@ -608,7 +615,7 @@ void NDSCore::setPointer(int x, int y, bool down) {
 }
 
 std::string NDSCore::note() const {
-  return "Nintendo DS (experimental): partida direta sem BIOS; toque na tela de baixo.";
+  return "Nintendo DS: partida direta sem BIOS; toque na tela de baixo.";
 }
 
 }  // namespace indigo::nds

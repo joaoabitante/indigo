@@ -791,6 +791,9 @@ void SNES::loadState(const std::vector<uint8_t>& s) {
   const std::vector<uint8_t> backup = saveState();
   try {
     sync(io);
+    // sobra de dados = formato diferente (ex.: estado feito com o programa do DSP-1 instalado, aberto sem ele):
+    // sem esta conferência o estado entrava desalinhado, sem aviso
+    if (!io.atEnd()) throw std::runtime_error("Estado salvo incompatível (sobram dados).");
   } catch (...) {
     StateIO restore(backup);
     restore.sync(magic);

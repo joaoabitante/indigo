@@ -244,7 +244,8 @@ uint8_t Sio0::cardByte(uint8_t b, bool& ack) {
       default: break;
     }
     if (s < 138) {
-      const uint8_t d = card[size_t(cardSector_) * 128 + size_t(s - 10)];
+      // (o setor já foi conferido no passo 8; a máscara só protege de um estado salvo estragado)
+      const uint8_t d = card[(size_t(cardSector_ & 0x3FF) * 128 + size_t(s - 10)) % card.size()];
       cardChk_ ^= d;
       return d;
     }

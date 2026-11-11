@@ -12,6 +12,7 @@
 //     salvar dá bytes idênticos; estados truncados/danificados não derrubam o núcleo;
 //  5. detecção: isCpsSet, pacote incompleto, lixo.
 //  6. dois jogadores (CPS1 e CPS2): o controle 2 chega às entradas do jogador 2.
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -475,6 +476,123 @@ static void testDetect() {
   }
 }
 
+// ------------------------------------------------------------------ pacotes "split", ZIP64 e Deflate64
+// ZIP64: tamanhos e posições em 0xFFFFFFFF, com os valores no campo extra 0x0001 e o fim do diretório de 64 bits
+static std::vector<uint8_t> makeZip64(const std::vector<std::pair<std::string, std::vector<uint8_t>>>& files) {
+  std::vector<uint8_t> z, cd;
+  auto put64 = [](std::vector<uint8_t>& o, uint64_t v) { put32(o, static_cast<uint32_t>(v)); put32(o, static_cast<uint32_t>(v >> 32)); };
+  for (const auto& f : files) {
+    const uint64_t off = z.size(), sz = f.second.size();
+    const uint32_t crc = crc32(f.second);
+    put32(z, 0x04034b50); put16(z, 45); put16(z, 0); put16(z, 0); put16(z, 0); put16(z, 0);
+    put32(z, crc); put32(z, 0xFFFFFFFFu); put32(z, 0xFFFFFFFFu); put16(z, static_cast<uint32_t>(f.first.size())); put16(z, 20);
+    z.insert(z.end(), f.first.begin(), f.first.end());
+    put16(z, 1); put16(z, 16); put64(z, sz); put64(z, sz);
+    z.insert(z.end(), f.second.begin(), f.second.end());
+    put32(cd, 0x02014b50); put16(cd, 45); put16(cd, 45); put16(cd, 0); put16(cd, 0); put16(cd, 0); put16(cd, 0);
+    put32(cd, crc); put32(cd, 0xFFFFFFFFu); put32(cd, 0xFFFFFFFFu); put16(cd, static_cast<uint32_t>(f.first.size())); put16(cd, 28);
+    put16(cd, 0); put16(cd, 0); put16(cd, 0); put32(cd, 0); put32(cd, 0xFFFFFFFFu);
+    cd.insert(cd.end(), f.first.begin(), f.first.end());
+    put16(cd, 1); put16(cd, 24); put64(cd, sz); put64(cd, sz); put64(cd, off);
+  }
+  const uint64_t cdOff = z.size();
+  z.insert(z.end(), cd.begin(), cd.end());
+  const uint64_t z64 = z.size();
+  put32(z, 0x06064b50); put64(z, 44); put16(z, 45); put16(z, 45); put32(z, 0); put32(z, 0);
+  put64(z, files.size()); put64(z, files.size()); put64(z, cd.size()); put64(z, cdOff);
+  put32(z, 0x07064b50); put32(z, 0); put64(z, z64); put32(z, 1);
+  put32(z, 0x06054b50); put16(z, 0); put16(z, 0); put16(z, 0xFFFF); put16(z, 0xFFFF); put32(z, 0xFFFFFFFFu); put32(z, 0xFFFFFFFFu); put16(z, 0);
+  return z;
+}
+
+// Deflate64 montado à mão (Huffman fixo): 40000 bytes soltos e uma cópia de 1000 bytes a 40000 de distância,
+// que só existem no Deflate64 (comprimento 285 com 16 bits a mais; distância 30)
+static std::vector<uint8_t> deflate64Stream(const std::vector<uint8_t>& lit) {
+  std::vector<uint8_t> o;
+  uint32_t buf = 0;
+  int n = 0;
+  auto bits = [&](uint32_t v, int k) { for (int i = 0; i < k; i++) { buf |= ((v >> i) & 1u) << n; if (++n == 8) { o.push_back(uint8_t(buf)); buf = 0; n = 0; } } };
+  auto huff = [&](uint32_t code, int len) { for (int i = len - 1; i >= 0; i--) bits((code >> i) & 1u, 1); };  // código: bit mais alto primeiro
+  auto sym = [&](int v) {
+    if (v < 144) huff(0x30 + v, 8); else if (v < 256) huff(0x190 + v - 144, 9); else if (v < 280) huff(v - 256, 7); else huff(0xC0 + v - 280, 8);
+  };
+  bits(1, 1); bits(1, 2);  // último bloco, Huffman fixo
+  for (uint8_t b : lit) sym(b);
+  sym(285); bits(1000 - 3, 16);   // comprimento 1000
+  huff(30, 5); bits(40000 - 32769, 14);  // distância 40000
+  sym(256);
+  if (n) o.push_back(uint8_t(buf));
+  return o;
+}
+
+static void testZips() {
+  // pacote "split": a versão sf2ceea só com o que muda; o resto no sf2ce.zip do jogo principal
+  const GameDef* clone = gameByName("sf2ceea");
+  check(clone && clone->parent && std::string(clone->parent) == "sf2ce", "split: sf2ceea é uma versão do sf2ce");
+  if (!clone) return;
+  std::vector<uint8_t> rg[RG_COUNT];
+  for (int r = 0; r < RG_COUNT; r++) rg[r].assign(clone->regionSize[r], static_cast<uint8_t>(r * 17 + 3));
+  const std::vector<uint8_t> full = buildSet(*clone, rg);
+  std::vector<indigo::zip::Entry> ents;
+  indigo::zip::listEntries(full, ents);
+  const GameDef* pai = gameByName("sf2ce");
+  std::vector<std::string> doPai;
+  for (int i = 0; pai && i < pai->numLoads; i++) if (loadAt(*pai, i).mode < 7) doPai.push_back(fileAt(loadAt(*pai, i).file).name);
+  std::vector<std::pair<std::string, std::vector<uint8_t>>> soClone, soPai;
+  for (const auto& e : ents) {
+    std::vector<uint8_t> d;
+    indigo::zip::extractEntry(full, e.name, d);
+    (std::find(doPai.begin(), doPai.end(), e.name) != doPai.end() ? soPai : soClone).push_back({e.name, d});
+  }
+  const std::vector<uint8_t> zClone = makeZip(soClone), zPai = makeZip(soPai);
+  check(!soClone.empty() && !soPai.empty() && !isCpsSet(zClone, "sf2ceea.zip") && parentSetFor(zClone, "sf2ceea.zip") == "sf2ce",
+        "split: o sf2ceea.zip sozinho não abre e aponta o sf2ce.zip (" + std::to_string(soClone.size()) + " arquivos próprios, " +
+            std::to_string(soPai.size()) + " do principal)");
+  const std::vector<uint8_t> junto = indigo::zip::merge(zClone, zPai);
+  bool ok = isCpsSet(junto, "sf2ceea.zip") && parentSetFor(junto, "sf2ceea.zip").empty();
+  try {
+    CpsCore c(junto, "sf2ceea.zip", nullptr);
+    for (int i = 0; i < 30; i++) c.runFrame();
+    ok = ok && c.title().find("Champion") != std::string::npos;
+  } catch (const std::exception& e) { ok = false; std::printf("  (%s)\n", e.what()); }
+  check(ok, "split: juntando com o sf2ce.zip, o sf2ceea abre e roda");
+  check(parentSetFor(full, "sf2ceea.zip").empty() && parentSetFor(zPai, "sf2ce.zip").empty(), "split: pacote completo e jogo principal não pedem nada");
+  // ZIP64: o mesmo pacote gravado em ZIP64 abre igual
+  std::vector<std::pair<std::string, std::vector<uint8_t>>> todos;
+  for (const auto& e : ents) { std::vector<uint8_t> d; indigo::zip::extractEntry(full, e.name, d); todos.push_back({e.name, d}); }
+  const std::vector<uint8_t> z64 = makeZip64(todos);
+  std::vector<indigo::zip::Entry> e64;
+  check(indigo::zip::listEntries(z64, e64) && e64.size() == ents.size() && isCpsSet(z64, "sf2ceea.zip"), "ZIP64: lista os arquivos e reconhece o pacote");
+  ok = true;
+  try { CpsCore c(z64, "sf2ceea.zip", nullptr); c.runFrame(); } catch (const std::exception& e) { ok = false; std::printf("  (%s)\n", e.what()); }
+  check(ok, "ZIP64: o jogo abre");
+  // Deflate64 (método 9)
+  std::vector<uint8_t> lit(40000);
+  uint32_t x = 7;
+  for (auto& b : lit) { x = x * 1103515245 + 12345; b = static_cast<uint8_t>(x >> 16); }
+  std::vector<uint8_t> esperado = lit;
+  esperado.insert(esperado.end(), lit.begin(), lit.begin() + 1000);
+  const std::vector<uint8_t> comp = deflate64Stream(lit);
+  std::vector<uint8_t> z = makeZip({{"d64.bin", comp}});
+  // vira método 9 com os tamanhos certos: local (offset 8, 22) e central
+  auto set16 = [&](size_t o, uint32_t v) { z[o] = uint8_t(v); z[o + 1] = uint8_t(v >> 8); };
+  auto set32 = [&](size_t o, uint32_t v) { set16(o, v & 0xFFFF); set16(o + 2, v >> 16); };
+  const uint32_t crcEsperado = crc32(esperado);
+  set16(8, 9); set32(14, crcEsperado); set32(22, static_cast<uint32_t>(esperado.size()));
+  const size_t c0 = 30 + 7 + comp.size();
+  set16(c0 + 10, 9); set32(c0 + 16, crcEsperado); set32(c0 + 24, static_cast<uint32_t>(esperado.size()));
+  std::vector<uint8_t> saida;
+  check(indigo::zip::entryMethod(z, "d64.bin") == 9 && indigo::zip::extractEntry(z, "d64.bin", saida) && saida == esperado,
+        "Deflate64: descompacta (cópia de 1000 bytes a 40000 de distância)");
+  // método que o Índigo não lê (LZMA): a mensagem diz qual é
+  std::vector<uint8_t> zl = makeZip(todos);
+  for (size_t i = 0; i + 4 <= zl.size(); i++)
+    if (zl[i] == 0x50 && zl[i + 1] == 0x4B && (zl[i + 2] == 3 || zl[i + 2] == 1)) { const size_t o = zl[i + 2] == 3 ? i + 8 : i + 10; zl[o] = 14; zl[o + 1] = 0; }
+  std::string msg;
+  try { CpsCore c(zl, "sf2ceea.zip", nullptr); } catch (const std::exception& e) { msg = e.what(); }
+  check(msg.find("LZMA") != std::string::npos && msg.find("Deflate") != std::string::npos, "compressão sem suporte: a mensagem diz qual é e o que fazer");
+}
+
 int main(int argc, char** argv) {
   const std::string dir = argc > 1 ? argv[1] : "/root/indigo-env/roms/cps";
   struct stat st;
@@ -487,6 +605,7 @@ int main(int argc, char** argv) {
     testCps1();
     testCps2();
     testDetect();
+    testZips();
   } catch (const std::exception& e) {
     fails++;
     std::printf("FALHA: exceção %s\n", e.what());

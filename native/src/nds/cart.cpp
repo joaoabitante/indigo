@@ -127,7 +127,8 @@ void Cart::writeAuxSpiData(uint8_t v) {
   const bool hold = auxspicnt & 0x40;
   if (ir) {
     // chip de IR: o primeiro byte é o comando dele; 0x00 liga a FLASH até o fim da conversa, 0x08 é a identificação
-    const int pos = irPos++;
+    const int pos = irPos;  // só importa se é o primeiro byte (0) ou não (1)
+    irPos = 1;
     if (pos == 0) { irCmd = v; spiOut = 0xFF; }
     else if (irCmd == 0x00) spiOut = spiByte(v);
     else spiOut = irCmd == 0x08 ? 0xAA : 0x00;
@@ -262,10 +263,26 @@ void Cart::sync(StateIO& io) {
   io.sync(addrBytes); io.sync(spiOut); io.sync(csHold); io.sync(spiCmd); io.sync(spiPos); io.sync(spiAddr); io.sync(status);
   if (io.reading()) {
     if (addrBytes < 0 || addrBytes > 3 || (addrBytes && save.empty())) { addrBytes = 0; }
+    if (spiPos < 0) spiPos = 0;  // indexa a identificação da FLASH (comando 0x9F)
     if (xferLeft > 0x4000 || (xferLeft & 3)) xferLeft = 0;  // a transferência anda de 4 em 4 bytes
     probe.clear();
-    irPos = irCmd = 0;
+    irPos = irCmd = 0;  // estado antigo (sem syncIr): recomeça a conversa
   }
+}
+
+// Sem isto, um estado feito no meio da leitura ou da gravação do save de um cartucho com infravermelho voltava
+// tomando o byte seguinte como comando do infravermelho: o jogo dizia "save corrompido" ou gravava deslocado.
+void Cart::syncIr(StateIO& io) {
+  io.sync(irPos); io.sync(irCmd);
+  uint32_t n = static_cast<uint32_t>(probe.size());
+  io.sync(n);
+  if (io.reading()) {
+    if (n > 0x100000) throw std::runtime_error("Estado salvo inválido (sondagem do save).");
+    probe.resize(n);
+    irPos = irPos ? 1 : 0;
+    irCmd &= 0xFF;
+  }
+  if (n) io.raw(probe.data(), n);
 }
 
 // ================================================================== SPI do ARM7
@@ -387,7 +404,7 @@ void Spi::sync(StateIO& io) {
   io.sync(fwCmd); io.sync(fwPos); io.sync(fwAddr); io.sync(fwStatus);
   io.sync(tscCmd); io.sync(tscVal); io.sync(tscPos);
   io.raw(pmReg, sizeof pmReg); io.sync(pmPos); io.sync(pmIdx); io.sync(pmRead);
-  if (io.reading()) { pmIdx &= 7; }
+  if (io.reading()) { pmIdx &= 7; if (fwPos < 0) fwPos = 0; }  // fwPos indexa a identificação da FLASH
 }
 
 // ================================================================== RTC

@@ -79,6 +79,9 @@ const GfxRange& gfxRange(int i);
 const GameDef* identify(const std::vector<uint8_t>& zip, const std::string& nomeMinusculo, std::string* faltando);
 
 // monta as regiões de memória (lança runtime_error se faltar arquivo ou o .zip estiver danificado)
+// pacote "split" do MAME: se o .zip tem o nome de uma versão (clone) e faltam arquivos, devolve o nome do pacote
+// do jogo principal (ex.: "sf2" para sf2ce.zip), onde estão os que faltam; senão, "".
+std::string parentSetFor(const std::vector<uint8_t>& zipData, const std::string& nomeMinusculo);
 void loadRegions(const GameDef& g, const std::vector<uint8_t>& zip, std::vector<uint8_t> (&regions)[RG_COUNT]);
 
 int gameCount();

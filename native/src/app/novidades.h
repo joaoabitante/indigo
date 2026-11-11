@@ -11,6 +11,16 @@ struct Versão {
 };
 
 inline constexpr Versão VERSOES[] = {
+    {"2.8.2", "11/11/2026",
+     {"CPS1/CPS2: versões de jogos em",
+      "pacote \"split\" acham o jogo",
+      "principal na mesma pasta",
+      ".zip em ZIP64 e Deflate64",
+      "CDs em pastas com acento",
+      "Revisão completa: dezenas de",
+      "correções em saves e estados",
+      "Consoles testados deixam de",
+      "ser experimentais", nullptr}},
     {"2.8.1", "09/11/2026",
      {"Nintendo DS: telas maiores.",
       "Com a tela deitada, as duas",

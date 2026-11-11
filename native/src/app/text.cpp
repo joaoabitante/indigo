@@ -53,6 +53,7 @@ void load() {
 // próximo código Latin-1 do texto UTF-8 (fora do Latin-1 vira "?")
 int next(const std::string& s, size_t& i) {
   const unsigned char c = static_cast<unsigned char>(s[i++]);
+  if (c < 0x20 || c == 0x7F) return ' ';  // caractere de controle (título de ROM com lixo): não há desenho para ele
   if (c < 0x80) return c;
   int cp = '?', extra = 0;
   if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; extra = 1; }

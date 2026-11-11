@@ -961,8 +961,8 @@ void N64Core::importSave(const std::vector<uint8_t>& b) {
 }
 
 std::string N64Core::note() const {
-  return std::string("Nintendo 64 (experimental") + (m_->pal ? ", PAL 50 Hz" : "") +
-         "): partida sem BIOS; direcional = analógico, A/B, L = Z, R = R, Select = L, X/Y = botões C (e o teclado "
+  return std::string("Nintendo 64") + (m_->pal ? " (PAL 50 Hz)" : "") +
+         ": partida sem BIOS; direcional = analógico, A/B, L = Z, R = R, Select = L, X/Y = botões C (e o teclado "
          "numérico 8/2/4/6).";
 }
 

@@ -122,6 +122,18 @@ const GameDef* identify(const std::vector<uint8_t>& zipData, const std::string& 
   return best;
 }
 
+std::string parentSetFor(const std::vector<uint8_t>& zipData, const std::string& nomeMinusculo) {
+  const ZipIndex zi(zipData);
+  if (!zi.ok) return "";
+  const GameDef* g = gameByName(setName(nomeMinusculo));
+  if (!g || !g->parent || !*g->parent) return "";
+  std::vector<uint16_t> files;
+  gameFiles(*g, files);
+  for (uint16_t f : files)
+    if (!zi.find(kFiles[f])) return g->parent;  // falta algo: no pacote "split" o resto está no do jogo principal
+  return "";
+}
+
 void loadRegions(const GameDef& g, const std::vector<uint8_t>& zipData, std::vector<uint8_t> (&regions)[RG_COUNT]) {
   const ZipIndex zi(zipData);
   if (!zi.ok) throw std::runtime_error("Arquivo .zip danificado.");
@@ -164,8 +176,14 @@ void loadRegions(const GameDef& g, const std::vector<uint8_t>& zipData, std::vec
       const zip::Entry* e = zi.find(rf);
       if (!e) throw std::runtime_error(std::string("Falta o arquivo ") + rf.name + " no pacote.");
       data.clear();
-      if (!zip::extractEntry(zipData, e->name, data) || data.size() != rf.size)
-        throw std::runtime_error(std::string("Não consegui ler ") + rf.name + " do pacote.");
+      if (!zip::extractEntry(zipData, e->name, data) || data.size() != rf.size) {
+        const int m = zip::entryMethod(zipData, e->name);
+        if (m != 0 && m != 8 && m != 9)
+          throw std::runtime_error(std::string("O arquivo ") + rf.name + " do pacote está comprimido em " + zip::methodName(m) +
+                                   ", que o Índigo não lê. Refaça o .zip no formato comum (Deflate), por exemplo pelo "
+                                   "\"Enviar para > Pasta compactada\" do Windows.");
+        throw std::runtime_error(std::string("Não consegui ler ") + rf.name + " do pacote (o .zip parece danificado).");
+      }
       curFile = l.file;
     }
     auto get = [&](size_t at) -> uint8_t { return at < data.size() ? data[at] : 0; };

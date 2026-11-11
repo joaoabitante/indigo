@@ -1,9 +1,8 @@
 ÍNDIGO PARA PC - versão @VERSAO@
-Consoles: SNES (Super Famicom), NES (Famicom), Game Boy, Game Boy Color, Game Boy Advance, Master System, Game Gear,
-Neo Geo Pocket e Neo Geo Pocket Color
+46 sistemas, do Atari 2600 ao Dreamcast e ao Nintendo DS (a lista completa está em https://indigo.nexus)
 
 Como usar
-- Abra indigo.exe e arraste um jogo (.sfc, .smc, .nes, .gb, .gbc, .gba, .sms, .gg, .ngp, .ngc ou .zip) para a janela, ou aperte Ctrl+O.
+- Abra indigo.exe e arraste um jogo (cartucho, .zip ou CD em .cue, .chd, .gdi ou .iso) para a janela, ou aperte Ctrl+O.
 - A tela inicial mostra "Continuar <jogo>" (volta exatamente de onde você parou) e os últimos jogos abertos.
 
 Instalar
@@ -14,7 +13,25 @@ Instalar
 
 Licença
 - O Índigo é software livre (GNU GPL versão 3). Ele não traz jogos nem BIOS: use cópias dos seus.
-  Créditos de terceiros: veja TERCEIROS.md no código-fonte (github.com/joaoabitante, em breve público).
+  A licença está em LICENCA.txt e os créditos de terceiros em TERCEIROS.txt, ao lado do programa.
+  Código-fonte: https://github.com/joaoabitante/indigo
+
+Novo na 2.8.2
+- CPS1 e CPS2: muitos pacotes de versões (clones) vêm no formato "split" do MAME, só com os arquivos que mudam.
+  Agora o Índigo procura o .zip do jogo principal na mesma pasta (ou nas pastas de jogos) e junta os dois; se não
+  achar, diz qual falta.
+- Arquivos .zip em ZIP64 e com a compressão Deflate64 (que o Windows usa às vezes) agora abrem; numa compressão
+  que o Índigo não lê, a mensagem diz qual é e como refazer o .zip.
+- Windows: CDs em pastas com acento (por exemplo C:\Users\João\Jogos) agora abrem; .cue salvo com BOM também.
+- Uma revisão completa do código achou e corrigiu: estados do Nintendo DS feitos enquanto um Pokémon gravava o
+  save, estados do CPS e do SNES de outro formato, o save do cartucho que não era gravado depois de carregar um
+  estado, o "Continuar" que passava por cima de um save mais novo da nuvem, teclas que ficavam presas depois do
+  menu, e arquivos estragados que podiam travar o Atari 7800, o 3DO, o DS, o PlayStation e o PC-FX.
+- No Android, abrir um jogo da estante não regrava mais o arquivo inteiro (CDs grandes abrem mais rápido).
+- ColecoVision: jogos .rom com "coleco" no nome não tomam mais o lugar da BIOS; MegaCart em .rom abre.
+- Consoles já testados deixam de ser chamados de experimentais (só Intellivision e Game.com continuam). As
+  mensagens continuam avisando os limites conhecidos, como o Dreamcast ainda sem som.
+- O instalador do Windows agora leva a licença e os créditos de terceiros.
 
 Novo na 2.8.1
 - Nintendo DS com as telas maiores: com a janela ou o celular deitado, as duas telas ficam lado a lado (antes

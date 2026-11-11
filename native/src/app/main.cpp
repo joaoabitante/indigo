@@ -36,6 +36,7 @@
 #include "core/safe.h"
 #include "cloud.h"
 #include "core/zip.h"
+#include "cps/games.h"
 #include "files.h"
 #include "platform.h"
 #include "consoles.h"
@@ -232,6 +233,9 @@ bool isA5200Bios(const std::string& path, const std::vector<uint8_t>& data) {
 // BIOS do ColecoVision (coleco.rom do aparelho do usuário): 8 KB, nome com "coleco"
 bool isColecoBios(const std::string& path, const std::vector<uint8_t>& data) {
   if (data.size() != 8192) return false;
+  // um jogo de 8 KB começa com o cabeçalho de cartucho (AA 55 ou 55 AA); a BIOS, não. Sem isso, um jogo .rom
+  // com "coleco" no nome tomaria o lugar da BIOS
+  if ((data[0] == 0xAA && data[1] == 0x55) || (data[0] == 0x55 && data[1] == 0xAA)) return false;
   std::string n = fileName(path);
   for (char& c : n) c = static_cast<char>(SDL_tolower(static_cast<unsigned char>(c)));
   return n.find("coleco") != std::string::npos && n.find(".col") != n.size() - 4;
@@ -477,6 +481,20 @@ public:
     status("Trocando o disco: " + diskSideName(next));
   }
 
+  // acha o .zip de um pacote de arcade pelo nome (sem ".zip"): ao lado do arquivo aberto, nas pastas de jogos ou
+  // na pasta de jogos do app (no celular, os jogos abertos são copiados para lá)
+  bool findSetZip(const std::string& openedPath, const std::string& set, std::vector<uint8_t>& out) {
+    std::vector<std::string> dirs;
+    const size_t slash = openedPath.find_last_of("/\\");
+    if (slash != std::string::npos && openedPath.rfind("content://", 0) != 0) dirs.push_back(openedPath.substr(0, slash + 1));
+    for (const auto& f : folders_) dirs.push_back(f + "/");
+    dirs.push_back(dataDir_ + "roms/");
+    for (const auto& d : dirs)
+      for (const std::string& n : {set + ".zip", set + ".ZIP"})
+        if (readFile(d + n, out) && indigo::zip::isZip(out)) return true;
+    return false;
+  }
+
   void openFile(std::string path, bool resume = false) {
     if (indigo::cdrom::isDiscPath(indigo::platform::displayName(path))) { openDisc(path, resume); return; }
     std::vector<uint8_t> rom;
@@ -498,6 +516,21 @@ public:
           error("Não foi possível copiar a BIOS do Neo Geo para:\n" + dataDir_);
         }
         return;
+      }
+    }
+    // CPS1/CPS2 em pacote "split" do MAME: a versão (sf2ce.zip) só traz o que muda; o resto está no pacote do jogo
+    // principal (sf2.zip). Procura o principal ao lado do arquivo, nas pastas de jogos e na pasta do app.
+    if (indigo::zip::isZip(rom)) {
+      std::string low = name;
+      for (char& c : low) c = static_cast<char>(SDL_tolower(static_cast<unsigned char>(c)));
+      if (const std::string pai = indigo::cps::parentSetFor(rom, low); !pai.empty()) {
+        std::vector<uint8_t> paiZip;
+        if (!findSetZip(path, pai, paiZip)) {
+          error("Este jogo é uma versão de \"" + pai + "\" e o pacote só traz o que muda (formato \"split\" do MAME). "
+                "Coloque o " + pai + ".zip na mesma pasta (ou abra-o uma vez no Índigo) e tente de novo.");
+          return;
+        }
+        rom = indigo::zip::merge(rom, paiZip);
       }
     }
     if (indigo::zip::isZip(rom) && !indigo::isArcadeSet(rom, name)) {
@@ -881,6 +914,13 @@ public:
     frameCount_ = 0;
     p2On_ = false;
     std::string note;
+    // "Continuar" com um save mais novo recém-trazido da nuvem: o estado automático traria de volta o save antigo
+    // que está dentro dele (e o próximo save do jogo subiria o progresso velho como se fosse o novo)
+    if (resume && pulledNewSave_) {
+      resume = false;
+      note = " · save mais novo da nuvem: começando por ele";
+    }
+    pulledNewSave_ = false;
     if (resume) {
       std::vector<uint8_t> st;
       try {
@@ -1484,7 +1524,10 @@ private:
     // miniatura: a tela do jogo no momento ("ITH1", largura, altura, pixels RGBA)
     const std::vector<uint8_t> th = thumbBytes();
     writeFile(thumbPath(slot), th);
-    thumbs_.erase(slot);  // a miniatura antiga sai do cache
+    if (auto it = thumbs_.find(slot); it != thumbs_.end()) {  // a miniatura antiga sai do cache
+      if (it->second) SDL_DestroyTexture(it->second);
+      thumbs_.erase(it);
+    }
     status("Estado " + std::to_string(slot) + " salvo");
   }
 
@@ -1496,6 +1539,7 @@ private:
     try {
       core_->loadState(st);
       core_->followHostClock();
+      saveAfterState_ = core_->hasSave();  // o estado traz o save do cartucho junto: grava no arquivo também
       if (audio_) SDL_ClearAudioStream(audio_);
       status("Estado " + std::to_string(slot) + " carregado");
     } catch (const std::exception& e) {
@@ -1551,9 +1595,18 @@ private:
 
   // periodica = gravação de rotina durante o jogo; o resto (fechar, trocar, perder o foco) grava tudo o que falta
   void flushSave(bool periodica = false) {
-    if (!core_ || !(periodica ? core_->saveDirty() : core_->savePendente())) return;
+    if (!core_) return;
+    // depois de carregar um estado, o save de dentro dele pode ser diferente do arquivo: a maioria dos núcleos não
+    // marca isso como "save mudou", e o arquivo (e a nuvem) ficariam com o progresso de antes
+    const bool depoisDoEstado = saveAfterState_;
+    saveAfterState_ = false;
+    if (!depoisDoEstado && !(periodica ? core_->saveDirty() : core_->savePendente())) return;
     const auto data = core_->exportSave();
     if (data.empty()) return;
+    if (depoisDoEstado) {
+      std::vector<uint8_t> noDisco;
+      if (readFile(savePath_, noDisco) && noDisco == data) return;  // igual ao que já está gravado
+    }
     snapshotSave(false);
     if (!writeFile(savePath_, data)) { status("Não foi possível gravar o save!"); return; }
     indigo::shelf::setSaveAt(dataDir_, romKey_, indigo::shelf::nowMs());
@@ -1828,6 +1881,7 @@ private:
 
   // antes de ligar um jogo: se a nuvem tem um save mais novo (de outro aparelho), traz (tempo limite curto)
   void pullBeforeBoot(const std::string& fileKey, const std::string& saveKey) {
+    pulledNewSave_ = false;
     if (!cloudUsable() || cloudState_ == CS_LOCKED) return;
     indigo::cloud::RemoteSave top;
     bool pinError = false;
@@ -1836,6 +1890,7 @@ private:
     std::vector<uint8_t> data;
     if (!cloud_->fetch(saveKey, top.at, data, 8000)) return;
     applyDownload(fileKey, data, top.at);
+    pulledNewSave_ = true;
     status("Save trazido da nuvem (" + (top.from.empty() ? std::string("outro aparelho") : top.from) + ")");
   }
 
@@ -2016,9 +2071,9 @@ private:
 
   void addRecent(const std::string& path) {
     if (mobile_) {
-      // a data do arquivo da biblioteca marca o último uso (a cópia é regravada ao abrir de fora)
-      std::vector<uint8_t> b;
-      if (path.rfind(dataDir_ + "roms/", 0) == 0 && readFile(path, b)) writeFile(path, b);
+      // a data do arquivo da biblioteca marca o último uso: muda só a data (regravar o arquivo inteiro, como era,
+      // gastava o dobro do tamanho em memória e podia truncar um CD se faltasse espaço)
+      if (path.rfind(dataDir_ + "roms/", 0) == 0) indigo::platform::touchFile(path);
       refreshLibrary();
       return;
     }
@@ -2052,7 +2107,9 @@ private:
     menu_.sel = 0;
     if (audio_) SDL_ClearAudioStream(audio_);
   }
-  void closeMenu() { menuOpen_ = false; page_ = P_MAIN; rebuildMenu(); ensureAudio(); }
+  // (com o menu aberto o soltar das teclas não chega ao jogo: zera o teclado e o acelerar, senão a tecla que
+  // estava apertada ao abrir o menu ficava "presa" na volta)
+  void closeMenu() { menuOpen_ = false; page_ = P_MAIN; keyboard_ = 0; turboKey_ = false; rebuildMenu(); ensureAudio(); }
 
   // ---------------- som: abre (ou reabre) a saída e garante que ela está tocando
   void ensureAudio() {
@@ -3059,6 +3116,8 @@ private:
   bool mobile_ = false, simulated_ = false, menuOpen_ = false, touchActive_ = false, fastOn_ = false;
   bool exportWithRoms_ = true;
   // tela e controles
+  bool pulledNewSave_ = false;   // pullBeforeBoot acabou de trazer um save mais novo da nuvem
+  bool saveAfterState_ = false;  // um estado foi carregado: conferir o save do cartucho na próxima gravação
   indigo::video::Screen screen_;
   indigo::ui::DsLayout dsMode_ = indigo::ui::DsLayout::Auto;      // escolha do menu ("telasds=N" nas opções)
   mutable indigo::ui::DsLayout dsUsed_ = indigo::ui::DsLayout::Stacked;  // arranjo em uso (calculado em gameRect)

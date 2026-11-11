@@ -288,6 +288,7 @@ uint32_t CdRom::read(uint32_t offset, int size) {
         if (fifoPos_ < fifoSize_) return fifo_[fifoPos_++];
         // depois do fim o hardware repete um byte perto do fim do setor
         if (!fifoSize_) return 0;
+        if (fifoSize_ < 8) return fifo_[0];  // (só com um estado salvo estragado: os setores têm 2048 ou mais)
         return fifo_[fifoSize_ - (fifoSize_ == 2048 ? 8 : 4)];
       }
       default:

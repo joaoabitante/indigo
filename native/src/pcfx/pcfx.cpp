@@ -777,7 +777,7 @@ PcfxCore::PcfxCore(std::unique_ptr<cdrom::Disc> disc, const std::vector<uint8_t>
     }
   }
   const bool testBios = std::search(b.begin(), b.end(), "Indigo PC-FX", "Indigo PC-FX" + 12) != b.end();
-  note_ = testBios ? " · BIOS de teste do Índigo" : " · PC-FX experimental";
+  note_ = testBios ? " · BIOS de teste do Índigo" : "";
 }
 
 void PcfxCore::setKeys(uint32_t k) {

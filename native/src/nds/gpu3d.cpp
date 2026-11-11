@@ -933,7 +933,9 @@ void Gpu3D::sync(StateIO& io) {
     if (got_ >= need_) got_ = 0;
     if (portGot_ >= portNeed_) portGot_ = 0;
     clampTo(projSp_, 0, 1); clampTo(posSp_, 0, 31); clampTo(texSp_, 0, 1); mtxMode_ &= 3;
-    clampTo(stripN_, 0, 3); primType_ &= 3; cmd_ &= 0x7F;
+    primType_ &= 3; cmd_ &= 0x7F;
+    // triângulos (tipos 0 e 2) fecham com 3 vértices: nunca ficam 3 guardados entre um vértice e outro
+    clampTo(stripN_, 0, (primType_ & 1) ? 3 : 2);
     clipDirty_ = true;
   }
 }

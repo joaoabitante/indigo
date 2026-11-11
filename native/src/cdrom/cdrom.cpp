@@ -101,7 +101,7 @@ public:
   }
 
   bool addFile(const std::string& path, uint64_t& size) {
-    auto f = std::make_unique<std::ifstream>(path, std::ios::binary);
+    auto f = std::make_unique<std::ifstream>(fsPath(path), std::ios::binary);
     if (!*f) return false;
     f->seekg(0, std::ios::end);
     size = uint64_t(f->tellg());
@@ -143,7 +143,7 @@ bool cueNameSafe(const std::string& n) {
 }
 
 std::unique_ptr<Disc> openCue(const std::string& path, std::string* err) {
-  std::ifstream in(path);
+  std::ifstream in(fsPath(path));
   if (!in) { if (err) *err = "não abriu o .cue"; return nullptr; }
   auto d = std::make_unique<FileDisc>();
   struct Pending {
@@ -190,6 +190,7 @@ std::unique_ptr<Disc> openCue(const std::string& path, std::string* err) {
 
   while (std::getline(in, line)) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (line.compare(0, 3, "\xEF\xBB\xBF") == 0) line.erase(0, 3);  // BOM de arquivo salvo como "UTF-8 com BOM"
     std::istringstream ls(line);
     std::string cmd;
     ls >> cmd;
@@ -287,7 +288,7 @@ std::unique_ptr<Disc> openSingle(const std::string& path, int sectorSize, std::s
 // (tipo 4 = dados, 0 = áudio; o arquivo pode vir entre aspas). Cada faixa começa no LBA dado (a área de alta
 // densidade do GD começa no 45000) e tem o tamanho do arquivo.
 std::unique_ptr<Disc> openGdi(const std::string& path, std::string* err) {
-  std::ifstream in(path);
+  std::ifstream in(fsPath(path));
   if (!in) { if (err) *err = "não abriu o .gdi"; return nullptr; }
   auto d = std::make_unique<FileDisc>();
   std::string line;
@@ -295,6 +296,7 @@ std::unique_ptr<Disc> openGdi(const std::string& path, std::string* err) {
   uint32_t total = 0;
   while (std::getline(in, line)) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (line.compare(0, 3, "\xEF\xBB\xBF") == 0) line.erase(0, 3);  // BOM de arquivo salvo como "UTF-8 com BOM"
     std::istringstream ls(line);
     if (count < 0) { if (!(ls >> count) || count < 1 || count > 99) { if (err) *err = ".gdi inválido"; return nullptr; } continue; }
     int num = 0, type = 0, ss = 0;

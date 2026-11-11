@@ -534,7 +534,7 @@ SaturnCore::SaturnCore(std::unique_ptr<cdrom::Disc> disc, const std::vector<uint
   sys_ = std::make_unique<System>(b, disc_.get());
   if (save) importSave(*save);
   title_ = disc_ ? discTitle(*disc_) : "Saturn";
-  note_ = contains(b, "Indigo Saturn") ? " · BIOS de teste do Índigo" : " · Saturn experimental: muitos jogos ainda não rodam";
+  note_ = contains(b, "Indigo Saturn") ? " · BIOS de teste do Índigo" : " · Saturn: alguns jogos ainda não rodam";
 }
 
 namespace {

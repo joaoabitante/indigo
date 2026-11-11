@@ -121,7 +121,7 @@ bool ChdDisc::readFile(uint64_t off, void* dst, size_t n) {
 }
 
 bool ChdDisc::open(const std::string& path, std::string* err) {
-  f_.open(path, std::ios::binary);
+  f_.open(fsPath(path), std::ios::binary);
   if (!f_) return fail(err, "não abriu o .chd");
   f_.seekg(0, std::ios::end);
   fileSize_ = uint64_t(f_.tellg());

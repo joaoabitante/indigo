@@ -524,7 +524,7 @@ void SA1::sync(StateIO& io) {
   io.sync(mathCtrl_); io.sync(mathOverflow_); io.sync(mathA_); io.sync(mathB_); io.sync(mathRes_);
   io.sync(vda_); io.sync(vbit_); io.sync(vlen_); io.sync(vauto_);
   if (io.reading()) {
-    clampTo<int64_t>(debt_, -64, 64);
+    clampTo<int64_t>(debt_, -(4 * 65536 + 64), 64);  // um DMA do SA-1 deixa até 4 relógios por byte de dívida (65535 bytes)
     timerFrac_ &= 3;
     for (auto& b : bankRom_) b &= 7;
     bwSnes_ &= 0x1F; bwSa1_ &= 0x7F;
