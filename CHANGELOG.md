@@ -2,6 +2,14 @@
 
 Gerado de `web/changelog.js` (o mesmo texto aparece no cartão “Registro” da página).
 
+## 23/11/2026 · App 2.8.3: mais jogos de CPS1/CPS2 abrem e avisos claros de download
+
+- CPS1 e CPS2: a tabela de jogos guardava o tamanho errado de 124 arquivos que o MAME lê em partes (como o som de vários jogos de CPS2). Pacotes certos desses jogos não eram reconhecidos e agora abrem.
+- CPS2 sem a chave (.key): pacotes de versões antigas do MAME não trazem o arquivo da chave. Agora o Índigo reconhece o jogo e diz qual arquivo falta (por exemplo sfa3.key).
+- Uma página da internet salva com o nome do jogo (como a verificação "Just a moment..."), um RAR ou 7-Zip com nome .zip e um .zip incompleto agora têm um aviso claro, em vez de "não é um jogo".
+
+**Testes:** Testes novos do CPS e dos avisos com 0 falhas; robustez com ASan/UBSan com 0 problemas; conferência dos núcleos ligados à mudança (CPS, backup, save state, segurança, Z80, Game Boy, GBA, NES, SNES, Master System, Neo Geo Pocket e Game & Watch) com 0 problemas.
+
 ## 11/11/2026 · App 2.8.2: CPS1/CPS2 em pacote split, zip e revisão completa
 
 - CPS1 e CPS2: versões de jogos em pacote "split" do MAME (só com os arquivos que mudam) agora acham o .zip do jogo principal na mesma pasta; se faltar, o Índigo diz qual.

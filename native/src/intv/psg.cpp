@@ -1,3 +1,5 @@
+// O envelope (PSG::tick), o ESHIFT e o LFSR de ruído são derivados do ay8910.c do jzIntv, de Joe Zbiciak
+// (GPL-2.0-or-later; créditos em TERCEIROS.md). Este arquivo faz parte do Índigo, distribuído sob a GPL-3.0.
 #include "psg.h"
 
 #include <cmath>

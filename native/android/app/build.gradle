@@ -42,4 +42,17 @@ android {
     lint {
         abortOnError = false
     }
+    // licença (GPL-3.0) e créditos de terceiros dentro do APK, como pede a licença (ficam em assets/)
+    sourceSets {
+        main {
+            assets.srcDirs += "$buildDir/licencas"
+        }
+    }
 }
+
+tasks.register('copiarLicencas', Copy) {
+    from(new File(rootDir, "../../LICENSE")) { rename { 'LICENCA.txt' } }
+    from(new File(rootDir, "../TERCEIROS.md")) { rename { 'TERCEIROS.txt' } }
+    into "$buildDir/licencas"
+}
+preBuild.dependsOn copiarLicencas

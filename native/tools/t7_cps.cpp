@@ -526,6 +526,51 @@ static std::vector<uint8_t> deflate64Stream(const std::vector<uint8_t>& lit) {
 }
 
 static void testZips() {
+  {
+    // tamanho de verdade dos arquivos lidos em pedaços (ROM_CONTINUE): o som do sfa3 (sz3.01) tem 128 KB, não 32 KB
+    const GameDef* g = gameByName("sfa3");
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> files;
+    uint32_t sz301 = 0;
+    for (int i = 0; g && i < g->numLoads; i++) {
+      const RomLoad& l = loadAt(*g, i);
+      if (l.mode >= 7) continue;
+      const RomFile& f = fileAt(l.file);
+      const std::string n = f.name;
+      if (n == "sz3.01") sz301 = f.size;
+      bool dup = n == "sfa3.key";
+      for (const auto& e : files) dup = dup || e.first == n;
+      if (!dup) files.push_back({n, std::vector<uint8_t>(f.size, 0)});
+    }
+    check(sz301 == 0x20000, "tabela: sz3.01 (som do sfa3, lido em 2 pedaços) com o tamanho do arquivo, 128 KB");
+    // pacote de versão antiga do MAME, sem a chave: reconhecido, e a mensagem diz qual arquivo falta
+    const std::vector<uint8_t> semChave = makeZip(files);
+    std::string msg;
+    try { CpsCore c(semChave, "sfa3.zip", nullptr); } catch (const std::exception& e) { msg = e.what(); }
+    check(g && isCpsSet(semChave, "sfa3.zip") && missingOnlyKey(semChave, "sfa3.zip") == g &&
+              msg.find("sfa3.key") != std::string::npos && msg.find("versão antiga") != std::string::npos,
+          "CPS2 sem a chave (.key): o pacote é reconhecido e o aviso diz que falta o sfa3.key");
+  }
+  {
+    // downloads que não são jogo: página do Cloudflare salva como .zip, RAR/7-Zip com nome .zip, .zip vazio
+    const std::string html = "\xEF\xBB\xBF\n  <!DOCTYPE HTML>\n<html lang=\"en-US\"><title>Just a moment...</title></html>";
+    const std::vector<uint8_t> page(html.begin(), html.end());
+    const std::string m = zip::badDownload(page, "mvsc.zip");
+    check(m.find("página da internet") != std::string::npos && zip::badDownload(page, "jogo.nes") == m,
+          "download: página da internet salva no lugar do jogo é reconhecida (qualquer extensão)");
+    const std::vector<uint8_t> rar = {'R', 'a', 'r', '!', 0x1A, 7, 0, 0}, sz = {'7', 'z', 0xBC, 0xAF, 0x27, 0x1C};
+    std::vector<uint8_t> vazio = {'P', 'K', 5, 6};
+    vazio.resize(22);
+    check(zip::badDownload(rar, "a.zip").find("RAR") != std::string::npos &&
+              zip::badDownload(sz, "a.ZIP").find("7-Zip") != std::string::npos &&
+              zip::badDownload(vazio, "a.zip").find("vazio") != std::string::npos &&
+              zip::badDownload(rar, "a.rar").find(".rar") != std::string::npos,
+          "download: RAR, 7-Zip e .zip vazio têm aviso próprio");
+    const std::vector<uint8_t> rom(4096, 0xEA), lixo = {'P', 'K', 3, 4, 1, 2};
+    check(zip::badDownload(rom, "jogo.zip").empty() && zip::badDownload(rom, "jogo.nes").empty() &&
+              !zip::notZipMessage(rom, "jogo.ZIP").empty() && zip::notZipMessage(rom, "jogo.bin").empty() &&
+              !zip::notZipMessage(lixo, "x.zip").empty(),
+          "download: .zip que não é .zip só é recusado depois (ROM solta com nome .zip ainda abre)");
+  }
   // pacote "split": a versão sf2ceea só com o que muda; o resto no sf2ce.zip do jogo principal
   const GameDef* clone = gameByName("sf2ceea");
   check(clone && clone->parent && std::string(clone->parent) == "sf2ce", "split: sf2ceea é uma versão do sf2ce");

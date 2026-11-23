@@ -13,6 +13,11 @@ const GameDef& findGame(const std::vector<uint8_t>& zip, const std::string& nome
   std::string falta;
   const GameDef* g = identify(zip, nome, &falta);
   if (g) return *g;
+  if (const GameDef* k = missingOnlyKey(zip, nome)) {
+    throw std::runtime_error(std::string("Falta a chave do CPS2 (") + k->name + ".key) neste pacote de \"" + k->title +
+                             "\". O pacote é de uma versão antiga do MAME, de antes das chaves virem dentro do .zip: use um "
+                             "pacote atual do jogo, com o arquivo " + k->name + ".key.");
+  }
   if (!falta.empty()) {
     throw std::runtime_error("Pacote de CPS incompleto. Faltam: " + falta.substr(0, 300) + (falta.size() > 300 ? "..." : "") +
                              ". Pode ser de outra versão do MAME, ou uma versão (clone) sem o pacote do jogo principal ao lado.");
@@ -24,7 +29,8 @@ inline uint16_t combine(uint16_t old, uint16_t v, uint16_t mask) { return static
 }  // namespace
 
 bool isCpsSet(const std::vector<uint8_t>& zip, const std::string& nomeMinusculo) {
-  return identify(zip, nomeMinusculo, nullptr) != nullptr;
+  // o pacote só sem a chave também conta: o núcleo explica o que falta em vez de o app dizer "não é um jogo"
+  return identify(zip, nomeMinusculo, nullptr) != nullptr || missingOnlyKey(zip, nomeMinusculo) != nullptr;
 }
 
 Cps::Cps(const std::vector<uint8_t>& zip, const std::string& nomeMinusculo, const std::vector<uint8_t>* save)

@@ -161,6 +161,40 @@ bool isZip(const std::vector<uint8_t>& b) {
   return b.size() > 22 && b[0] == 0x50 && b[1] == 0x4B && b[2] == 0x03 && b[3] == 0x04;
 }
 
+std::string badDownload(const std::vector<uint8_t>& b, const std::string& fileName) {
+  std::string ext;
+  if (const size_t dot = fileName.find_last_of('.'); dot != std::string::npos)
+    for (size_t i = dot; i < fileName.size(); i++) ext += static_cast<char>(std::tolower(static_cast<unsigned char>(fileName[i])));
+  // começo do arquivo em minúsculas, sem BOM nem espaços: "<!doctype html" ou "<html" é página da internet
+  size_t i = (b.size() >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF) ? 3 : 0;
+  while (i < b.size() && i < 64 && (b[i] == ' ' || b[i] == '\t' || b[i] == '\r' || b[i] == '\n')) i++;
+  std::string head;
+  for (size_t k = i; k < b.size() && head.size() < 14; k++) head += static_cast<char>(std::tolower(b[k]));
+  if (head.rfind("<!doctype html", 0) == 0 || head.rfind("<html", 0) == 0)
+    return "Este arquivo não é um jogo: é uma página da internet salva com o nome do jogo (" + std::to_string(b.size()) +
+           " bytes). O site provavelmente mostrou uma verificação (\"Just a moment...\") e o navegador baixou a página no "
+           "lugar do arquivo. Baixe de novo e confira se o tamanho é o do jogo.";
+  if (ext != ".zip" || isZip(b)) {
+    if (ext == ".7z" || ext == ".rar") return "O Índigo não abre arquivos " + ext + ". Descompacte e abra o jogo, ou use um .zip.";
+    return "";
+  }
+  if (b.size() >= 4 && b[0] == 'R' && b[1] == 'a' && b[2] == 'r' && b[3] == '!')
+    return "Este .zip é na verdade um arquivo RAR, que o Índigo não abre. Descompacte e abra o jogo, ou use um .zip.";
+  if (b.size() >= 4 && b[0] == '7' && b[1] == 'z' && b[2] == 0xBC && b[3] == 0xAF)
+    return "Este .zip é na verdade um arquivo 7-Zip (.7z), que o Índigo não abre. Descompacte e abra o jogo, ou use um .zip.";
+  if (b.size() >= 4 && b[0] == 'P' && b[1] == 'K' && b[2] == 0x05 && b[3] == 0x06)
+    return "Este .zip está vazio.";
+  return "";
+}
+
+std::string notZipMessage(const std::vector<uint8_t>& b, const std::string& fileName) {
+  std::string low;
+  for (char c : fileName) low += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  if (low.size() < 4 || low.compare(low.size() - 4, 4, ".zip") != 0 || isZip(b)) return "";
+  return "Este arquivo tem o nome .zip mas não é um .zip (" + std::to_string(b.size()) +
+         " bytes): o download veio incompleto ou errado. Baixe de novo.";
+}
+
 namespace {
 uint32_t u16(const std::vector<uint8_t>& b, size_t o) { return o + 2 <= b.size() ? b[o] | (b[o + 1] << 8) : 0; }
 uint32_t u32(const std::vector<uint8_t>& b, size_t o) {

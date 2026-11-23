@@ -504,6 +504,8 @@ public:
     std::string name = indigo::safeFileName(indigo::platform::displayName(path));
     const std::string origin = path;  // o que entra na lista de recentes do PC (o próprio .zip, se for um)
     if (indigo::backup::isBackup(rom)) { importBackup(rom); return; }
+    // página da internet salva no lugar do jogo, .zip incompleto, RAR ou 7-Zip com nome .zip: diz o que houve
+    if (const std::string bad = indigo::zip::badDownload(rom, name); !bad.empty()) { error(bad); return; }
     {
       // BIOS do Neo Geo (neogeo.zip do usuário): fica guardada para os jogos de Neo Geo
       std::string low = name;
@@ -786,6 +788,7 @@ public:
       return;
     }
     if (!core) {
+      if (const std::string nz = indigo::zip::notZipMessage(rom, name); !nz.empty()) { error(nz); return; }
       error("Este arquivo não é um jogo de SNES, NES, Game Boy, Game Boy Color, Game Boy Advance, Nintendo DS, Nintendo 64, Master System, "
             "Game Gear, SG-1000, Neo Geo Pocket, Pokémon Mini, Atari 2600, Atari 5200, MSX, ColecoVision, WonderSwan, Atari 7800, Vectrex, Atari Lynx, Virtual Boy, Mega Duck, Watara Supervision, PC Engine, Mega Drive, 32X, Famicom Disk System, Intellivision, Neo Geo ou arcade Capcom (CPS1/CPS2). CDs: Sega CD, PC Engine CD, Neo Geo CD, PlayStation, 3DO, PC-FX e Saturn em .cue, .chd ou .iso; Dreamcast em .gdi, .chd ou .cue.");
       return;
@@ -2217,13 +2220,18 @@ private:
       if (aboutPage_ + 1 < nVers) menu_.items.push_back({"< Versão anterior", M_ABOUT_OLDER});
       if (aboutPage_ > 0) menu_.items.push_back({"Versão seguinte >", M_ABOUT_NEWER});
       if (aboutPage_ == 0) {
+        // avisos legais da GPL-3.0 (o texto da licença e os créditos de terceiros vão junto: LICENCA.txt e
+        // TERCEIROS.txt ao lado do programa no PC, e dentro do APK no Android)
+        menu_.items.push_back({"Software livre: GNU GPL 3.0, sem garantia", M_INFO});
+        menu_.items.push_back({"Código: github.com/joaoabitante/indigo", M_INFO});
+        menu_.items.push_back({"Créditos de terceiros: TERCEIROS.txt", M_INFO});
         menu_.items.push_back({"Testar o som (bipe)", M_TEST_SOUND});
         menu_.items.push_back({audioInfo(), M_INFO});
       }
       if (aboutPage_ == 0 && indigo::platform::canAssociate())
         menu_.items.push_back({std::string("Abrir jogos com dois cliques: ") + (indigo::platform::filesAssociated() ? "sim" : "não"), M_ASSOCIATE});
       menu_.items.push_back({"Voltar", M_BACK});
-      menu_.hint = "Emulador de SNES, NES, GB, GBC, GBA, Master System, Game Gear, Neo Geo Pocket, Pokémon Mini, Atari 2600, Atari 5200, MSX, ColecoVision, SG-1000, WonderSwan, Atari 7800, Vectrex, Atari Lynx, Virtual Boy, Mega Duck, Watara Supervision, PC Engine e Mega Drive";
+      menu_.hint = "Emulador de 46 sistemas, do Atari 2600 ao Dreamcast e ao Nintendo DS. Feito por João Abitante";
     } else if (page_ == P_FOLDERS) {
       menu_.title = "Pastas de jogos";
       menu_.items.push_back({"Adicionar pasta...", M_FOLDER_ADD});

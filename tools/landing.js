@@ -299,9 +299,9 @@ export function landingTop({ app, zip, apk, tgz }) {
   const hero = `<section class="hero" id="topo" aria-labelledby="heroTitle">
   <div class="l-wrap hero-in">
     <div class="hero-copy">
-      <a class="hero-new" href="#ps1"><span class="tag-new">Novo</span>O PlayStation chegou ao Índigo</a>
+      <a class="hero-new" href="#baixar"><span class="tag-new">Novo</span>Versão ${esc(app.version.replace(/\.0$/, ''))}: veja o que mudou</a>
       <h1 id="heroTitle"><span class="h1-brand">Índigo Nexus</span> O ponto de encontro de <span class="hl">50 anos de videogames.</span></h1>
-      <p class="hero-lead">Do Atari ao PlayStation, ${SYSTEM_COUNT} consoles de várias gerações se conectam num emulador só, grátis para <b>Windows</b>, <b>Linux</b> e <b>Android</b>. Roda sem internet, guarda seus saves na nuvem e tem a precisão conferida a cada versão. E também joga aqui mesmo, no navegador.</p>
+      <p class="hero-lead">Do Atari ao Dreamcast e ao Nintendo DS, ${SYSTEM_COUNT} consoles de várias gerações se conectam num emulador só, grátis para <b>Windows</b>, <b>Linux</b> e <b>Android</b>. Roda sem internet, leva seus saves de um aparelho a outro e tem a precisão conferida a cada versão. E também joga aqui mesmo, no navegador.</p>
       <div class="hero-cta">
         <a class="b-primary" id="heroDl" href="#baixar" data-win="${esc(zip.href)}" data-win-size="${esc(zip.size)}" data-android="${esc(apk.href)}" data-android-size="${esc(apk.size)}"${tgz ? ` data-linux="${esc(tgz.href)}" data-linux-size="${esc(tgz.size)}"` : ''}>${ICON.download}<span class="b-txt"><span class="b-t">Baixar o Índigo</span><small class="b-s">para Windows, Linux e Android · grátis</small></span></a>
         <a class="b-ghost" id="heroPlay" href="#jogar">${ICON.play}<span>Jogar no navegador</span></a>
@@ -312,10 +312,10 @@ export function landingTop({ app, zip, apk, tgz }) {
   </div>
   <div class="l-wrap">
     <ul class="stats" aria-label="O Índigo em números">
-      <li><b>${SYSTEM_COUNT}</b><span>sistemas, do Atari 2600 ao PlayStation</span></li>
+      <li><b>${SYSTEM_COUNT}</b><span>sistemas, do Atari 2600 ao Nintendo DS</span></li>
       <li><b>${COMPARISONS}</b><span>comparações automáticas a cada versão, com 0 problemas</span></li>
       <li><b>+${MASS}</b><span>jogos caseiros e ROMs de teste rodados a cada mudança</span></li>
-      <li><b>100%</b><span>offline: a internet só entra se você ligar a nuvem</span></li>
+      <li><b>100%</b><span>offline: tudo roda no seu aparelho, sem internet</span></li>
       <li><b>R$ 0</b><span>grátis, e de código aberto (GPL-3.0)</span></li>
     </ul>
   </div>
@@ -325,9 +325,9 @@ export function landingTop({ app, zip, apk, tgz }) {
   <div class="l-wrap ps1-in">
     <div class="ps1-disc" aria-hidden="true"><span></span></div>
     <div class="ps1-copy">
-      <p class="l-kicker">Novo na 2.0</p>
-      <h2 id="ps1Title">O PlayStation chegou</h2>
-      <p>O primeiro console 3D do Índigo, com a mesma atenção à precisão de todos os outros. Use o disco que é seu, do jeito que você já tem guardado.</p>
+      <p class="l-kicker">Destaque</p>
+      <h2 id="ps1Title">PlayStation no Índigo</h2>
+      <p>O primeiro console 3D que chegou ao Índigo, com a mesma atenção à precisão de todos os outros. Use o disco que é seu, do jeito que você já tem guardado.</p>
       <ul class="ticks">
         <li>${ICON.check}Gráficos 3D</li>
         <li>${ICON.check}CDs em .cue/.bin, .chd e .iso</li>
@@ -373,10 +373,10 @@ export function landingTop({ app, zip, apk, tgz }) {
 </section>`;
 
   const feats = [
-    ['target', 'Precisão de verdade', `Cada versão passa por suítes de teste públicas e é comparada com emuladores de referência: ${COMPARISONS} comparações automáticas, 0 problemas. E mais de ${MASS} jogos caseiros e ROMs de teste de licença livre rodam em todos os consoles a cada mudança.`],
+    ['target', 'Precisão de verdade', `Cada versão passa por suítes de teste públicas e é comparada com emuladores de referência: ${COMPARISONS} comparações automáticas, 0 problemas. E mais de ${MASS} jogos caseiros e ROMs de teste de licença livre são rodados a cada mudança.`],
     ['offline', 'Funciona sem internet', 'Tudo roda no seu aparelho, direto no processador. No avião, na estrada ou sem sinal, seus jogos abrem do mesmo jeito.'],
-    ['devices', 'O mesmo app no PC e no celular', 'Windows, Linux e Android com a mesma cara e os mesmos recursos. Comece no computador e continue no celular.'],
-    ['cloud', 'Saves na nuvem com PIN', 'Seus saves sobem e descem sozinhos entre os aparelhos com um PIN, o mesmo deste site. Sem conta, sem e-mail. Seus jogos nunca saem do aparelho.'],
+    ['devices', 'O mesmo app no PC e no celular', 'Windows, Linux e Android com a mesma cara e os mesmos consoles. Leve o backup dos saves e continue no outro aparelho.'],
+    ['cloud', 'Saves que vão com você', 'O backup (.indigo) junta seus saves e estados num arquivo só, para levar de um aparelho a outro. Sem conta e sem e-mail. A nuvem dos saves está em teste e, por enquanto, é fechada.'],
     ['rewind', 'Estados salvos', 'Congele o jogo em qualquer ponto e volte quando quiser, até naquela fase sem save.'],
     ['pad', 'Controle ou toque', 'Funciona com controles como Xbox, DualSense, DualShock, 8BitDo e GameSir, ou com os botões na tela do celular.'],
   ];
@@ -406,7 +406,7 @@ export function downloadsSection({ app, zip, apk, tgz }) {
     <div class="get-intro">
       <p class="l-kicker">Baixar</p>
       <h2 id="getTitle">Índigo para PC e celular</h2>
-      <p class="get-lead">Grátis, sem cadastro e sem precisar de internet para jogar. Os saves na nuvem usam o mesmo PIN deste site.</p>
+      <p class="get-lead">Grátis, sem cadastro e sem precisar de internet para jogar.</p>
     </div>
     <div class="get-ver"><span class="dot-ok" aria-hidden="true"></span>Versão ${esc(app.version)}<small>${esc(app.date)}</small></div>
   </div>
@@ -440,7 +440,7 @@ export function downloadsSection({ app, zip, apk, tgz }) {
       <div class="dl-top"><span class="dl-icon">${ICON.pc}</span><div><h3>Linux</h3><p>PC de 64 bits e Steam Deck · Ubuntu 24.04, Fedora 39, Debian 13 ou mais novo</p></div></div>
       <a class="dl-main" href="${tgz.href}" download>${ICON.download}<span>Baixar o Índigo</span><small>.tar.gz · ${tgz.size}</small></a>
       <p class="dl-sha">SHA-256: <code>${esc(tgz.sha)}</code></p>
-      <p class="dl-note">Primeira versão para Linux. A nuvem dos saves ainda não funciona nela.</p>
+      <p class="dl-note">Para PC com Linux e Steam Deck.</p>
       <ol class="dl-steps">
         <li><span>Clique com o botão direito no arquivo baixado e escolha <b>Extrair aqui</b>.</span></li>
         <li><span>Abra o <b>indigo</b> da pasta extraída. Para ter o atalho no menu de aplicativos, rode <kbd>./instalar-atalho.sh</kbd>.</span></li>
@@ -509,7 +509,7 @@ export function landingMid({ press = [] } = {}) {
     ['code', 'Por que código próprio, e não emuladores prontos', [
       'Existem ótimos emuladores feitos pela comunidade, e o Índigo deve muito a eles: a documentação e os testes que eles publicaram mostram como cada console funciona. Mas juntar emuladores prontos num app só, como faz o RetroArch, não daria o Índigo:',
       '<b>Licença.</b> Vários dos melhores emuladores proíbem uso comercial ou versões modificadas, e essas licenças não podem ser misturadas com a GPL-3.0. Onde a licença permite, o Índigo reaproveita e dá o crédito, na lista de terceiros do código.',
-      '<b>Um app só.</b> O mesmo menu, os mesmos controles e os mesmos saves na nuvem em todos os consoles, no PC, no celular e no navegador.',
+      '<b>Um app só.</b> O mesmo menu, os mesmos controles e o mesmo backup dos saves em todos os consoles, no PC, no celular e no navegador.',
       `<b>Testes e segurança.</b> Todo console passa pela mesma bateria de testes a cada versão (${COMPARISONS} comparações) e pela mesma revisão de segurança, com arquivos estragados de propósito. Com dezenas de códigos de autores diferentes, isso não seria possível.`,
       '<b>Feito com IA, conferido por testes.</b> O Índigo é escrito por uma pessoa com ajuda de inteligência artificial. Nada entra sem passar pelos testes automáticos, e o código é aberto para quem quiser conferir.',
     ]],
@@ -540,14 +540,14 @@ export function landingMid({ press = [] } = {}) {
     ['O Índigo vem com jogos ou BIOS?', 'Não. O Índigo não traz nenhum jogo e nenhuma BIOS, e não indica onde baixar. Use cópias dos seus próprios cartuchos e discos.', 'faq-jogos'],
     ['Quais consoles pedem BIOS?', `${BIOS_TEXT} só abrem jogos com a BIOS do seu próprio console. Na primeira vez, o Índigo avisa qual arquivo falta: abra o arquivo da BIOS no Índigo do mesmo jeito que abre um jogo, e ele fica guardado. O Game & Watch usa o .zip do MAME, que traz o desenho da tela. Os outros sistemas rodam só com o jogo.`, 'faq-bios'],
     ['Quais arquivos de jogo ele abre?', 'Os arquivos comuns de cada console, inclusive dentro de .zip. Os jogos em CD abrem em .cue/.bin, .chd ou .iso.'],
-    ['Precisa de internet?', 'Não. O app roda tudo no aparelho. A internet só é usada se você ligar os saves na nuvem.'],
-    ['Como funcionam os saves na nuvem?', 'Você escolhe um PIN e usa o mesmo em todos os aparelhos e neste site. Os saves vão para a nuvem e os mais novos descem para os outros aparelhos. Os jogos nunca saem do seu aparelho.'],
-    ['Que dados a nuvem guarda?', 'Só os seus saves, com o nome do jogo e do aparelho, ligados ao seu PIN. O Índigo não pede nome, e-mail nem documento, e os jogos nunca saem do seu aparelho. Quem não liga a nuvem não manda nada para a internet.'],
+    ['Precisa de internet?', 'Não. O app roda tudo no aparelho e funciona sem internet.'],
+    ['Como levo meus saves para outro aparelho?', 'Pelo backup (.indigo), em Ajustes: ele junta saves e estados num arquivo só, que você abre no outro aparelho. A nuvem dos saves ainda está em teste e, por enquanto, é fechada: ela usa um PIN só, do criador do Índigo.'],
+    ['Que dados a nuvem guarda?', 'Só saves, com o nome do jogo e do aparelho. O Índigo não pede nome, e-mail nem documento. Os jogos não vão para a nuvem; a única exceção é a função “Enviar para outro aparelho”, em que o jogo passa por um servidor durante a transferência e depois é apagado.'],
     ['O Windows avisou que o arquivo pode ser perigoso. E agora?', 'O Índigo ainda não tem assinatura digital, por isso o Windows desconfia de todo programa novo. Antes de extrair, clique com o botão direito no .zip, abra Propriedades e marque Desbloquear. Se aparecer “O Windows protegeu o computador”, clique em Mais informações e em Executar assim mesmo.'],
     ['Tem para iPhone ou Mac?', 'O app é para Windows, Linux (PC e Steam Deck) e Android. Em qualquer outro aparelho, use o emulador do navegador aqui do site, que roda Game Boy, Game Boy Color, GBA, Master System, Game Gear e Neo Geo Pocket.'],
     ['Até que console o Índigo vai?', 'Até o Dreamcast e o Nintendo DS, que chegaram junto com o Nintendo 64 na versão 2.6. Do PlayStation 2 em diante, cada console exige um recompilador e a tradução do vídeo para a placa do aparelho, e não rodaria bem num celular comum. Depois desses três, o tempo vai só para melhorar os que já estão lá. Os motivos estão na seção “Por que o Índigo é do jeito que é”.'],
     ['Por que o Índigo não traz BIOS?', 'Porque a BIOS é um programa do fabricante, protegido por direito autoral, e distribuir cópias sem autorização é ilegal. O Índigo é escrito do zero, sem nada do fabricante. Quem tem o console pode copiar a BIOS do próprio aparelho. Sempre que dá, o Índigo liga o console sem BIOS nenhuma.'],
-    ['Por que não usar emuladores prontos?', 'Porque vários dos melhores têm licenças que proíbem uso comercial ou versões modificadas, que não combinam com a GPL-3.0, e porque com um código só todos os consoles têm o mesmo menu, os mesmos saves na nuvem e passam pelos mesmos testes e pela mesma revisão de segurança. Onde a licença permite, o Índigo reaproveita e dá o crédito.'],
+    ['Por que não usar emuladores prontos?', 'Porque vários dos melhores têm licenças que proíbem uso comercial ou versões modificadas, que não combinam com a GPL-3.0, e porque com um código só todos os consoles têm o mesmo menu, os mesmo backup dos saves e passam pelos mesmos testes e pela mesma revisão de segurança. Onde a licença permite, o Índigo reaproveita e dá o crédito.'],
   ];
   const faqHtml = `<section class="l-sec" id="perguntas" aria-labelledby="faqTitle">
   <div class="l-wrap">
@@ -631,8 +631,8 @@ export function landingFooter({ app, autista }) {
 // ---------------------------------------------------------------- metadados (título, descrição, Open Graph, JSON-LD)
 export function metaHtml({ app, siteUrl, autista }) {
   const base = siteUrl.replace(/\/+$/, '') + '/';
-  const title = 'Índigo Nexus — emulador de videogames do Atari ao PlayStation';
-  const desc = `Índigo Nexus: o ponto de encontro de 50 anos de videogames. Emulador grátis e de código aberto para Windows, Linux e Android, com ${SYSTEM_COUNT} consoles do Atari ao PlayStation, sem internet e com saves na nuvem. Também roda no navegador.`;
+  const title = 'Índigo Nexus — emulador de videogames do Atari ao Dreamcast';
+  const desc = `Índigo Nexus: o ponto de encontro de 50 anos de videogames. Emulador grátis e de código aberto para Windows, Linux e Android, com ${SYSTEM_COUNT} consoles do Atari ao Dreamcast, sem internet e com backup dos saves. Também roda no navegador.`;
   const ld = {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
@@ -659,7 +659,7 @@ export function metaHtml({ app, siteUrl, autista }) {
 <meta property="og:locale" content="pt_BR">
 <meta property="og:site_name" content="Índigo Nexus">
 <meta property="og:title" content="Índigo Nexus · o ponto de encontro de 50 anos de videogames">
-<meta property="og:description" content="Emulador grátis e de código aberto para Windows, Linux e Android, com ${SYSTEM_COUNT} consoles do Atari ao PlayStation, saves na nuvem e precisão conferida a cada versão. Também roda no navegador.">
+<meta property="og:description" content="Emulador grátis e de código aberto para Windows, Linux e Android, com ${SYSTEM_COUNT} consoles do Atari ao Dreamcast, backup dos saves e precisão conferida a cada versão. Também roda no navegador.">
 <link rel="canonical" href="${esc(base)}">
 <meta property="og:url" content="${esc(base)}">
 <meta property="og:image" content="${esc(base)}og.png">

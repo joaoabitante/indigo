@@ -14,6 +14,15 @@ cps1v = open(base + '/cps1_v.cpp', encoding='utf-8').read()
 cps2 = open(base + '/cps2.cpp', encoding='utf-8').read()
 
 
+# tamanho de verdade de cada arquivo: o ROM_LOAD dá só o primeiro pedaço; ROM_CONTINUE e ROM_IGNORE continuam
+# lendo o mesmo arquivo (o som Z80 do CPS2: "sz3.01" tem 0x8000 no ROM_LOAD e 0x20000 no arquivo)
+real_size = {}
+
+
+def grow(f, end):
+    real_size[f] = max(real_size.get(f, f[2]), end)
+
+
 def strip_comments(s):
     s = re.sub(r'/\*.*?\*/', '', s, flags=re.S)
     s = re.sub(r'//[^\n]*', '', s)
@@ -94,6 +103,7 @@ def parse_roms(src):
                 mode, f, pos = last
                 loads.append((region, mode, f, a[0], a[1], pos))
                 last = (mode, f, pos + a[1])
+                grow(f, pos + a[1])
             elif mac == 'ROM_RELOAD':
                 a = [num(x) for x in args.split(',')]
                 if last is None:
@@ -106,6 +116,7 @@ def parse_roms(src):
                     continue
                 mode, f, pos = last
                 last = (mode, f, pos + num(args))
+                grow(f, pos + num(args))
             elif mac == 'ROM_FILL':
                 a = [num(x) for x in args.split(',')]
                 loads.append((region, FILL, ('', a[2] & 0xFF, 0), a[0], a[1], 0))
@@ -340,7 +351,7 @@ for g in sel:
 
 out.append('static const RomFile kFiles[] = {')
 for (n, crc, size) in file_list:
-    out.append('    {%s, 0x%08x, 0x%x},' % (cstr(n), crc, size))
+    out.append('    {%s, 0x%08x, 0x%x},' % (cstr(n), crc, real_size.get((n, crc, size), size)))
 out.append('};')
 out.append('')
 out.append('static const RomLoad kLoads[] = {')

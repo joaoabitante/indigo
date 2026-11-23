@@ -8,6 +8,14 @@ namespace indigo::zip {
 
 bool isZip(const std::vector<uint8_t>& bytes);
 
+// Download que não é jogo: página da internet salva no lugar do arquivo (aviso do Cloudflare, "Just a moment..."),
+// .7z/.rar, ou .zip que é na verdade RAR, 7-Zip ou vazio. Devolve a mensagem para a pessoa, ou
+// "" se o arquivo parece normal. `fileName` é o nome do arquivo (com a extensão).
+std::string badDownload(const std::vector<uint8_t>& bytes, const std::string& fileName);
+// nome .zip sem ser um .zip (download incompleto ou errado): a mensagem, ou "". Só depois que nenhum console
+// aceitou o arquivo (uma ROM solta com o nome trocado para .zip ainda abre)
+std::string notZipMessage(const std::vector<uint8_t>& bytes, const std::string& fileName);
+
 // devolve false com a mensagem em `error` se não achar ROM ou o arquivo estiver danificado
 bool extractRom(const std::vector<uint8_t>& bytes, std::string& name, std::vector<uint8_t>& data, std::string& error);
 

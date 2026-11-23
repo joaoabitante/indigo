@@ -122,6 +122,32 @@ const GameDef* identify(const std::vector<uint8_t>& zipData, const std::string& 
   return best;
 }
 
+const GameDef* missingOnlyKey(const std::vector<uint8_t>& zipData, const std::string& nomeMinusculo) {
+  const ZipIndex zi(zipData);
+  if (!zi.ok) return nullptr;
+  const std::string base = setName(nomeMinusculo);
+  std::vector<uint16_t> files;
+  const GameDef* best = nullptr;
+  int bestScore = -1;
+  for (int gi = 0; gi < kGameCount; gi++) {
+    const GameDef& g = kGames[gi];
+    if (g.kind != 2) continue;
+    gameFiles(g, files);
+    int have = 0, keys = 0;
+    bool other = false;
+    for (uint16_t f : files) {
+      if (zi.find(kFiles[f])) { have++; continue; }
+      const std::string n = kFiles[f].name;
+      if (n.size() > 4 && n.compare(n.size() - 4, 4, ".key") == 0) keys++;
+      else { other = true; break; }
+    }
+    if (other || keys == 0 || have == 0) continue;
+    const int score = have + (base == g.name ? 1000000 : 0);
+    if (score > bestScore) { bestScore = score; best = &g; }
+  }
+  return best;
+}
+
 std::string parentSetFor(const std::vector<uint8_t>& zipData, const std::string& nomeMinusculo) {
   const ZipIndex zi(zipData);
   if (!zi.ok) return "";

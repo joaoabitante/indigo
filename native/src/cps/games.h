@@ -78,6 +78,10 @@ const GfxRange& gfxRange(int i);
 // quando o nome do pacote é conhecido mas o .zip está incompleto.
 const GameDef* identify(const std::vector<uint8_t>& zip, const std::string& nomeMinusculo, std::string* faltando);
 
+// pacote de CPS2 de versão antiga do MAME (antes das chaves virem no .zip): tem todos os arquivos do jogo menos
+// a chave (.key). Devolve o jogo (o do nome do pacote, se for um deles; senão o com mais arquivos) ou nullptr.
+const GameDef* missingOnlyKey(const std::vector<uint8_t>& zip, const std::string& nomeMinusculo);
+
 // monta as regiões de memória (lança runtime_error se faltar arquivo ou o .zip estiver danificado)
 // pacote "split" do MAME: se o .zip tem o nome de uma versão (clone) e faltam arquivos, devolve o nome do pacote
 // do jogo principal (ex.: "sf2" para sf2ce.zip), onde estão os que faltam; senão, "".

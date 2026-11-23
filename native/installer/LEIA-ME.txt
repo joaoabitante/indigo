@@ -16,6 +16,15 @@ Licença
   A licença está em LICENCA.txt e os créditos de terceiros em TERCEIROS.txt, ao lado do programa.
   Código-fonte: https://github.com/joaoabitante/indigo
 
+Novo na 2.8.3
+- CPS1 e CPS2: a tabela de jogos guardava o tamanho errado de 124 arquivos que o MAME lê em partes (por exemplo
+  o som de vários jogos de CPS2, como o sz3.01 do Street Fighter Alpha 3). Pacotes certos desses jogos não eram
+  reconhecidos e agora abrem.
+- CPS2 sem a chave (.key): pacotes de versões antigas do MAME não trazem o arquivo da chave. Agora o Índigo
+  reconhece o jogo e diz qual arquivo falta (por exemplo sfa3.key), em vez de dizer que não é um jogo.
+- Downloads que não são jogo: uma página da internet salva com o nome do jogo (como a verificação "Just a
+  moment..."), um RAR ou 7-Zip com nome .zip e um .zip incompleto agora têm um aviso claro do que aconteceu.
+
 Novo na 2.8.2
 - CPS1 e CPS2: muitos pacotes de versões (clones) vêm no formato "split" do MAME, só com os arquivos que mudam.
   Agora o Índigo procura o .zip do jogo principal na mesma pasta (ou nas pastas de jogos) e junta os dois; se não

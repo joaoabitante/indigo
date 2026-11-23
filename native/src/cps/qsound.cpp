@@ -1,3 +1,5 @@
+// Derivado do QSound HLE de superctr e Valley Bell (BSD-3-Clause; licença e créditos em TERCEIROS.md).
+// Este arquivo faz parte do Índigo, distribuído sob a GPL-3.0.
 #include "qsound.h"
 
 #include <cstdlib>

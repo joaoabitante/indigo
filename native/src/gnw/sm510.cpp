@@ -1,3 +1,5 @@
+// Comportamento das CPUs Sharp SM5xx reescrito a partir do núcleo SM510 do MAME, de hap (BSD-3-Clause;
+// licença e créditos em TERCEIROS.md). Este arquivo faz parte do Índigo, distribuído sob a GPL-3.0.
 #include "sm510.h"
 
 #include <algorithm>
